@@ -5,13 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.finances"
-    compileSdk {
-        version = release(36)
-    }
+    namespace = "br.com.otavioesteves.finances"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.finances"
+        applicationId = "br.com.otavioesteves.finances"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -44,6 +42,9 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -57,10 +58,4 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    // ViewModel
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4")
-    // ViewModel para Compose
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
-    // Coletor de StateFlow seguro para o ciclo de vida (recomendado)
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
 }
