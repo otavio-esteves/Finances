@@ -5,31 +5,29 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import br.com.otavioesteves.finances.domain.model.CategoryType
 
 @Composable
 fun CategorySummaryRow(
     categoryName: String,
     totalAmountFormatted: String,
+    categoryType: CategoryType,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    FinanceCard(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onClick() },
-        shape = MaterialTheme.shapes.medium,
-        tonalElevation = 1.dp
+            .clickable { onClick() }
     ) {
         Row(
             modifier = Modifier
-                .padding(16.dp, vertical = 20.dp),
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -37,10 +35,10 @@ fun CategorySummaryRow(
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f)
             )
-            Text(
-                text = totalAmountFormatted,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold
+            AmountText(
+                amount = totalAmountFormatted,
+                isPositive = categoryType == CategoryType.INCOME,
+                style = MaterialTheme.typography.titleMedium
             )
         }
     }

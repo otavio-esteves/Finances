@@ -1,24 +1,21 @@
 package br.com.otavioesteves.finances.ui.screens.categories
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.Money
+import br.com.otavioesteves.finances.presentation.categories.CategoriesUiState
 import br.com.otavioesteves.finances.ui.components.CategorySummaryRow
-import br.com.otavioesteves.finances.ui.state.CategoriesUiState
+import br.com.otavioesteves.finances.ui.components.SectionTitle
 import br.com.otavioesteves.finances.utils.formatMonthPeriod
 
 @Composable
@@ -31,33 +28,37 @@ fun CategoriesContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(24.dp)
     ) {
-        Text(
-            text = formatMonthPeriod(state.monthPeriod),
-            style = MaterialTheme.typography.headlineMedium
+        Column {
+            Text(
+                text = "Categorias",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = formatMonthPeriod(state.monthPeriod),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        SectionTitle(
+            title = "Resumo por categoria",
+            modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (state.categories.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Nenhuma despesa encontrada.")
-            }
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(state.categories) { category ->
-                    CategorySummaryRow(
-                        categoryName = category.category.name,
-                        totalAmountFormatted = formatCurrency(category.totalAmount),
-                        onClick = { onCategoryClick(category) }
-                    )
-                }
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(state.categories) { categorySummary ->
+                CategorySummaryRow(
+                    categoryName = categorySummary.category.name,
+                    totalAmountFormatted = formatCurrency(categorySummary.totalAmount),
+                    categoryType = categorySummary.category.type,
+                    onClick = { onCategoryClick(categorySummary) }
+                )
             }
         }
     }

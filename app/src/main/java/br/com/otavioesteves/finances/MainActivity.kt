@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import br.com.otavioesteves.finances.ui.screens.categories.CategoriesScreen
+import br.com.otavioesteves.finances.ui.navigation.FinancesNavHost
 import br.com.otavioesteves.finances.ui.theme.FinancesTheme
 
 class MainActivity : ComponentActivity() {
@@ -17,8 +17,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             FinancesTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    CategoriesScreen()
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    FinancesNavHost()
                 }
             }
         }

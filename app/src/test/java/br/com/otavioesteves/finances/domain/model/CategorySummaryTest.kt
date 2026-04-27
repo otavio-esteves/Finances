@@ -7,7 +7,7 @@ import org.junit.Test
 class CategorySummaryTest {
     @Test
     fun totalAmount_usesMoneyTypeBackedByCents() {
-        val category = Category(id = 1, name = "Mercado")
+        val category = Category(id = 1L, name = "Mercado", type = CategoryType.EXPENSE)
         val totalAmount = Money.fromCents(125_075)
 
         val summary = CategorySummary(
