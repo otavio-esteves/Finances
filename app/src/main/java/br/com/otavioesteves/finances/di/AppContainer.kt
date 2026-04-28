@@ -1,9 +1,11 @@
 package br.com.otavioesteves.finances.di
 
 import android.content.Context
+import br.com.otavioesteves.finances.data.DefaultDateProvider
 import br.com.otavioesteves.finances.data.local.AppDatabase
 import br.com.otavioesteves.finances.data.repository.RoomCategoriesRepository
 import br.com.otavioesteves.finances.data.repository.RoomTransactionsRepository
+import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.AddTransactionUseCase
@@ -19,12 +21,17 @@ interface AppContainer {
     val getCategorySummariesUseCase: GetCategorySummariesUseCase
     val getMonthlyBalanceUseCase: GetMonthlyBalanceUseCase
     val getTransactionsByMonthUseCase: GetTransactionsByMonthUseCase
+    val dateProvider: DateProvider
 }
 
 class DefaultAppContainer(
     private val context: Context,
     private val applicationScope: CoroutineScope
 ) : AppContainer {
+
+    override val dateProvider: DateProvider by lazy {
+        DefaultDateProvider()
+    }
     
     private val database: AppDatabase by lazy {
         AppDatabase.getDatabase(context, applicationScope)

@@ -3,6 +3,7 @@ package br.com.otavioesteves.finances.presentation.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.data.repository.sumMoney
+import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.TransactionType
@@ -15,10 +16,11 @@ import kotlinx.coroutines.flow.stateIn
 
 class DashboardViewModel(
     private val getMonthlyBalance: GetMonthlyBalanceUseCase,
-    private val getTransactionsByMonth: GetTransactionsByMonthUseCase
+    private val getTransactionsByMonth: GetTransactionsByMonthUseCase,
+    dateProvider: DateProvider
 ) : ViewModel() {
 
-    private val selectedMonthPeriod = MonthPeriod(year = 2026, month = 1)
+    private val selectedMonthPeriod = dateProvider.getCurrentMonthPeriod()
 
     val uiState: StateFlow<DashboardUiState> = combine(
         getMonthlyBalance(selectedMonthPeriod),

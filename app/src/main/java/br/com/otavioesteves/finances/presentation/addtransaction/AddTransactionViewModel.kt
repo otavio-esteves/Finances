@@ -2,6 +2,7 @@ package br.com.otavioesteves.finances.presentation.addtransaction
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
@@ -17,10 +18,11 @@ import java.time.LocalDate
 
 class AddTransactionViewModel(
     private val addTransactionUseCase: AddTransactionUseCase,
-    private val categoriesRepository: CategoriesRepository
+    private val categoriesRepository: CategoriesRepository,
+    dateProvider: DateProvider
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(AddTransactionUiState())
+    private val _uiState = MutableStateFlow(AddTransactionUiState(date = dateProvider.getCurrentDate()))
     val uiState: StateFlow<AddTransactionUiState> = _uiState.asStateFlow()
 
     init {

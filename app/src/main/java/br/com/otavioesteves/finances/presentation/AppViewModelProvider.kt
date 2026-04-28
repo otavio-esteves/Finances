@@ -14,18 +14,21 @@ object AppViewModelProvider {
         initializer {
             AddTransactionViewModel(
                 addTransactionUseCase = financesApplication().container.addTransactionUseCase,
-                categoriesRepository = financesApplication().container.categoriesRepository
+                categoriesRepository = financesApplication().container.categoriesRepository,
+                dateProvider = financesApplication().container.dateProvider
             )
         }
         initializer {
             CategoriesViewModel(
-                getCategorySummaries = financesApplication().container.getCategorySummariesUseCase
+                getCategorySummaries = financesApplication().container.getCategorySummariesUseCase,
+                dateProvider = financesApplication().container.dateProvider
             )
         }
         initializer {
             DashboardViewModel(
                 getMonthlyBalance = financesApplication().container.getMonthlyBalanceUseCase,
-                getTransactionsByMonth = financesApplication().container.getTransactionsByMonthUseCase
+                getTransactionsByMonth = financesApplication().container.getTransactionsByMonthUseCase,
+                dateProvider = financesApplication().container.dateProvider
             )
         }
     }

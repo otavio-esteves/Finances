@@ -162,7 +162,7 @@ private fun DashboardScreenPreview() {
     FinancesTheme {
         DashboardContent(
             state = DashboardUiState(
-                monthPeriod = MonthPeriod(year = 2026, month = 1),
+                monthPeriod = MonthPeriod.now(),
                 monthlyBalance = Money.fromCents(511_560),
                 totalIncome = Money.fromCents(650_000),
                 totalExpenses = Money.fromCents(138_440)

@@ -2,8 +2,10 @@ package br.com.otavioesteves.finances.presentation.addtransaction
 
 import br.com.otavioesteves.finances.data.repository.InMemoryCategoriesRepository
 import br.com.otavioesteves.finances.data.repository.InMemoryTransactionsRepository
+import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.CategoryType
+import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.usecase.AddTransactionUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -15,18 +17,24 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
+import java.time.LocalDate
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddTransactionViewModelTest {
 
     private lateinit var viewModel: AddTransactionViewModel
+    private val fakeDateProvider = object : DateProvider {
+        override fun getCurrentMonthPeriod(): MonthPeriod = MonthPeriod.now()
+        override fun getCurrentDate(): LocalDate = LocalDate.now()
+    }
 
     @Before
     fun setup() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         viewModel = AddTransactionViewModel(
             AddTransactionUseCase(InMemoryTransactionsRepository()),
-            InMemoryCategoriesRepository()
+            InMemoryCategoriesRepository(),
+            fakeDateProvider
         )
     }
 

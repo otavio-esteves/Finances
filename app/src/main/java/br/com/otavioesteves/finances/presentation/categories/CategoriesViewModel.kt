@@ -2,6 +2,7 @@ package br.com.otavioesteves.finances.presentation.categories
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
 import kotlinx.coroutines.Job
@@ -13,10 +14,11 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 
 class CategoriesViewModel(
-    private val getCategorySummaries: GetCategorySummariesUseCase
+    private val getCategorySummaries: GetCategorySummariesUseCase,
+    dateProvider: DateProvider
 ) : ViewModel() {
 
-    private val initialMonthPeriod = MonthPeriod(year = 2026, month = 1)
+    private val initialMonthPeriod = dateProvider.getCurrentMonthPeriod()
     private val _uiState = MutableStateFlow<CategoriesUiState>(CategoriesUiState.Loading)
     val uiState: StateFlow<CategoriesUiState> = _uiState.asStateFlow()
 

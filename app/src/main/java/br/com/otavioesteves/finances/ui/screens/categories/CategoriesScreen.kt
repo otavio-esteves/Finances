@@ -82,7 +82,7 @@ private fun CategoriesLoading(modifier: Modifier = Modifier) {
 private fun CategoriesScreenPreview() {
     FinancesTheme {
         val previewState = CategoriesUiState.Success(
-            monthPeriod = MonthPeriod(year = 2026, month = 1),
+            monthPeriod = MonthPeriod.now(),
             categories = listOf(
                 CategorySummary(Category(1L, "Mercado", CategoryType.EXPENSE), Money.fromCents(125_075)),
                 CategorySummary(Category(2L, "Água", CategoryType.EXPENSE), Money.fromCents(15_020))

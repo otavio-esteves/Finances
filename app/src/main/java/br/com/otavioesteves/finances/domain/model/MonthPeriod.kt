@@ -15,6 +15,8 @@ data class MonthPeriod(
     fun toYearMonth(): YearMonth = YearMonth.of(year, month)
 
     companion object {
+        fun now(): MonthPeriod = from(YearMonth.now())
+
         fun from(yearMonth: YearMonth): MonthPeriod {
             return MonthPeriod(
                 year = yearMonth.year,
