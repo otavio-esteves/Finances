@@ -22,6 +22,14 @@ class RoomTransactionsRepository(
             .map { entities -> entities.map { it.toDomain() } }
     }
 
+    override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> {
+        val startDate = LocalDate.of(period.year, period.month, 1)
+        val endDate = startDate.plusMonths(1).minusDays(1)
+
+        return transactionDao.getMonthlyBalance(startDate.toString(), endDate.toString())
+            .map { Money.fromCents(it ?: 0L) }
+    }
+
     override suspend fun addTransaction(transaction: Transaction) {
         transactionDao.insertTransaction(transaction.toEntity())
     }

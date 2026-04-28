@@ -16,5 +16,8 @@ data class AddTransactionUiState(
     val dateError: String? = null,
     val notes: String = "",
     val categories: List<Category> = emptyList(),
-    val isSaveSuccessful: Boolean = false
+    val isSaveSuccessful: Boolean = false,
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val showDeleteConfirmation: Boolean = false
 )

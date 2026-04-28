@@ -21,6 +21,11 @@ interface AppContainer {
     val getCategorySummariesUseCase: GetCategorySummariesUseCase
     val getMonthlyBalanceUseCase: GetMonthlyBalanceUseCase
     val getTransactionsByMonthUseCase: GetTransactionsByMonthUseCase
+    val getTransactionUseCase: br.com.otavioesteves.finances.domain.usecase.GetTransactionUseCase
+    val deleteTransactionUseCase: br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase
+    val updateTransactionUseCase: br.com.otavioesteves.finances.domain.usecase.UpdateTransactionUseCase
+    val createBackupUseCase: br.com.otavioesteves.finances.domain.usecase.CreateBackupUseCase
+    val restoreBackupUseCase: br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase
     val dateProvider: DateProvider
 }
 
@@ -59,5 +64,29 @@ class DefaultAppContainer(
 
     override val getTransactionsByMonthUseCase: GetTransactionsByMonthUseCase by lazy {
         GetTransactionsByMonthUseCase(transactionsRepository)
+    }
+
+    override val getTransactionUseCase: br.com.otavioesteves.finances.domain.usecase.GetTransactionUseCase by lazy {
+        br.com.otavioesteves.finances.domain.usecase.GetTransactionUseCase(transactionsRepository)
+    }
+
+    override val deleteTransactionUseCase: br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase by lazy {
+        br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase(transactionsRepository)
+    }
+
+    override val updateTransactionUseCase: br.com.otavioesteves.finances.domain.usecase.UpdateTransactionUseCase by lazy {
+        br.com.otavioesteves.finances.domain.usecase.UpdateTransactionUseCase(transactionsRepository)
+    }
+
+    private val backupRepository: br.com.otavioesteves.finances.domain.repository.BackupRepository by lazy {
+        br.com.otavioesteves.finances.data.repository.RoomBackupRepository(database)
+    }
+
+    override val createBackupUseCase: br.com.otavioesteves.finances.domain.usecase.CreateBackupUseCase by lazy {
+        br.com.otavioesteves.finances.domain.usecase.CreateBackupUseCase(backupRepository)
+    }
+
+    override val restoreBackupUseCase: br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase by lazy {
+        br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase(backupRepository)
     }
 }

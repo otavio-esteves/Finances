@@ -15,10 +15,13 @@ Prover uma ferramenta leve e elegante para controle de finanças pessoais, opera
 - **Injeção de Dependências:** Manual via `AppContainer` e `ViewModelProvider.Factory`
 
 ## Arquitetura do Projeto
-O projeto segue princípios de Arquitetura Limpa para garantir testabilidade e manutenção:
-- **Presentation:** Camada de UI e ViewModels, lidando com estados e eventos.
-- **Domain:** Núcleo do negócio contendo Modelos (`Money`, `Transaction`, `Category`), Repositórios (interfaces) e Casos de Uso (`AddTransactionUseCase`, etc.).
-- **Data:** Implementações dos repositórios, DAOs do Room, Entidades e Mappers.
+O projeto segue os princípios da **Clean Architecture** e **SOLID** para garantir testabilidade e baixo acoplamento.
+
+Para detalhes técnicos, diagramas de fluxo e guias de implementação, consulte a [Documentação de Arquitetura](docs/ARCHITECTURE.md).
+
+---
+
+## Camadas do Projeto
 
 ## Funcionalidades Atuais
 - **Dashboard:** Visão geral do saldo mensal, total de receitas e total de despesas.
@@ -35,8 +38,23 @@ O projeto segue princípios de Arquitetura Limpa para garantir testabilidade e m
 
 ## Segurança e Privacidade
 - **Zero Cloud:** Os dados nunca saem do dispositivo. Não há integração com serviços de nuvem ou telemetria.
-- **Backup Seguro:** `android:allowBackup` está definido como `false`. Regras de extração de dados excluem explicitamente o banco de dados e arquivos de preferências de backups padrão do sistema.
-- **Logs Limpos:** O código é validado para não imprimir dados sensíveis (valores ou descrições) no Logcat.
+- **Backup Desativado:** `android:allowBackup` está definido como `false`. Isso impede que os dados financeiros sejam movidos para o backup automático do Google, garantindo que o controle permaneça no dispositivo físico.
+- **Prevenção de Captura de Tela:** O app utiliza `FLAG_SECURE` em sua Activity principal, impedindo capturas de tela (screenshots) e gravações de tela por outros aplicativos ou pelo próprio sistema, protegendo a visibilidade dos seus saldos e transações.
+- **Logs Limpos:** O código foi auditado para garantir que dados sensíveis (valores, descrições ou categorias) não sejam registrados no Logcat.
+
+### Riscos Remanescentes e Melhorias Futuras
+Embora o app siga boas práticas, segurança é uma jornada contínua. 
+
+**Riscos Atuais:**
+- **Acesso ao Dispositivo Desbloqueado:** Como não há PIN/Biometria interno, qualquer pessoa com o celular desbloqueado pode abrir o app.
+- **Falta de Criptografia no Repouso (At Rest):** O banco de dados SQLite está armazenado sem criptografia adicional (como SQLCipher), dependendo exclusivamente da sandbox do Android.
+
+**Roadmap de Segurança:**
+- [ ] **Autenticação Biométrica/PIN:** Adicionar uma camada de entrada para abrir o aplicativo.
+- [ ] **SQLCipher:** Implementar criptografia transparente no banco de dados Room.
+- [ ] **Ofuscação Avançada:** Configurar R8/ProGuard de forma agressiva para dificultar engenharia reversa.
+- [x] **Backup e Restauração Local:** Implementado via exportação de arquivo JSON.
+    - *Aviso:* O arquivo de backup não é criptografado. O usuário deve protegê-lo adequadamente (ex: movendo para um local seguro ou container criptografado).
 
 ## Qualidade e Testes
 - **Precisão Financeira:** Uso de classe `Money` (long cents) para evitar erros de ponto flutuante (`Double`).

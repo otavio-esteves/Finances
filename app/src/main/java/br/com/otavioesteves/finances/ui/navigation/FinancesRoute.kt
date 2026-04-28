@@ -15,6 +15,23 @@ sealed interface FinancesRoute {
         override val route: String = "add-transaction"
     }
 
+    data object Transactions : FinancesRoute {
+        override val route: String = "transactions"
+    }
+
+    data object Settings : FinancesRoute {
+        override val route: String = "settings"
+    }
+
+    data class EditTransaction(val transactionId: Long) : FinancesRoute {
+        override val route: String = "transactions/edit/$transactionId"
+
+        companion object {
+            const val ARG_TRANSACTION_ID = "transactionId"
+            const val ROUTE_PATTERN = "transactions/edit/{$ARG_TRANSACTION_ID}"
+        }
+    }
+
     data class CategoryDetails(val categoryId: Long) : FinancesRoute {
         override val route: String = "categories/$categoryId"
 

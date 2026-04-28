@@ -1,8 +1,10 @@
 package br.com.otavioesteves.finances.data.local.mapper
 
 import br.com.otavioesteves.finances.data.local.entity.CategoryEntity
+import br.com.otavioesteves.finances.data.local.entity.CategorySummaryEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
 import br.com.otavioesteves.finances.domain.model.Category
+import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.Transaction
 
@@ -11,6 +13,13 @@ fun CategoryEntity.toDomain(): Category {
         id = this.id,
         name = this.name,
         type = this.type
+    )
+}
+
+fun CategorySummaryEntity.toDomain(): CategorySummary {
+    return CategorySummary(
+        category = Category(id = id, name = name, type = type),
+        totalAmount = Money.fromCents(totalAmountCents)
     )
 }
 

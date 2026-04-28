@@ -11,6 +11,8 @@ import br.com.otavioesteves.finances.ui.screens.addtransaction.AddTransactionScr
 import br.com.otavioesteves.finances.ui.screens.categories.CategoriesScreen
 import br.com.otavioesteves.finances.ui.screens.categorydetails.CategoryDetailsScreen
 import br.com.otavioesteves.finances.ui.screens.dashboard.DashboardScreen
+import br.com.otavioesteves.finances.ui.screens.transactions.TransactionsScreen
+import br.com.otavioesteves.finances.ui.screens.settings.SettingsScreen
 
 @Composable
 fun FinancesNavHost(modifier: Modifier = Modifier) {
@@ -28,7 +30,41 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
                 },
                 onAddTransactionClick = {
                     navController.navigate(FinancesRoute.AddTransaction.route)
+                },
+                onHistoryClick = {
+                    navController.navigate(FinancesRoute.Transactions.route)
+                },
+                onSettingsClick = {
+                    navController.navigate(FinancesRoute.Settings.route)
                 }
+            )
+        }
+
+        composable(FinancesRoute.Settings.route) {
+            SettingsScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(FinancesRoute.Transactions.route) {
+            TransactionsScreen(
+                onBackClick = { navController.popBackStack() },
+                onTransactionClick = { transaction ->
+                    navController.navigate(FinancesRoute.EditTransaction(transaction.id).route)
+                }
+            )
+        }
+
+        composable(
+            route = FinancesRoute.EditTransaction.ROUTE_PATTERN,
+            arguments = listOf(
+                navArgument(FinancesRoute.EditTransaction.ARG_TRANSACTION_ID) {
+                    type = NavType.LongType
+                }
+            )
+        ) {
+            AddTransactionScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
 

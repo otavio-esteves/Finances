@@ -13,6 +13,18 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, id DESC")
     fun getTransactionsByDateRange(startDate: String, endDate: String): Flow<List<TransactionEntity>>
 
+    @Query("""
+        SELECT SUM(
+            CASE 
+                WHEN type = 'INCOME' THEN amountCents 
+                WHEN type = 'EXPENSE' THEN -amountCents 
+                ELSE 0 
+            END
+        ) FROM transactions 
+        WHERE date >= :startDate AND date <= :endDate
+    """)
+    fun getMonthlyBalance(startDate: String, endDate: String): Flow<Long?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionEntity)
 
@@ -21,4 +33,13 @@ interface TransactionDao {
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteTransactionById(id: Long)
+
+    @Query("DELETE FROM transactions")
+    suspend fun deleteAll()
+
+    @Query("SELECT * FROM transactions")
+    suspend fun getAllTransactions(): List<TransactionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTransactions(transactions: List<TransactionEntity>)
 }

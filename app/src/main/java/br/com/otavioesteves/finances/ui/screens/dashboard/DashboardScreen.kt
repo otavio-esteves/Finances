@@ -36,6 +36,8 @@ import br.com.otavioesteves.finances.utils.formatMonthPeriod
 fun DashboardScreen(
     onCategoriesClick: () -> Unit,
     onAddTransactionClick: () -> Unit,
+    onHistoryClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
@@ -45,6 +47,8 @@ fun DashboardScreen(
         state = uiState,
         onCategoriesClick = onCategoriesClick,
         onAddTransactionClick = onAddTransactionClick,
+        onHistoryClick = onHistoryClick,
+        onSettingsClick = onSettingsClick,
         modifier = modifier
     )
 }
@@ -54,6 +58,8 @@ private fun DashboardContent(
     state: DashboardUiState,
     onCategoriesClick: () -> Unit,
     onAddTransactionClick: () -> Unit,
+    onHistoryClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -147,8 +153,20 @@ private fun DashboardContent(
                 onClick = onAddTransactionClick
             )
             PrimaryActionButton(
+                text = "Ver Histórico",
+                onClick = onHistoryClick,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            PrimaryActionButton(
                 text = "Ver Categorias",
                 onClick = onCategoriesClick,
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
+            PrimaryActionButton(
+                text = "Configurações",
+                onClick = onSettingsClick,
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = MaterialTheme.colorScheme.onSurface
             )
@@ -168,7 +186,9 @@ private fun DashboardScreenPreview() {
                 totalExpenses = Money.fromCents(138_440)
             ),
             onCategoriesClick = {},
-            onAddTransactionClick = {}
+            onAddTransactionClick = {},
+            onHistoryClick = {},
+            onSettingsClick = {}
         )
     }
 }
