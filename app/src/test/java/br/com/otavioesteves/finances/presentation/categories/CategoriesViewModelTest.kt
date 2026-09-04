@@ -18,6 +18,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import java.time.LocalDate
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CategoriesViewModelTest {
@@ -27,6 +28,7 @@ class CategoriesViewModelTest {
     private val fakeMonthPeriod = MonthPeriod(year = 2025, month = 12)
     private val fakeDateProvider = object : DateProvider {
         override fun getCurrentMonthPeriod(): MonthPeriod = fakeMonthPeriod
+        override fun getCurrentDate(): LocalDate = LocalDate.of(2025, 12, 1)
     }
 
     private class FakeCategoriesRepository : CategoriesRepository {

@@ -3,6 +3,7 @@ package br.com.otavioesteves.finances.data.repository
 import br.com.otavioesteves.finances.data.local.dao.TransactionDao
 import br.com.otavioesteves.finances.data.local.mapper.toDomain
 import br.com.otavioesteves.finances.data.local.mapper.toEntity
+import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository

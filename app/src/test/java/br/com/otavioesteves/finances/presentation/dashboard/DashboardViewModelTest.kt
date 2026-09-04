@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.presentation.dashboard
 
 import br.com.otavioesteves.finances.domain.DateProvider
+import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
@@ -18,6 +19,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import java.time.LocalDate
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DashboardViewModelTest {
@@ -27,10 +29,12 @@ class DashboardViewModelTest {
     private val fakeMonthPeriod = MonthPeriod(year = 2025, month = 12)
     private val fakeDateProvider = object : DateProvider {
         override fun getCurrentMonthPeriod(): MonthPeriod = fakeMonthPeriod
+        override fun getCurrentDate(): LocalDate = LocalDate.of(2025, 12, 1)
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
+        override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {}
         override suspend fun removeTransaction(transactionId: Long) {}
         override suspend fun updateTransaction(transaction: Transaction) {}

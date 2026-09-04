@@ -48,6 +48,7 @@ class AddTransactionViewModelTest {
         var shouldFailDelete = false
 
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(transactions)
+        override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {
             transactions = transactions + transaction
         }

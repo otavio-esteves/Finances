@@ -112,6 +112,18 @@ class TransactionUseCasesTest {
             }
         }
 
+        override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> {
+            return getTransactions(period).map { currentTransactions ->
+                currentTransactions.fold(Money.Zero) { balance, transaction ->
+                    when (transaction.type) {
+                        TransactionType.INCOME -> balance + transaction.amount
+                        TransactionType.EXPENSE -> balance - transaction.amount
+                        TransactionType.TRANSFER -> balance
+                    }
+                }
+            }
+        }
+
         override suspend fun addTransaction(transaction: Transaction) {
             transactions.value = transactions.value + transaction
         }

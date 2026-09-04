@@ -22,3 +22,5 @@ value class Money(
         fun fromCents(cents: Long): Money = Money(cents)
     }
 }
+
+fun Iterable<Money>.sumMoney(): Money = fold(Money.Zero, Money::plus)

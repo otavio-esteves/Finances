@@ -3,6 +3,7 @@ package br.com.otavioesteves.finances.data.repository
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
+import br.com.otavioesteves.finances.domain.model.sumMoney
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine

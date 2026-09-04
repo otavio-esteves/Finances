@@ -2,11 +2,11 @@ package br.com.otavioesteves.finances.presentation.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import br.com.otavioesteves.finances.data.repository.sumMoney
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.model.sumMoney
 import br.com.otavioesteves.finances.domain.usecase.GetMonthlyBalanceUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
 import kotlinx.coroutines.flow.SharingStarted

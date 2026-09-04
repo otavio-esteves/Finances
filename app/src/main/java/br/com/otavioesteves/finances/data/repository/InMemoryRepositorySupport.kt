@@ -8,8 +8,6 @@ internal object InMemoryRepositorySupport {
     val sharedStore: InMemoryFinanceStore = InMemoryFinanceStore.createDefault()
 }
 
-internal fun Iterable<Money>.sumMoney(): Money = fold(Money.Zero, Money::plus)
-
 internal fun Transaction.contributionAmount(): Money {
     return when (type) {
         TransactionType.INCOME -> amount

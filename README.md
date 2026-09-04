@@ -27,14 +27,14 @@ Para detalhes técnicos, diagramas de fluxo e guias de implementação, consulte
 - **Dashboard:** Visão geral do saldo mensal, total de receitas e total de despesas.
 - **Resumo por Categoria:** Listagem das categorias com o montante gasto/recebido no mês selecionado.
 - **Nova Transação:** Cadastro de transações com descrição, valor (parser robusto), tipo (receita/despesa), categoria, data e observações.
+- **Gestão de Transações:** Histórico com edição e exclusão de transações existentes.
+- **Exportação e Backup:** Exportação em CSV/JSON e backup/restauração local em JSON.
 - **Persistência:** Todos os dados são salvos localmente e persistem entre reinicializações do app.
 - **Design Minimalista:** Tema escuro padrão com alta legibilidade e hierarquia visual clara.
 
 ## Planejado (Backlog)
-- Edição e exclusão de transações existentes.
 - Filtro dinâmico para navegar entre diferentes meses/anos.
 - Relatórios detalhados e gráficos de gastos.
-- Exportação de dados (CSV/JSON).
 
 ## Segurança e Privacidade
 - **Zero Cloud:** Os dados nunca saem do dispositivo. Não há integração com serviços de nuvem ou telemetria.

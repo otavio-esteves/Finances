@@ -12,9 +12,12 @@ import br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -34,6 +37,7 @@ class TransactionsViewModelTest {
     private val fakeMonthPeriod = MonthPeriod(year = 2025, month = 12)
     private val fakeDateProvider = object : DateProvider {
         override fun getCurrentMonthPeriod(): MonthPeriod = fakeMonthPeriod
+        override fun getCurrentDate(): LocalDate = LocalDate.of(2025, 12, 1)
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
@@ -41,6 +45,7 @@ class TransactionsViewModelTest {
         var shouldFail = false
 
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
+        override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {}
         override suspend fun removeTransaction(transactionId: Long) {
             if (shouldFail) throw Exception("DB Error")
@@ -67,9 +72,13 @@ class TransactionsViewModelTest {
     @Test
     fun `onDeleteRequest updates uiState with transaction to delete`() = runTest {
         val viewModel = createViewModel(FakeTransactionsRepository())
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect()
+        }
         val transaction = createFakeTransaction(id = 1)
         
         viewModel.onDeleteRequest(transaction)
+        testDispatcher.scheduler.advanceUntilIdle()
         
         assertEquals(transaction, viewModel.uiState.value.transactionToDelete)
     }
@@ -102,6 +111,9 @@ class TransactionsViewModelTest {
     fun `onDeleteConfirm failure updates error state`() = runTest {
         val repository = FakeTransactionsRepository().apply { shouldFail = true }
         val viewModel = createViewModel(repository)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect()
+        }
         
         viewModel.onDeleteRequest(createFakeTransaction(id = 1))
         viewModel.onDeleteConfirm()
