@@ -16,8 +16,8 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
 
 ### 2. Camada de Presentation (ViewModel)
 - **Tecnologia:** `ViewModel` do Android, `StateFlow`.
-- **Responsabilidade:** Gerenciar o estado da UI (**UDF - Unidirectional Data Flow**). Recebe eventos da UI e interage com os *Use Cases*.
-- **Comunicação:** Expõe um único `StateFlow` contendo o `UiState`.
+- **Responsabilidade:** Gerenciar o estado da UI (**UDF - Unidirectional Data Flow**). Recebe eventos da UI e interage com os *Use Cases* e interfaces de repositórios do domínio injetadas por construtor.
+- **Comunicação:** Expõe `uiState` via `StateFlow`; `TransactionsViewModel` também expõe o período selecionado.
 
 ### 3. Camada de Domain (Domínio)
 - **Componentes:** *Models*, *Use Cases*, *Repository Interfaces*.
@@ -34,14 +34,16 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
 
 ## Fluxo de Dados (Exemplo: Listagem)
 
-`UI (Compose)` 
-  → aciona → `ViewModel.loadData()` 
-  → invoca → `GetTransactionsUseCase()` 
-  → chama → `TransactionsRepository.getTransactions()` 
-  → requisita → `TransactionDao.getTransactions()` 
-  → consulta → `Room Database`
+A UI coleta `TransactionsViewModel.uiState`. O ViewModel observa o período selecionado e combina os fluxos de transações e categorias:
 
-O dado retorna mapeado via `Mappers` até o `ViewModel`, que atualiza o `UiState` via `Flow`.
+`TransactionsViewModel`
+  → `GetTransactionsByMonthUseCase(period)`
+  → `TransactionsRepository.getTransactions(period)`
+  → `RoomTransactionsRepository`
+  → `TransactionDao.getTransactionsByDateRange(startDate, endDate)`
+  → `Room Database`
+
+O repositório converte entidades em modelos de domínio via mappers. O ViewModel combina esses dados com `CategoriesRepository.getCategories()` e expõe o estado à UI. A coleta do fluxo de transações usa `SharingStarted.WhileSubscribed(5_000)`.
 
 ---
 
@@ -53,6 +55,8 @@ O dado retorna mapeado via `Mappers` até o `ViewModel`, que atualiza o `UiState
 4. **Imutabilidade:** Os estados da UI e modelos de domínio devem ser preferencialmente classes de dados imutáveis (`data class` com `val`).
 
 ---
+
+A implementação atual usa campos de estado para sucesso/erro e `LaunchedEffect` para reagir a eles. A tela de configurações limpa as mensagens após exibição; isso não comprova entrega única em todas as telas, como orienta a regra acima.
 
 ## Como Adicionar uma Nova Feature
 
@@ -75,6 +79,8 @@ O dado retorna mapeado via `Mappers` até o `ViewModel`, que atualiza o `UiState
 ---
 
 ## Como Criar uma Nova Migration do Room
+
+O banco atual está na versão 1. `MigrationTest.kt` contém apenas um teste de criação dessa versão, não uma validação de migração entre versões. Para executá-lo, os schemas precisam ser disponibilizados nos assets de `androidTest`; essa configuração ainda não está presente.
 
 1. **Exportar Schema:** Certifique-se de que o schema atual está versionado na pasta `app/schemas`.
 2. **Atualizar Banco:** Altere a versão em `AppDatabase.kt` (ex: `version = 2`).
