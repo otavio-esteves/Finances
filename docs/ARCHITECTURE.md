@@ -80,7 +80,7 @@ A implementação atual usa campos de estado para sucesso/erro e `LaunchedEffect
 
 ## Como Criar uma Nova Migration do Room
 
-O banco atual está na versão 1. `MigrationTest.kt` contém apenas um teste de criação dessa versão, não uma validação de migração entre versões. Para executá-lo, os schemas precisam ser disponibilizados nos assets de `androidTest`; essa configuração ainda não está presente.
+O banco atual está na versão 1. `MigrationTest.kt` contém apenas um teste de criação dessa versão, não uma validação de migração entre versões. O schema exportado em `app/schemas` é incluído nos assets de `androidTest`, e o CI executa o teste em um emulador; quando a versão 2 existir, adicione a migration e um caso `runMigrationsAndValidate` para a transição v1 → v2.
 
 1. **Exportar Schema:** Certifique-se de que o schema atual está versionado na pasta `app/schemas`.
 2. **Atualizar Banco:** Altere a versão em `AppDatabase.kt` (ex: `version = 2`).

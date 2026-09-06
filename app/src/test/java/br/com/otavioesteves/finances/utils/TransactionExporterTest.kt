@@ -6,6 +6,7 @@ import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.LocalDate
 
@@ -55,5 +56,47 @@ class TransactionExporterTest {
         assertTrue(csv.contains("\"Café com \"\"aspas\"\"\""))
         // JSON should escape quotes with backslash
         assertTrue(json.contains("\"description\": \"Café com \\\"aspas\\\"\""))
+    }
+
+    @Test
+    fun `export CSV quotes commas line breaks carriage returns and category text`() {
+        val transaction = Transaction(
+            4L,
+            "Descrição, com\nquebra\rde linha",
+            Money.fromCents(500),
+            3L,
+            date,
+            TransactionType.EXPENSE,
+            notes = "Observação, com \"aspas\""
+        )
+        val csv = exporter.export(
+            listOf(transaction),
+            mapOf(3L to Category(3L, "Categoria, \"especial\"", CategoryType.EXPENSE)),
+            ExportFormat.CSV
+        )
+
+        assertEquals(
+            "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações\n" +
+                "4,2026-04-27,\"Descrição, com\nquebra\rde linha\",500,EXPENSE," +
+                "\"Categoria, \"\"especial\"\"\",\"Observação, com \"\"aspas\"\"\"",
+            csv
+        )
+    }
+
+    @Test
+    fun `export CSV prefixes formula-like text while retaining its value`() {
+        val transaction = transactions.first().copy(
+            description = "=HYPERLINK(\"https://example.invalid\")",
+            notes = "-1+1"
+        )
+        val csv = exporter.export(
+            listOf(transaction),
+            mapOf(1L to Category(1L, "+Categoria", CategoryType.EXPENSE)),
+            ExportFormat.CSV
+        )
+
+        assertTrue(csv.contains("\"'=HYPERLINK(\"\"https://example.invalid\"\")\""))
+        assertTrue(csv.contains("\"'+Categoria\""))
+        assertTrue(csv.contains("\"'-1+1\""))
     }
 }

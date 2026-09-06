@@ -11,14 +11,19 @@ class ArchitectureTest {
     
     private val rootDir: File by lazy {
         var current: File = File(".").absoluteFile
-        while (current.parentFile != null && !File(current, "settings.gradle.kts").exists()) {
-            current = current.parentFile!!
+        while (!File(current, "settings.gradle.kts").exists()) {
+            current = current.parentFile ?: break
+        }
+        require(File(current, "settings.gradle.kts").isFile) {
+            "Project root with settings.gradle.kts was not found from ${File(".").absolutePath}"
         }
         current
     }
 
     private val appDir: File by lazy {
-        File(rootDir, "app")
+        File(rootDir, "app").also {
+            require(it.isDirectory) { "Required app directory does not exist: ${it.absolutePath}" }
+        }
     }
 
     @Test
@@ -48,11 +53,13 @@ class ArchitectureTest {
     @Test
     fun viewModels_shouldNotInstantiateRepositoryImplDirectly() {
         val viewModelDir = File(appDir, "$basePackagePath/presentation")
-        if (!viewModelDir.exists()) return
+        require(viewModelDir.isDirectory) { "Required presentation directory does not exist: ${viewModelDir.absolutePath}" }
 
-        viewModelDir.walkTopDown()
+        val viewModels = viewModelDir.walkTopDown()
             .filter { it.isFile && it.extension == "kt" && it.name.endsWith("ViewModel.kt") }
-            .forEach { file ->
+            .toList()
+        require(viewModels.isNotEmpty()) { "No ViewModel files found under ${viewModelDir.absolutePath}" }
+        viewModels.forEach { file ->
                 val content = file.readText()
                 assertFalse(
                     "ViewModel ${file.name} should not instantiate RepositoryImpl directly",
@@ -65,7 +72,7 @@ class ArchitectureTest {
     @Test
     fun money_shouldNotUseDoubleOrFloat() {
         val moneyFile = File(appDir, "$basePackagePath/domain/model/Money.kt")
-        if (!moneyFile.exists()) return
+        require(moneyFile.isFile) { "Required Money model does not exist: ${moneyFile.absolutePath}" }
         
         val content = moneyFile.readText()
         assertFalse("Money should not use Double", content.contains("Double"))
@@ -75,7 +82,7 @@ class ArchitectureTest {
     @Test
     fun project_shouldNotUseWrongPackage() {
         val srcDir = File(appDir, "src")
-        if (!srcDir.exists()) return
+        require(srcDir.isDirectory) { "Required source directory does not exist: ${srcDir.absolutePath}" }
         
         srcDir.walkTopDown()
             .filter { it.isFile && (it.extension == "kt" || it.extension == "xml") }
@@ -91,7 +98,7 @@ class ArchitectureTest {
 
     private fun checkImports(relativeContextPath: String, validator: (String) -> Unit) {
         val dir = File(appDir, relativeContextPath)
-        if (!dir.exists()) return
+        require(dir.isDirectory) { "Required architecture directory does not exist: ${dir.absolutePath}" }
         
         dir.walkTopDown()
             .filter { it.isFile && it.extension == "kt" }

@@ -35,7 +35,7 @@ class TransactionExporter {
         val header = "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações"
         val rows = transactions.map { t ->
             val categoryName = categories[t.categoryId]?.name ?: "Desconhecida"
-            "${t.id},${t.date},\"${t.description.escapeCsv()}\",${t.amount.cents},${t.type},\"$categoryName\",\"${(t.notes ?: "").escapeCsv()}\""
+            "${t.id},${t.date},${t.description.toCsvField()},${t.amount.cents},${t.type},${categoryName.toCsvField()},${(t.notes ?: "").toCsvField()}"
         }
         return (listOf(header) + rows).joinToString("\n")
     }
@@ -57,7 +57,12 @@ class TransactionExporter {
         return json.encodeToString(models)
     }
 
-    private fun String.escapeCsv(): String {
-        return this.replace("\"", "\"\"")
+    private fun String.toCsvField(): String {
+        val safeValue = if (firstOrNull() in FORMULA_PREFIXES) "'$this" else this
+        return "\"${safeValue.replace("\"", "\"\"")}\""
+    }
+
+    private companion object {
+        val FORMULA_PREFIXES = setOf('=', '+', '-', '@')
     }
 }

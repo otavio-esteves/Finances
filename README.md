@@ -17,6 +17,10 @@ Prover uma ferramenta leve e elegante para controle de finanças pessoais, opera
 ## Arquitetura do Projeto
 O projeto segue os princípios da **Clean Architecture** e **SOLID** para garantir testabilidade e baixo acoplamento.
 
+```text
+UI → Presentation → Domain ← Data
+```
+
 Para detalhes técnicos, diagramas de fluxo e guias de implementação, consulte a [Documentação de Arquitetura](docs/ARCHITECTURE.md).
 
 ---
@@ -86,7 +90,7 @@ A versão do KSP acompanha Kotlin 2.0.21. A combinação atual com Gradle/AGP es
   ./gradlew lint
   ```
 
-O CI executa `test`, `lint` e `assembleDebug`, nessa ordem, com Temurin 17. O APK é gerado em `app/build/outputs/apk/debug/app-debug.apk`. Os testes em `app/src/androidTest` exigem dispositivo/emulador e não são executados por `test` nem pelo workflow atual.
+O CI executa `test`, `lint`, `assembleDebug` e `connectedDebugAndroidTest`, nessa ordem, com Temurin 17. O APK é gerado em `app/build/outputs/apk/debug/app-debug.apk`. Os testes em `app/src/androidTest` exigem um emulador Android e são executados no CI com API 35.
 
 ---
 *Este projeto é um MVP funcional em constante evolução.*
