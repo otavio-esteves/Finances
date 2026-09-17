@@ -2,16 +2,29 @@ package br.com.otavioesteves.finances.di
 
 import android.content.Context
 import br.com.otavioesteves.finances.data.DefaultDateProvider
+import br.com.otavioesteves.finances.data.ai.RuleBasedLocalAiRepository
 import br.com.otavioesteves.finances.data.local.AppDatabase
 import br.com.otavioesteves.finances.data.repository.RoomCategoriesRepository
+import br.com.otavioesteves.finances.data.repository.RoomChatRepository
+import br.com.otavioesteves.finances.data.repository.RoomStatementImportRepository
 import br.com.otavioesteves.finances.data.repository.RoomTransactionsRepository
+import br.com.otavioesteves.finances.data.statement.CsvOfxStatementParser
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
+import br.com.otavioesteves.finances.domain.repository.ChatRepository
+import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
+import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
+import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.AddTransactionUseCase
+import br.com.otavioesteves.finances.domain.usecase.ConfirmStatementImportUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
+import br.com.otavioesteves.finances.domain.usecase.GetChatHistoryUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetMonthlyBalanceUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
+import br.com.otavioesteves.finances.domain.usecase.ImportStatementUseCase
+import br.com.otavioesteves.finances.domain.usecase.SendChatMessageUseCase
+import br.com.otavioesteves.finances.domain.usecase.SynthesizeStatementUseCase
 import kotlinx.coroutines.CoroutineScope
 
 interface AppContainer {
@@ -27,6 +40,15 @@ interface AppContainer {
     val createBackupUseCase: br.com.otavioesteves.finances.domain.usecase.CreateBackupUseCase
     val restoreBackupUseCase: br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase
     val dateProvider: DateProvider
+    val statementParserRepository: StatementParserRepository
+    val localAiRepository: LocalAiRepository
+    val chatRepository: ChatRepository
+    val statementImportRepository: StatementImportRepository
+    val importStatementUseCase: ImportStatementUseCase
+    val synthesizeStatementUseCase: SynthesizeStatementUseCase
+    val confirmStatementImportUseCase: ConfirmStatementImportUseCase
+    val sendChatMessageUseCase: SendChatMessageUseCase
+    val getChatHistoryUseCase: GetChatHistoryUseCase
 }
 
 class DefaultAppContainer(
@@ -88,5 +110,47 @@ class DefaultAppContainer(
 
     override val restoreBackupUseCase: br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase by lazy {
         br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase(backupRepository)
+    }
+
+    override val statementParserRepository: StatementParserRepository by lazy {
+        CsvOfxStatementParser()
+    }
+
+    override val localAiRepository: LocalAiRepository by lazy {
+        RuleBasedLocalAiRepository(dateProvider)
+    }
+
+    override val chatRepository: ChatRepository by lazy {
+        RoomChatRepository(database.chatMessageDao())
+    }
+
+    override val statementImportRepository: StatementImportRepository by lazy {
+        RoomStatementImportRepository(database.statementImportDao())
+    }
+
+    override val importStatementUseCase: ImportStatementUseCase by lazy {
+        ImportStatementUseCase(statementParserRepository)
+    }
+
+    override val synthesizeStatementUseCase: SynthesizeStatementUseCase by lazy {
+        SynthesizeStatementUseCase(localAiRepository, categoriesRepository)
+    }
+
+    override val confirmStatementImportUseCase: ConfirmStatementImportUseCase by lazy {
+        ConfirmStatementImportUseCase(addTransactionUseCase, statementImportRepository, dateProvider)
+    }
+
+    override val sendChatMessageUseCase: SendChatMessageUseCase by lazy {
+        SendChatMessageUseCase(
+            localAiRepository,
+            chatRepository,
+            getMonthlyBalanceUseCase,
+            getCategorySummariesUseCase,
+            dateProvider
+        )
+    }
+
+    override val getChatHistoryUseCase: GetChatHistoryUseCase by lazy {
+        GetChatHistoryUseCase(chatRepository)
     }
 }

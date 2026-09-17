@@ -9,7 +9,8 @@ data class Transaction(
     val categoryId: Long,
     val date: LocalDate,
     val type: TransactionType,
-    val notes: String? = null
+    val notes: String? = null,
+    val origin: TransactionOrigin = TransactionOrigin.MANUAL
 ) {
     init {
         require(id >= 0) { "id must be positive or zero" }
