@@ -2,8 +2,10 @@
 
 Este documento descreve a estrutura arquitetural, os princípios de design e os fluxos de dados do aplicativo Finances.
 
+> **Nota de escopo (2026):** o projeto está migrando de um app de lançamento manual de transações para um app centrado em **importação de extratos bancários + síntese por IA local**, com uma tela inicial (gráfico de uso de capital por categoria) e uma segunda tela de chat com IA local, acessada por swipe. Este documento já descreve a arquitetura-alvo; seções marcadas como **(planejado)** ainda não estão implementadas.
+
 ## Visão Geral
-O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em camadas para garantir separação de interesses, testabilidade e manutenibilidade.
+O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em camadas para garantir separação de interesses, testabilidade e manutenibilidade. A migração de escopo adiciona duas responsabilidades novas ao domínio: **importar e interpretar extratos** e **sintetizar/conversar via IA local** — ambas mantendo o princípio de que nenhum dado financeiro do usuário sai do dispositivo.
 
 ---
 
@@ -13,26 +15,88 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
 - **Tecnologia:** Jetpack Compose.
 - **Responsabilidade:** Renderizar o estado da tela e capturar interações do usuário.
 - **Princípio:** Deve ser "burra" e puramente declarativa. Não contém lógica de negócio ou acesso direto a dados.
+- **Navegação principal (planejado):** a raiz do app passa a ser um `HorizontalPager` de duas páginas — **Home** (índice 0) e **Chat** (índice 1) — navegáveis por swipe. As demais telas (Transações, Categorias, Importar Extrato, Configurações) são acessadas a partir da Home como navegação secundária (`NavHost` aninhado ou rotas empilhadas sobre o pager), não como páginas do pager.
 
 ### 2. Camada de Presentation (ViewModel)
 - **Tecnologia:** `ViewModel` do Android, `StateFlow`.
 - **Responsabilidade:** Gerenciar o estado da UI (**UDF - Unidirectional Data Flow**). Recebe eventos da UI e interage com os *Use Cases* e interfaces de repositórios do domínio injetadas por construtor.
 - **Comunicação:** Expõe `uiState` via `StateFlow`; `TransactionsViewModel` também expõe o período selecionado.
+- **Novos ViewModels (planejado):** `ChatViewModel` (mensagens, envio, streaming de resposta) e `ImportStatementViewModel` (seleção de arquivo, progresso, resultado da síntese). `DashboardViewModel` passa a expor também os dados de composição por categoria para o gráfico da Home.
 
 ### 3. Camada de Domain (Domínio)
 - **Componentes:** *Models*, *Use Cases*, *Repository Interfaces*.
 - **Responsabilidade:** Contém as regras de negócio puras. É o núcleo do app.
-- **Restrição:** **Não deve depender de bibliotecas Android**. Deve ser código Kotlin puro.
-- **Models:** Uso obrigatório da classe `Money` (centavos em `Long`) para evitar erros de precisão numérica.
+- **Restrição:** **Não deve depender de bibliotecas Android**. Deve ser código Kotlin puro. Isso vale também para as novas interfaces de importação e IA — o domínio não conhece o parser de PDF nem o motor de inferência concretos, apenas seus contratos.
+- **Models:** uso obrigatório da classe `Money` (centavos em `Long`) para evitar erros de precisão numérica.
+- **Novos modelos (implementado):**
+  - `ImportedStatement`: metadados de um extrato importado (nome do arquivo, período, quantidade de transações, data de importação).
+  - `RawStatementEntry`: uma linha bruta extraída do extrato (descrição, valor, data), antes da categorização.
+  - `CategorySuggestion`: sugestão de categoria feita pela IA local para uma `RawStatementEntry`.
+  - `ChatMessage`: mensagem de uma conversa com a IA local (papel, conteúdo, timestamp).
+  - `TransactionOrigin`: enum (`MANUAL` / `IMPORTED`) que marca a proveniência de uma `Transaction`.
+- **Novas interfaces de repositório (implementado):**
+  - `StatementParserRepository`: contrato para extrair `RawStatementEntry` de um arquivo (implementado por `CsvOfxStatementParser` na camada de Data; PDF é fase 2, ainda não implementada).
+  - `LocalAiRepository`: contrato para categorização (`suggestCategories(entries, knownCategories): List<CategorySuggestion>`) e chat (`sendMessage(message, context): ChatMessage`), isolando o domínio do motor de IA escolhido.
+  - `ChatRepository`: persistência do histórico de conversas (`getMessages(): Flow<List<ChatMessage>>`, `addMessage(message)`).
+  - `StatementImportRepository`: persistência do histórico de importações (`getImports(): Flow<List<ImportedStatement>>`, `addImport(statementImport)`).
+- **Use Cases (implementado):** `ImportStatementUseCase` (lê o arquivo via `StatementParserRepository`), `SynthesizeStatementUseCase` (sugere categorias via `LocalAiRepository`), `ConfirmStatementImportUseCase` (persiste as sugestões confirmadas como `Transaction(origin = IMPORTED)` via `AddTransactionUseCase` e registra o import via `StatementImportRepository`), `SendChatMessageUseCase` (monta o `FinancialContext`, persiste a mensagem do usuário e a resposta via `ChatRepository`, e retorna a resposta), `GetChatHistoryUseCase`. `GetCategorySummariesUseCase`, já existente, é reaproveitado como fonte de dados do gráfico da Home (**planejado**: a tela ainda não consome esses dados em forma de gráfico).
 
 ### 4. Camada de Data (Dados)
 - **Componentes:** *Room Database*, *DAOs*, *Repository Implementations*, *Mappers*.
 - **Tecnologia:** Room.
 - **Responsabilidade:** Persistência local e mapeamento de dados externos/locais para o domínio.
+- **Novos componentes (implementado):**
+  - `CsvOfxStatementParser`: implementação de `StatementParserRepository` para CSV/OFX (fase 1). `PdfStatementParser` (fase 2, extração de texto/tabelas) ainda **planejado**.
+  - `RuleBasedLocalAiRepository`: implementação provisória de `LocalAiRepository` por correspondência de palavra-chave, até a escolha do motor de IA real (ver [Decisão de Arquitetura: Motor de IA Local](#decisão-de-arquitetura-motor-de-ia-local)). É a única camada que conhecerá a biblioteca/SDK de IA concreta quando essa decisão for tomada.
+  - `RoomChatRepository` e `RoomStatementImportRepository`: implementações Room de `ChatRepository`/`StatementImportRepository`.
+  - Entidades Room adicionais: `StatementImportEntity` (histórico de importações) e `ChatMessageEntity` (histórico de conversas), além do campo `origin` (`MANUAL`/`IMPORTED`) em `TransactionEntity`, já mapeado de ponta a ponta até o modelo de domínio `Transaction`.
 
 ---
 
-## Fluxo de Dados (Exemplo: Listagem)
+## Decisão de Arquitetura: Motor de IA Local
+
+**Status: em aberto.** Duas opções candidatas foram avaliadas para a camada `LocalAiRepository`:
+
+1. **Gemini Nano via AICore / ML Kit GenAI APIs** — API oficial do Android para IA generativa on-device. Não aumenta o tamanho do APK e é mantida pelo Google, mas só está disponível em dispositivos compatíveis (ex: Pixel 8+ e similares), exigindo uma estratégia de fallback (ex: categorização manual, chat desabilitado com aviso) nos demais aparelhos.
+2. **MediaPipe LLM Inference API + modelo embarcado** (ex: Gemma 2B/3 1B em formato `.task`/gguf) — funciona na maioria dos Androids modernos e dá controle total sobre modelo e prompt, sem depender de serviço do Google em runtime. Custa tamanho de app/download inicial (centenas de MB) e desempenho/bateria piores que uma solução nativa do SO.
+
+**Regra inegociável, independente da escolha:** o motor de IA deve processar tudo **on-device**, sem chamadas de rede em runtime — nem para categorização de extratos, nem para o chat. Isso mantém a app sem a permissão `INTERNET` como hoje. A escolha final, uma vez tomada, deve ser registrada aqui com a justificativa e o plano de fallback para dispositivos incompatíveis.
+
+---
+
+## Fluxo de Dados
+
+### Exemplo 1: Importação de Extrato e Síntese (domínio/dados implementados; UI planejada)
+
+`ImportStatementScreen` (planejado — seleção de arquivo)
+  → `ImportStatementViewModel` (planejado)
+  → `ImportStatementUseCase(fileName, bytes)` → `StatementParserRepository.parse(...)` → lista de `RawStatementEntry`
+  → `SynthesizeStatementUseCase(entries)` → `LocalAiRepository.suggestCategories(entries, knownCategories)` → lista de `CategorySuggestion`
+  → usuário revisa/confirma as sugestões na UI (planejado)
+  → `ConfirmStatementImportUseCase(fileName, confirmedSuggestions)` → persiste cada sugestão como `Transaction(origin = IMPORTED)` via `AddTransactionUseCase`, e registra o import via `StatementImportRepository`
+
+O extrato original não é retido após a importação; apenas as transações resultantes (com origem `IMPORTED`) e os metadados em `StatementImportEntity` persistem. A cadeia de casos de uso já existe e está coberta por testes; falta apenas a tela que a aciona.
+
+### Exemplo 2: Dashboard com Gráfico por Categoria (planejado)
+
+A UI (`DashboardScreen`) coleta `DashboardViewModel.uiState`, que combina:
+- `GetMonthlyBalanceUseCase(period)` → saldo, receitas e despesas do mês.
+- `GetCategorySummariesUseCase(period)` → composição por categoria, usada para renderizar o gráfico de uso de capital.
+
+O gráfico em si (e a lib de gráficos a ser escolhida) ainda não existem — a Home atual mostra apenas totais numéricos.
+
+### Exemplo 3: Chat com IA Local (domínio/dados implementados; UI planejada)
+
+`ChatScreen` (planejado — segunda página do pager, à direita da Home)
+  → `ChatViewModel` (planejado)
+  → `SendChatMessageUseCase(message)`:
+    1. monta o `FinancialContext` a partir dos dados já persistidos (via `GetMonthlyBalanceUseCase`/`GetCategorySummariesUseCase`), nunca enviado para fora do dispositivo;
+    2. persiste a mensagem do usuário via `ChatRepository.addMessage`;
+    3. chama `LocalAiRepository.sendMessage(message, context)` e persiste a resposta via `ChatRepository.addMessage`;
+    4. retorna a resposta.
+  → `GetChatHistoryUseCase` expõe o histórico persistido (`ChatMessageEntity`) para quando a tela existir.
+
+### Exemplo 4: Listagem de Transações (existente)
 
 A UI coleta `TransactionsViewModel.uiState`. O ViewModel observa o período selecionado e combina os fluxos de transações e categorias:
 
@@ -49,10 +113,11 @@ O repositório converte entidades em modelos de domínio via mappers. O ViewMode
 
 ## Regras e Convenções Inegociáveis
 
-1. **Separação de Camadas:** A UI nunca acessa o DAO. O Domínio nunca conhece o Banco de Dados.
-2. **Tratamento de Moeda:** Nunca use `Double` ou `Float` para valores monetários. Use sempre a classe `Money`.
-3. **Eventos Únicos:** Eventos de navegação ou mensagens rápidas (Toast/Snackbar) devem ser tratados como eventos únicos (ex: via `LaunchedEffect`), não como estado persistente.
-4. **Imutabilidade:** Os estados da UI e modelos de domínio devem ser preferencialmente classes de dados imutáveis (`data class` com `val`).
+1. **Separação de Camadas:** a UI nunca acessa o DAO. O Domínio nunca conhece o Banco de Dados, o parser de extrato concreto ou o motor de IA concreto — apenas suas interfaces (`StatementParserRepository`, `LocalAiRepository`).
+2. **Tratamento de Moeda:** nunca use `Double` ou `Float` para valores monetários. Use sempre a classe `Money`.
+3. **Eventos Únicos:** eventos de navegação ou mensagens rápidas (Toast/Snackbar) devem ser tratados como eventos únicos (ex: via `LaunchedEffect`), não como estado persistente.
+4. **Imutabilidade:** os estados da UI e modelos de domínio devem ser preferencialmente classes de dados imutáveis (`data class` com `val`).
+5. **IA e dados 100% on-device:** nenhuma informação financeira do usuário (extratos, transações, mensagens de chat) pode ser enviada pela rede. Qualquer implementação de `LocalAiRepository` deve rodar inteiramente no dispositivo; a ausência da permissão `INTERNET` no `AndroidManifest.xml` é um invariante do projeto, não apenas uma configuração atual.
 
 ---
 
@@ -74,28 +139,28 @@ A implementação atual usa campos de estado para sucesso/erro e `LaunchedEffect
    - Registre o `ViewModel` no `AppViewModelProvider`.
 4. **UI:**
    - Implemente os componentes Compose e a tela.
-   - Adicione a rota em `FinancesRoute` e configure no `FinancesNavHost`.
+   - Se a tela pertence ao fluxo secundário (não Home/Chat), adicione a rota em `FinancesRoute` e configure no `FinancesNavHost`. Se afetar a Home ou o Chat, ajuste a página correspondente do `HorizontalPager` raiz.
 
 ---
 
 ## Como Criar uma Nova Migration do Room
 
-O banco atual está na versão 1. `MigrationTest.kt` contém apenas um teste de criação dessa versão, não uma validação de migração entre versões. O schema exportado em `app/schemas` é incluído nos assets de `androidTest`, e o CI executa o teste em um emulador; quando a versão 2 existir, adicione a migration e um caso `runMigrationsAndValidate` para a transição v1 → v2.
+O banco está na versão **2**. A migração `MIGRATION_1_2` (em `AppDatabase.kt`) já adicionou:
+- `StatementImportEntity` (histórico de importações de extrato).
+- `ChatMessageEntity` (histórico de conversas com a IA local).
+- A coluna `origin` (`MANUAL` / `IMPORTED`) em `TransactionEntity`.
 
-1. **Exportar Schema:** Certifique-se de que o schema atual está versionado na pasta `app/schemas`.
-2. **Atualizar Banco:** Altere a versão em `AppDatabase.kt` (ex: `version = 2`).
-3. **Criar Migration:**
-   ```kotlin
-   val MIGRATION_1_2 = object : Migration(1, 2) {
-       override fun migrate(database: SupportSQLiteDatabase) {
-           database.execSQL("ALTER TABLE transactions ADD COLUMN notes TEXT")
-       }
-   }
-   ```
-4. **Registrar:** Adicione `.addMigrations(MIGRATION_1_2)` no builder do banco.
-5. **Testar:** Adicione um caso de teste em `MigrationTest.kt` usando o `MigrationTestHelper`.
+`MigrationTest.kt` cobre tanto a criação da v1 quanto a migração v1 → v2 (via `MigrationTestHelper.runMigrationsAndValidate`). O schema exportado em `app/schemas` é incluído nos assets de `androidTest`, e o CI executa o teste em um emulador.
+
+Passo a passo geral para a **próxima** migration (ex: v2 → v3):
+
+1. **Exportar Schema:** certifique-se de que o schema atual está versionado na pasta `app/schemas`.
+2. **Atualizar Banco:** altere a versão em `AppDatabase.kt` (ex: `version = 3`).
+3. **Criar Migration:** siga o padrão de `MIGRATION_1_2` em `AppDatabase.kt` — um objeto `Migration(oldVersion, newVersion)` com os `execSQL` necessários (colunas novas, novas tabelas etc.).
+4. **Registrar:** adicione a nova migration ao `.addMigrations(...)` no builder do banco.
+5. **Testar:** adicione um caso de teste em `MigrationTest.kt` usando o `MigrationTestHelper`, cobrindo a nova transição de versão.
 
 ---
 
 ## Injeção de Dependências
-Utilizamos **Manual Dependency Injection** através do `AppContainer` inicializado na classe `MainApplication`. Isso mantém o projeto simples, sem o overhead de bibliotecas como Dagger/Hilt, mas permitindo fácil substituição de implementações para testes.
+Utilizamos **Manual Dependency Injection** através do `AppContainer` inicializado na classe `MainApplication`. Isso mantém o projeto simples, sem o overhead de bibliotecas como Dagger/Hilt, mas permitindo fácil substituição de implementações para testes: cada teste de use case/ViewModel define suas próprias implementações fake das interfaces de repositório (`FakeTransactionsRepository`, `FakeCategoriesRepository`, `FakeLocalAiRepository`, `FakeChatRepository`, `FakeStatementImportRepository` etc.) como classes privadas no próprio arquivo de teste — não há repositórios fake compartilhados em `data/repository`. Quando `ImportStatementViewModel`/`ChatViewModel` forem criados, devem seguir o mesmo padrão.
