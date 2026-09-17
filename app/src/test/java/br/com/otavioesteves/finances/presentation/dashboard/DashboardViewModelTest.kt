@@ -30,6 +30,7 @@ class DashboardViewModelTest {
     private val fakeDateProvider = object : DateProvider {
         override fun getCurrentMonthPeriod(): MonthPeriod = fakeMonthPeriod
         override fun getCurrentDate(): LocalDate = LocalDate.of(2025, 12, 1)
+        override fun getCurrentDateTime(): java.time.LocalDateTime = LocalDate.of(2025, 12, 1).atStartOfDay()
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {

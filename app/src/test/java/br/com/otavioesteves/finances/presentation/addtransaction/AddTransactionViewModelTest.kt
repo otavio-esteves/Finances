@@ -39,6 +39,7 @@ class AddTransactionViewModelTest {
     private val fakeDateProvider = object : DateProvider {
         override fun getCurrentDate(): LocalDate = fakeDate
         override fun getCurrentMonthPeriod(): MonthPeriod = MonthPeriod(2025, 12)
+        override fun getCurrentDateTime(): java.time.LocalDateTime = fakeDate.atStartOfDay()
     }
 
     private class FakeTransactionsRepository(

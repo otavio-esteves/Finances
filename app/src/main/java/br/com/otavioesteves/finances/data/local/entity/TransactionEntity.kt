@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import br.com.otavioesteves.finances.domain.model.TransactionOrigin
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import java.time.LocalDate
 
@@ -27,5 +28,6 @@ data class TransactionEntity(
     val categoryId: Long,
     val date: LocalDate,
     val type: TransactionType,
-    val notes: String?
+    val notes: String?,
+    val origin: TransactionOrigin = TransactionOrigin.MANUAL
 )
