@@ -14,6 +14,10 @@ data class MonthPeriod(
 
     fun toYearMonth(): YearMonth = YearMonth.of(year, month)
 
+    fun previousMonth(): MonthPeriod = from(toYearMonth().minusMonths(1))
+
+    fun nextMonth(): MonthPeriod = from(toYearMonth().plusMonths(1))
+
     companion object {
         fun now(): MonthPeriod = from(YearMonth.now())
 

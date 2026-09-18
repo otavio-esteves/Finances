@@ -124,6 +124,21 @@ class TransactionsViewModelTest {
         assertEquals("Erro ao excluir transação", viewModel.uiState.value.error)
     }
 
+    @Test
+    fun `onMonthSelected switches the displayed month`() = runTest {
+        val viewModel = createViewModel(FakeTransactionsRepository())
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect()
+        }
+
+        val previousMonth = fakeMonthPeriod.previousMonth()
+        viewModel.onMonthSelected(previousMonth)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(previousMonth, viewModel.uiState.value.monthPeriod)
+        assertEquals(previousMonth, viewModel.selectedMonthPeriod.value)
+    }
+
     private fun createViewModel(repository: FakeTransactionsRepository): TransactionsViewModel {
         return TransactionsViewModel(
             getTransactionsByMonth = GetTransactionsByMonthUseCase(repository),

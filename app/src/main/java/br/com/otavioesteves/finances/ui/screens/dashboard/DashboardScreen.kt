@@ -30,11 +30,11 @@ import br.com.otavioesteves.finances.presentation.dashboard.DashboardViewModel
 import br.com.otavioesteves.finances.ui.components.AmountText
 import br.com.otavioesteves.finances.ui.components.CategoryUsageChart
 import br.com.otavioesteves.finances.ui.components.FinanceCard
+import br.com.otavioesteves.finances.ui.components.MonthPeriodSelector
 import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
 import br.com.otavioesteves.finances.ui.components.SectionTitle
 import br.com.otavioesteves.finances.ui.theme.FinancesTheme
 import br.com.otavioesteves.finances.utils.MoneyFormatter
-import br.com.otavioesteves.finances.utils.formatMonthPeriod
 
 @Composable
 fun DashboardScreen(
@@ -55,6 +55,8 @@ fun DashboardScreen(
         onHistoryClick = onHistoryClick,
         onSettingsClick = onSettingsClick,
         onImportStatementClick = onImportStatementClick,
+        onPreviousMonthClick = { viewModel.onMonthSelected(uiState.monthPeriod.previousMonth()) },
+        onNextMonthClick = { viewModel.onMonthSelected(uiState.monthPeriod.nextMonth()) },
         modifier = modifier
     )
 }
@@ -67,6 +69,8 @@ private fun DashboardContent(
     onHistoryClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onImportStatementClick: () -> Unit,
+    onPreviousMonthClick: () -> Unit,
+    onNextMonthClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -82,10 +86,10 @@ private fun DashboardContent(
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            Text(
-                text = formatMonthPeriod(state.monthPeriod),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            MonthPeriodSelector(
+                monthPeriod = state.monthPeriod,
+                onPreviousClick = onPreviousMonthClick,
+                onNextClick = onNextMonthClick
             )
         }
 
@@ -230,7 +234,9 @@ private fun DashboardScreenPreview() {
             onAddTransactionClick = {},
             onHistoryClick = {},
             onSettingsClick = {},
-            onImportStatementClick = {}
+            onImportStatementClick = {},
+            onPreviousMonthClick = {},
+            onNextMonthClick = {}
         )
     }
 }

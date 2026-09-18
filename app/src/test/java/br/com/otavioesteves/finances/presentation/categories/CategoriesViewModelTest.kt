@@ -69,4 +69,27 @@ class CategoriesViewModelTest {
 
         assertEquals(fakeMonthPeriod, finalPeriod)
     }
+
+    @Test
+    fun `OnMonthChanged switches the displayed month`() = runTest {
+        val viewModel = CategoriesViewModel(
+            getCategorySummaries = GetCategorySummariesUseCase(FakeCategoriesRepository()),
+            dateProvider = fakeDateProvider
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val previousMonth = fakeMonthPeriod.previousMonth()
+        viewModel.onEvent(CategoriesEvent.OnMonthChanged(previousMonth))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val finalState = viewModel.uiState.value
+        val finalPeriod = when (finalState) {
+            is CategoriesUiState.Success -> finalState.monthPeriod
+            is CategoriesUiState.Empty -> finalState.monthPeriod
+            is CategoriesUiState.Error -> finalState.monthPeriod
+            CategoriesUiState.Loading -> null
+        }
+
+        assertEquals(previousMonth, finalPeriod)
+    }
 }

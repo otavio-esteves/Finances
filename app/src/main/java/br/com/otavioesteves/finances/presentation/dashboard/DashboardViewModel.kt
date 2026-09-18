@@ -10,9 +10,12 @@ import br.com.otavioesteves.finances.domain.model.sumMoney
 import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetMonthlyBalanceUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 
 class DashboardViewModel(
@@ -22,34 +25,41 @@ class DashboardViewModel(
     dateProvider: DateProvider
 ) : ViewModel() {
 
-    private val selectedMonthPeriod = dateProvider.getCurrentMonthPeriod()
+    private val _selectedMonthPeriod = MutableStateFlow(dateProvider.getCurrentMonthPeriod())
+    val selectedMonthPeriod: StateFlow<MonthPeriod> = _selectedMonthPeriod.asStateFlow()
 
-    val uiState: StateFlow<DashboardUiState> = combine(
-        getMonthlyBalance(selectedMonthPeriod),
-        getTransactionsByMonth(selectedMonthPeriod),
-        getCategorySummaries(selectedMonthPeriod)
-    ) { monthlyBalance, transactions, categorySummaries ->
-        DashboardUiState(
-            monthPeriod = selectedMonthPeriod,
-            monthlyBalance = monthlyBalance,
-            totalIncome = transactions
-                .filter { transaction -> transaction.type == TransactionType.INCOME }
-                .map { transaction -> transaction.amount }
-                .sumMoney(),
-            totalExpenses = transactions
-                .filter { transaction -> transaction.type == TransactionType.EXPENSE }
-                .map { transaction -> transaction.amount }
-                .sumMoney(),
-            categorySummaries = categorySummaries
-        )
+    val uiState: StateFlow<DashboardUiState> = _selectedMonthPeriod.flatMapLatest { period ->
+        combine(
+            getMonthlyBalance(period),
+            getTransactionsByMonth(period),
+            getCategorySummaries(period)
+        ) { monthlyBalance, transactions, categorySummaries ->
+            DashboardUiState(
+                monthPeriod = period,
+                monthlyBalance = monthlyBalance,
+                totalIncome = transactions
+                    .filter { transaction -> transaction.type == TransactionType.INCOME }
+                    .map { transaction -> transaction.amount }
+                    .sumMoney(),
+                totalExpenses = transactions
+                    .filter { transaction -> transaction.type == TransactionType.EXPENSE }
+                    .map { transaction -> transaction.amount }
+                    .sumMoney(),
+                categorySummaries = categorySummaries
+            )
+        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = DashboardUiState(
-            monthPeriod = selectedMonthPeriod,
+            monthPeriod = _selectedMonthPeriod.value,
             monthlyBalance = Money.Zero,
             totalIncome = Money.Zero,
             totalExpenses = Money.Zero
         )
     )
+
+    fun onMonthSelected(period: MonthPeriod) {
+        _selectedMonthPeriod.value = period
+    }
 }

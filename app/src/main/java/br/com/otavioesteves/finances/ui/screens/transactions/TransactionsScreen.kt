@@ -51,6 +51,7 @@ import br.com.otavioesteves.finances.presentation.transactions.TransactionsUiSta
 import br.com.otavioesteves.finances.presentation.transactions.TransactionsViewModel
 import br.com.otavioesteves.finances.ui.components.AmountText
 import br.com.otavioesteves.finances.ui.components.EmptyState
+import br.com.otavioesteves.finances.ui.components.MonthPeriodSelector
 import br.com.otavioesteves.finances.utils.DateFormatter
 import br.com.otavioesteves.finances.utils.ExportFormat
 import br.com.otavioesteves.finances.utils.MoneyFormatter
@@ -166,12 +167,22 @@ fun TransactionsScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         modifier = modifier
     ) { paddingValues ->
-        TransactionsContent(
-            state = uiState,
-            onDeleteTransaction = viewModel::onDeleteRequest,
-            onTransactionClick = onTransactionClick,
-            modifier = Modifier.padding(paddingValues)
-        )
+        Column(modifier = Modifier.padding(paddingValues)) {
+            MonthPeriodSelector(
+                monthPeriod = uiState.monthPeriod,
+                onPreviousClick = { viewModel.onMonthSelected(uiState.monthPeriod.previousMonth()) },
+                onNextClick = { viewModel.onMonthSelected(uiState.monthPeriod.nextMonth()) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
+            )
+            TransactionsContent(
+                state = uiState,
+                onDeleteTransaction = viewModel::onDeleteRequest,
+                onTransactionClick = onTransactionClick,
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 

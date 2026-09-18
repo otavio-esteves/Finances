@@ -1,7 +1,9 @@
 package br.com.otavioesteves.finances.ui.screens.categories
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +25,7 @@ import br.com.otavioesteves.finances.presentation.categories.CategoriesEvent
 import br.com.otavioesteves.finances.presentation.categories.CategoriesUiState
 import br.com.otavioesteves.finances.presentation.categories.CategoriesViewModel
 import br.com.otavioesteves.finances.ui.components.EmptyState
+import br.com.otavioesteves.finances.ui.components.MonthPeriodSelector
 import br.com.otavioesteves.finances.ui.theme.FinancesTheme
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 
@@ -33,36 +36,61 @@ fun CategoriesScreen(
     viewModel: CategoriesViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val monthPeriod = when (val state = uiState) {
+        is CategoriesUiState.Success -> state.monthPeriod
+        is CategoriesUiState.Empty -> state.monthPeriod
+        is CategoriesUiState.Error -> state.monthPeriod
+        CategoriesUiState.Loading -> null
+    }
 
-    when (val state = uiState) {
-        is CategoriesUiState.Loading -> {
-            CategoriesLoading(modifier = modifier)
-        }
-        is CategoriesUiState.Error -> {
-            EmptyState(
-                message = state.message,
-                onActionClick = { viewModel.onEvent(CategoriesEvent.OnRetryClicked) },
-                modifier = modifier.fillMaxSize()
-            )
-        }
-        is CategoriesUiState.Empty -> {
-            EmptyState(
-                message = "Nenhuma categoria com transações encontrada para este mês.",
-                onActionClick = { viewModel.onEvent(CategoriesEvent.OnRetryClicked) },
-                actionLabel = "Recarregar",
-                modifier = modifier.fillMaxSize()
-            )
-        }
-        is CategoriesUiState.Success -> {
-            CategoriesContent(
-                state = state,
-                formatCurrency = MoneyFormatter::format,
-                onCategoryClick = { categorySummary ->
-                    viewModel.onEvent(CategoriesEvent.OnCategoryClicked(categorySummary))
-                    onCategoryClick(categorySummary)
+    Column(modifier = modifier.fillMaxSize()) {
+        monthPeriod?.let {
+            MonthPeriodSelector(
+                monthPeriod = it,
+                onPreviousClick = {
+                    viewModel.onEvent(CategoriesEvent.OnMonthChanged(it.previousMonth()))
                 },
-                modifier = modifier
+                onNextClick = {
+                    viewModel.onEvent(CategoriesEvent.OnMonthChanged(it.nextMonth()))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
             )
+        }
+
+        Box(modifier = Modifier.weight(1f)) {
+            when (val state = uiState) {
+                is CategoriesUiState.Loading -> {
+                    CategoriesLoading(modifier = Modifier.fillMaxSize())
+                }
+                is CategoriesUiState.Error -> {
+                    EmptyState(
+                        message = state.message,
+                        onActionClick = { viewModel.onEvent(CategoriesEvent.OnRetryClicked) },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                is CategoriesUiState.Empty -> {
+                    EmptyState(
+                        message = "Nenhuma categoria com transações encontrada para este mês.",
+                        onActionClick = { viewModel.onEvent(CategoriesEvent.OnRetryClicked) },
+                        actionLabel = "Recarregar",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                is CategoriesUiState.Success -> {
+                    CategoriesContent(
+                        state = state,
+                        formatCurrency = MoneyFormatter::format,
+                        onCategoryClick = { categorySummary ->
+                            viewModel.onEvent(CategoriesEvent.OnCategoryClicked(categorySummary))
+                            onCategoryClick(categorySummary)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
         }
     }
 }

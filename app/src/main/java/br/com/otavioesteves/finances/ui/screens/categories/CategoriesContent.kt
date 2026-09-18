@@ -16,7 +16,6 @@ import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.presentation.categories.CategoriesUiState
 import br.com.otavioesteves.finances.ui.components.CategorySummaryRow
 import br.com.otavioesteves.finances.ui.components.SectionTitle
-import br.com.otavioesteves.finances.utils.formatMonthPeriod
 
 @Composable
 fun CategoriesContent(
@@ -30,18 +29,11 @@ fun CategoriesContent(
             .fillMaxSize()
             .padding(24.dp)
     ) {
-        Column {
-            Text(
-                text = "Categorias",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(
-                text = formatMonthPeriod(state.monthPeriod),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text(
+            text = "Categorias",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onBackground
+        )
 
         SectionTitle(
             title = "Resumo por categoria",

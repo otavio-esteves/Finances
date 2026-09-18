@@ -20,7 +20,7 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
 ### 2. Camada de Presentation (ViewModel)
 - **Tecnologia:** `ViewModel` do Android, `StateFlow`.
 - **Responsabilidade:** Gerenciar o estado da UI (**UDF - Unidirectional Data Flow**). Recebe eventos da UI e interage com os *Use Cases* e interfaces de repositórios do domínio injetadas por construtor.
-- **Comunicação:** Expõe `uiState` via `StateFlow`; `TransactionsViewModel` também expõe o período selecionado.
+- **Comunicação:** Expõe `uiState` via `StateFlow`. `DashboardViewModel`, `CategoriesViewModel` e `TransactionsViewModel` expõem o período selecionado e um método para trocá-lo (`onMonthSelected`/`CategoriesEvent.OnMonthChanged`), navegável pelo componente `MonthPeriodSelector` (mês anterior/próximo) presente na Home, em Categorias e no Histórico.
 - **Novos ViewModels (implementado):** `ChatViewModel` (histórico via `GetChatHistoryUseCase`, rascunho e envio via `SendChatMessageUseCase`; sem streaming de resposta ainda) e `ImportStatementViewModel` (estado da tela via `ImportStatementUiState` — `Idle`/`Loading`/`ReviewingSuggestions`/`Success`/`Error`; orquestra `ImportStatementUseCase`, `SynthesizeStatementUseCase` e `ConfirmStatementImportUseCase`, e permite sobrescrever a categoria sugerida por entrada antes de confirmar). `DashboardViewModel` já expõe `categorySummaries` (via `GetCategorySummariesUseCase`) para o gráfico da Home.
 
 ### 3. Camada de Domain (Domínio)

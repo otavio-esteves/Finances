@@ -36,4 +36,24 @@ class MonthPeriodTest {
             MonthPeriod(year = 2026, month = 13)
         }
     }
+
+    @Test
+    fun previousMonth_movesBackOneMonth() {
+        assertEquals(MonthPeriod(year = 2026, month = 1), MonthPeriod(year = 2026, month = 2).previousMonth())
+    }
+
+    @Test
+    fun previousMonth_crossesYearBoundary() {
+        assertEquals(MonthPeriod(year = 2025, month = 12), MonthPeriod(year = 2026, month = 1).previousMonth())
+    }
+
+    @Test
+    fun nextMonth_movesForwardOneMonth() {
+        assertEquals(MonthPeriod(year = 2026, month = 2), MonthPeriod(year = 2026, month = 1).nextMonth())
+    }
+
+    @Test
+    fun nextMonth_crossesYearBoundary() {
+        assertEquals(MonthPeriod(year = 2026, month = 1), MonthPeriod(year = 2025, month = 12).nextMonth())
+    }
 }
