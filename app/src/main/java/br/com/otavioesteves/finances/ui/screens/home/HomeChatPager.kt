@@ -23,6 +23,7 @@ fun HomeChatPager(
     onAddTransactionClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onImportStatementClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val pagerState = rememberPagerState(initialPage = PAGE_HOME) { PAGE_COUNT }
@@ -37,7 +38,8 @@ fun HomeChatPager(
                 onCategoriesClick = onCategoriesClick,
                 onAddTransactionClick = onAddTransactionClick,
                 onHistoryClick = onHistoryClick,
-                onSettingsClick = onSettingsClick
+                onSettingsClick = onSettingsClick,
+                onImportStatementClick = onImportStatementClick
             )
         }
     }

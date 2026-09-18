@@ -66,16 +66,15 @@ Qualquer que seja a escolha, a regra é inegociável: **a IA deve rodar inteiram
 
 A base de código atual é o MVP anterior (lançamento manual de transações), agora com a camada de domínio/dados da migração já implementada por baixo da UI existente:
 
-- **Já existe:** Clean Architecture, classe `Money` (centavos em `Long`), Room (banco na versão 2, com migração testada), resumo por categoria, CRUD de transações manuais, exportação CSV/JSON e backup/restauração local. Parser de extrato CSV/OFX, síntese de categorias (implementação provisória por palavra-chave), campo `origin` (`manual`/`imported`) em `Transaction`, e persistência de histórico de chat e de importações — todos com casos de uso e testes. Navegação raiz por `HorizontalPager` (Home ⇄ Chat), gráfico de uso de capital por categoria na Home (`CategoryUsageChart`, barra de composição + legenda) e tela de Chat funcional (`ChatScreen`/`ChatViewModel`) já implementados e ligados ao `AppContainer`.
-- **Em construção:** escolha do motor de IA local real (hoje há apenas um stand-in por regras), parser de PDF (fase 2), tela de Importar Extrato.
-- A tela de importação ainda não existe; os casos de uso que ela vai consumir (`ImportStatementUseCase`, `SynthesizeStatementUseCase`, `ConfirmStatementImportUseCase`) já estão implementados e ligados no `AppContainer`.
+- **Já existe:** Clean Architecture, classe `Money` (centavos em `Long`), Room (banco na versão 2, com migração testada), resumo por categoria, CRUD de transações manuais, exportação CSV/JSON e backup/restauração local. Parser de extrato CSV/OFX, síntese de categorias (implementação provisória por palavra-chave), campo `origin` (`manual`/`imported`) em `Transaction`, e persistência de histórico de chat e de importações — todos com casos de uso e testes. Navegação raiz por `HorizontalPager` (Home ⇄ Chat), gráfico de uso de capital por categoria na Home (`CategoryUsageChart`, barra de composição + legenda), tela de Chat funcional (`ChatScreen`/`ChatViewModel`) e tela de Importar Extrato (`ImportStatementScreen`/`ImportStatementViewModel`, com seleção de arquivo, revisão/edição das categorias sugeridas e confirmação) já implementadas e ligadas ao `AppContainer`.
+- **Em construção:** escolha do motor de IA local real (hoje há apenas um stand-in por regras), parser de PDF (fase 2).
 
 ## Planejado (Backlog)
 - [x] Parser de extrato CSV/OFX (fase 1).
 - [ ] Parser de extrato PDF com extração de texto/tabelas (fase 2).
 - [ ] Escolha e integração do motor de IA local real (Gemini Nano ou MediaPipe LLM Inference) — hoje há um stand-in provisório por regras (`RuleBasedLocalAiRepository`).
 - [x] Categorização automática das transações importadas (via stand-in atual; casos de uso e persistência prontos, independem do motor final).
-- [ ] Tela de Importar Extrato (UI que aciona `ImportStatementUseCase`/`SynthesizeStatementUseCase`/`ConfirmStatementImportUseCase`).
+- [x] Tela de Importar Extrato (UI que aciona `ImportStatementUseCase`/`SynthesizeStatementUseCase`/`ConfirmStatementImportUseCase`).
 - [x] Gráfico de uso de capital por categoria na Home.
 - [x] Tela de Chat com IA local e navegação por swipe (HorizontalPager Home ⇄ Chat).
 - [x] Histórico de conversas do chat persistido localmente (`ChatRepository`/`GetChatHistoryUseCase`), exibido na tela de Chat.

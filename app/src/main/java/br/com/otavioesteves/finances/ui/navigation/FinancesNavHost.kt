@@ -11,6 +11,7 @@ import br.com.otavioesteves.finances.ui.screens.addtransaction.AddTransactionScr
 import br.com.otavioesteves.finances.ui.screens.categories.CategoriesScreen
 import br.com.otavioesteves.finances.ui.screens.categorydetails.CategoryDetailsScreen
 import br.com.otavioesteves.finances.ui.screens.home.HomeChatPager
+import br.com.otavioesteves.finances.ui.screens.importstatement.ImportStatementScreen
 import br.com.otavioesteves.finances.ui.screens.transactions.TransactionsScreen
 import br.com.otavioesteves.finances.ui.screens.settings.SettingsScreen
 
@@ -36,7 +37,16 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
                 },
                 onSettingsClick = {
                     navController.navigate(FinancesRoute.Settings.route)
+                },
+                onImportStatementClick = {
+                    navController.navigate(FinancesRoute.ImportStatement.route)
                 }
+            )
+        }
+
+        composable(FinancesRoute.ImportStatement.route) {
+            ImportStatementScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
 

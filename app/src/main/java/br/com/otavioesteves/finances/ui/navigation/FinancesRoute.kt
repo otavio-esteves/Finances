@@ -23,6 +23,10 @@ sealed interface FinancesRoute {
         override val route: String = "settings"
     }
 
+    data object ImportStatement : FinancesRoute {
+        override val route: String = "import-statement"
+    }
+
     data class EditTransaction(val transactionId: Long) : FinancesRoute {
         override val route: String = "transactions/edit/$transactionId"
 

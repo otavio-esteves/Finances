@@ -2,7 +2,7 @@
 
 Este documento descreve a estrutura arquitetural, os princípios de design e os fluxos de dados do aplicativo Finances.
 
-> **Nota de escopo (2026):** o projeto está migrando de um app de lançamento manual de transações para um app centrado em **importação de extratos bancários + síntese por IA local**, com uma tela inicial (gráfico de uso de capital por categoria) e uma segunda tela de chat com IA local, acessada por swipe. A navegação raiz por `HorizontalPager`, o gráfico da Home e a tela de Chat já estão implementados; seções ainda marcadas como **(planejado)** cobrem apenas a tela de Importar Extrato e o motor de IA real.
+> **Nota de escopo (2026):** o projeto está migrando de um app de lançamento manual de transações para um app centrado em **importação de extratos bancários + síntese por IA local**, com uma tela inicial (gráfico de uso de capital por categoria) e uma segunda tela de chat com IA local, acessada por swipe. A navegação raiz por `HorizontalPager`, o gráfico da Home, a tela de Chat e a tela de Importar Extrato já estão implementadas; seções ainda marcadas como **(planejado)** cobrem apenas o motor de IA real e o parser de PDF (fase 2).
 
 ## Visão Geral
 O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em camadas para garantir separação de interesses, testabilidade e manutenibilidade. A migração de escopo adiciona duas responsabilidades novas ao domínio: **importar e interpretar extratos** e **sintetizar/conversar via IA local** — ambas mantendo o princípio de que nenhum dado financeiro do usuário sai do dispositivo.
@@ -21,7 +21,7 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
 - **Tecnologia:** `ViewModel` do Android, `StateFlow`.
 - **Responsabilidade:** Gerenciar o estado da UI (**UDF - Unidirectional Data Flow**). Recebe eventos da UI e interage com os *Use Cases* e interfaces de repositórios do domínio injetadas por construtor.
 - **Comunicação:** Expõe `uiState` via `StateFlow`; `TransactionsViewModel` também expõe o período selecionado.
-- **Novos ViewModels:** `ChatViewModel` (implementado: histórico via `GetChatHistoryUseCase`, rascunho e envio via `SendChatMessageUseCase`; sem streaming de resposta ainda) e `ImportStatementViewModel` (planejado: seleção de arquivo, progresso, resultado da síntese). `DashboardViewModel` já expõe `categorySummaries` (via `GetCategorySummariesUseCase`) para o gráfico da Home.
+- **Novos ViewModels (implementado):** `ChatViewModel` (histórico via `GetChatHistoryUseCase`, rascunho e envio via `SendChatMessageUseCase`; sem streaming de resposta ainda) e `ImportStatementViewModel` (estado da tela via `ImportStatementUiState` — `Idle`/`Loading`/`ReviewingSuggestions`/`Success`/`Error`; orquestra `ImportStatementUseCase`, `SynthesizeStatementUseCase` e `ConfirmStatementImportUseCase`, e permite sobrescrever a categoria sugerida por entrada antes de confirmar). `DashboardViewModel` já expõe `categorySummaries` (via `GetCategorySummariesUseCase`) para o gráfico da Home.
 
 ### 3. Camada de Domain (Domínio)
 - **Componentes:** *Models*, *Use Cases*, *Repository Interfaces*.
@@ -66,13 +66,13 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
 
 ## Fluxo de Dados
 
-### Exemplo 1: Importação de Extrato e Síntese (domínio/dados implementados; UI planejada)
+### Exemplo 1: Importação de Extrato e Síntese (implementado)
 
-`ImportStatementScreen` (planejado — seleção de arquivo)
-  → `ImportStatementViewModel` (planejado)
+`ImportStatementScreen` (seleção de arquivo via `ActivityResultContracts.GetContent`)
+  → `ImportStatementViewModel`
   → `ImportStatementUseCase(fileName, bytes)` → `StatementParserRepository.parse(...)` → lista de `RawStatementEntry`
   → `SynthesizeStatementUseCase(entries)` → `LocalAiRepository.suggestCategories(entries, knownCategories)` → lista de `CategorySuggestion`
-  → usuário revisa/confirma as sugestões na UI (planejado)
+  → usuário revisa as sugestões na UI (`ImportStatementUiState.ReviewingSuggestions`) e pode sobrescrever a categoria de qualquer entrada antes de confirmar
   → `ConfirmStatementImportUseCase(fileName, confirmedSuggestions)` → persiste cada sugestão como `Transaction(origin = IMPORTED)` via `AddTransactionUseCase`, e registra o import via `StatementImportRepository`
 
 O extrato original não é retido após a importação; apenas as transações resultantes (com origem `IMPORTED`) e os metadados em `StatementImportEntity` persistem. A cadeia de casos de uso já existe e está coberta por testes; falta apenas a tela que a aciona.
@@ -162,4 +162,4 @@ Passo a passo geral para a **próxima** migration (ex: v2 → v3):
 ---
 
 ## Injeção de Dependências
-Utilizamos **Manual Dependency Injection** através do `AppContainer` inicializado na classe `MainApplication`. Isso mantém o projeto simples, sem o overhead de bibliotecas como Dagger/Hilt, mas permitindo fácil substituição de implementações para testes: cada teste de use case/ViewModel define suas próprias implementações fake das interfaces de repositório (`FakeTransactionsRepository`, `FakeCategoriesRepository`, `FakeLocalAiRepository`, `FakeChatRepository`, `FakeStatementImportRepository` etc.) como classes privadas no próprio arquivo de teste — não há repositórios fake compartilhados em `data/repository`. `ChatViewModelTest` já segue esse padrão; quando `ImportStatementViewModel` for criado, deve seguir o mesmo padrão.
+Utilizamos **Manual Dependency Injection** através do `AppContainer` inicializado na classe `MainApplication`. Isso mantém o projeto simples, sem o overhead de bibliotecas como Dagger/Hilt, mas permitindo fácil substituição de implementações para testes: cada teste de use case/ViewModel define suas próprias implementações fake das interfaces de repositório (`FakeTransactionsRepository`, `FakeCategoriesRepository`, `FakeLocalAiRepository`, `FakeChatRepository`, `FakeStatementImportRepository` etc.) como classes privadas no próprio arquivo de teste — não há repositórios fake compartilhados em `data/repository`. `ChatViewModelTest` e `ImportStatementViewModelTest` já seguem esse padrão.

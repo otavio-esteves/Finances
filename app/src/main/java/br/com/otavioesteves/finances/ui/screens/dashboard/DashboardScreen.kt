@@ -42,6 +42,7 @@ fun DashboardScreen(
     onAddTransactionClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onImportStatementClick: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
@@ -53,6 +54,7 @@ fun DashboardScreen(
         onAddTransactionClick = onAddTransactionClick,
         onHistoryClick = onHistoryClick,
         onSettingsClick = onSettingsClick,
+        onImportStatementClick = onImportStatementClick,
         modifier = modifier
     )
 }
@@ -64,6 +66,7 @@ private fun DashboardContent(
     onAddTransactionClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onImportStatementClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -167,6 +170,12 @@ private fun DashboardContent(
                 onClick = onAddTransactionClick
             )
             PrimaryActionButton(
+                text = "Importar Extrato",
+                onClick = onImportStatementClick,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            PrimaryActionButton(
                 text = "Ver Histórico",
                 onClick = onHistoryClick,
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -220,7 +229,8 @@ private fun DashboardScreenPreview() {
             onCategoriesClick = {},
             onAddTransactionClick = {},
             onHistoryClick = {},
-            onSettingsClick = {}
+            onSettingsClick = {},
+            onImportStatementClick = {}
         )
     }
 }

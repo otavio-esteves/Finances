@@ -10,6 +10,7 @@ import br.com.otavioesteves.finances.presentation.addtransaction.AddTransactionV
 import br.com.otavioesteves.finances.presentation.categories.CategoriesViewModel
 import br.com.otavioesteves.finances.presentation.chat.ChatViewModel
 import br.com.otavioesteves.finances.presentation.dashboard.DashboardViewModel
+import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementViewModel
 import br.com.otavioesteves.finances.presentation.transactions.TransactionsViewModel
 import br.com.otavioesteves.finances.presentation.settings.SettingsViewModel
 import br.com.otavioesteves.finances.ui.navigation.FinancesRoute
@@ -62,6 +63,14 @@ object AppViewModelProvider {
             ChatViewModel(
                 getChatHistory = financesApplication().container.getChatHistoryUseCase,
                 sendChatMessage = financesApplication().container.sendChatMessageUseCase
+            )
+        }
+        initializer {
+            ImportStatementViewModel(
+                importStatement = financesApplication().container.importStatementUseCase,
+                synthesizeStatement = financesApplication().container.synthesizeStatementUseCase,
+                confirmStatementImport = financesApplication().container.confirmStatementImportUseCase,
+                categoriesRepository = financesApplication().container.categoriesRepository
             )
         }
     }
