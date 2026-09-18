@@ -7,6 +7,7 @@ import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.model.sumMoney
+import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetMonthlyBalanceUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.stateIn
 class DashboardViewModel(
     private val getMonthlyBalance: GetMonthlyBalanceUseCase,
     private val getTransactionsByMonth: GetTransactionsByMonthUseCase,
+    private val getCategorySummaries: GetCategorySummariesUseCase,
     dateProvider: DateProvider
 ) : ViewModel() {
 
@@ -24,8 +26,9 @@ class DashboardViewModel(
 
     val uiState: StateFlow<DashboardUiState> = combine(
         getMonthlyBalance(selectedMonthPeriod),
-        getTransactionsByMonth(selectedMonthPeriod)
-    ) { monthlyBalance, transactions ->
+        getTransactionsByMonth(selectedMonthPeriod),
+        getCategorySummaries(selectedMonthPeriod)
+    ) { monthlyBalance, transactions, categorySummaries ->
         DashboardUiState(
             monthPeriod = selectedMonthPeriod,
             monthlyBalance = monthlyBalance,
@@ -36,7 +39,8 @@ class DashboardViewModel(
             totalExpenses = transactions
                 .filter { transaction -> transaction.type == TransactionType.EXPENSE }
                 .map { transaction -> transaction.amount }
-                .sumMoney()
+                .sumMoney(),
+            categorySummaries = categorySummaries
         )
     }.stateIn(
         scope = viewModelScope,

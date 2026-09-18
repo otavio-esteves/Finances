@@ -19,12 +19,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import br.com.otavioesteves.finances.domain.model.Category
+import br.com.otavioesteves.finances.domain.model.CategorySummary
+import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.presentation.AppViewModelProvider
 import br.com.otavioesteves.finances.presentation.dashboard.DashboardUiState
 import br.com.otavioesteves.finances.presentation.dashboard.DashboardViewModel
 import br.com.otavioesteves.finances.ui.components.AmountText
+import br.com.otavioesteves.finances.ui.components.CategoryUsageChart
 import br.com.otavioesteves.finances.ui.components.FinanceCard
 import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
 import br.com.otavioesteves.finances.ui.components.SectionTitle
@@ -146,6 +150,16 @@ private fun DashboardContent(
             }
         }
 
+        Column {
+            SectionTitle(title = "Gastos por Categoria")
+            FinanceCard(modifier = Modifier.fillMaxWidth()) {
+                CategoryUsageChart(
+                    summaries = state.categorySummaries,
+                    modifier = Modifier.padding(20.dp)
+                )
+            }
+        }
+
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SectionTitle(title = "Ações")
             PrimaryActionButton(
@@ -183,7 +197,25 @@ private fun DashboardScreenPreview() {
                 monthPeriod = MonthPeriod.now(),
                 monthlyBalance = Money.fromCents(511_560),
                 totalIncome = Money.fromCents(650_000),
-                totalExpenses = Money.fromCents(138_440)
+                totalExpenses = Money.fromCents(138_440),
+                categorySummaries = listOf(
+                    CategorySummary(
+                        category = Category(id = 1, name = "Mercado", type = CategoryType.EXPENSE),
+                        totalAmount = Money.fromCents(58_000)
+                    ),
+                    CategorySummary(
+                        category = Category(id = 2, name = "Transporte", type = CategoryType.EXPENSE),
+                        totalAmount = Money.fromCents(32_000)
+                    ),
+                    CategorySummary(
+                        category = Category(id = 3, name = "Lazer", type = CategoryType.EXPENSE),
+                        totalAmount = Money.fromCents(28_440)
+                    ),
+                    CategorySummary(
+                        category = Category(id = 4, name = "Salário", type = CategoryType.INCOME),
+                        totalAmount = Money.fromCents(650_000)
+                    )
+                )
             ),
             onCategoriesClick = {},
             onAddTransactionClick = {},

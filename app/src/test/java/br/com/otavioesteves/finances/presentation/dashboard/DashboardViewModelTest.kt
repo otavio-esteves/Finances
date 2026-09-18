@@ -1,10 +1,14 @@
 package br.com.otavioesteves.finances.presentation.dashboard
 
 import br.com.otavioesteves.finances.domain.DateProvider
+import br.com.otavioesteves.finances.domain.model.Category
+import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
+import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
+import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetMonthlyBalanceUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +45,12 @@ class DashboardViewModelTest {
         override suspend fun updateTransaction(transaction: Transaction) {}
     }
 
+    private class FakeCategoriesRepository : CategoriesRepository {
+        override fun getCategories(): Flow<List<Category>> = flowOf(emptyList())
+        override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> =
+            flowOf(emptyList())
+    }
+
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
@@ -56,10 +66,12 @@ class DashboardViewModelTest {
         val repository = FakeTransactionsRepository()
         val getMonthlyBalance = GetMonthlyBalanceUseCase(repository)
         val getTransactionsByMonth = GetTransactionsByMonthUseCase(repository)
-        
+        val getCategorySummaries = GetCategorySummariesUseCase(FakeCategoriesRepository())
+
         val viewModel = DashboardViewModel(
             getMonthlyBalance = getMonthlyBalance,
             getTransactionsByMonth = getTransactionsByMonth,
+            getCategorySummaries = getCategorySummaries,
             dateProvider = fakeDateProvider
         )
 

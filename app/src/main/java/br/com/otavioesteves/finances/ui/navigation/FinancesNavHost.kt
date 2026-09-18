@@ -10,7 +10,7 @@ import androidx.navigation.navArgument
 import br.com.otavioesteves.finances.ui.screens.addtransaction.AddTransactionScreen
 import br.com.otavioesteves.finances.ui.screens.categories.CategoriesScreen
 import br.com.otavioesteves.finances.ui.screens.categorydetails.CategoryDetailsScreen
-import br.com.otavioesteves.finances.ui.screens.dashboard.DashboardScreen
+import br.com.otavioesteves.finances.ui.screens.home.HomeChatPager
 import br.com.otavioesteves.finances.ui.screens.transactions.TransactionsScreen
 import br.com.otavioesteves.finances.ui.screens.settings.SettingsScreen
 
@@ -24,7 +24,7 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
         modifier = modifier
     ) {
         composable(FinancesRoute.Dashboard.route) {
-            DashboardScreen(
+            HomeChatPager(
                 onCategoriesClick = {
                     navController.navigate(FinancesRoute.Categories.route)
                 },

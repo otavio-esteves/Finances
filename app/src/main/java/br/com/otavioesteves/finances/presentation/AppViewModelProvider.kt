@@ -8,6 +8,7 @@ import androidx.lifecycle.createSavedStateHandle
 import br.com.otavioesteves.finances.MainApplication
 import br.com.otavioesteves.finances.presentation.addtransaction.AddTransactionViewModel
 import br.com.otavioesteves.finances.presentation.categories.CategoriesViewModel
+import br.com.otavioesteves.finances.presentation.chat.ChatViewModel
 import br.com.otavioesteves.finances.presentation.dashboard.DashboardViewModel
 import br.com.otavioesteves.finances.presentation.transactions.TransactionsViewModel
 import br.com.otavioesteves.finances.presentation.settings.SettingsViewModel
@@ -39,6 +40,7 @@ object AppViewModelProvider {
             DashboardViewModel(
                 getMonthlyBalance = financesApplication().container.getMonthlyBalanceUseCase,
                 getTransactionsByMonth = financesApplication().container.getTransactionsByMonthUseCase,
+                getCategorySummaries = financesApplication().container.getCategorySummariesUseCase,
                 dateProvider = financesApplication().container.dateProvider
             )
         }
@@ -54,6 +56,12 @@ object AppViewModelProvider {
             SettingsViewModel(
                 createBackup = financesApplication().container.createBackupUseCase,
                 restoreBackup = financesApplication().container.restoreBackupUseCase
+            )
+        }
+        initializer {
+            ChatViewModel(
+                getChatHistory = financesApplication().container.getChatHistoryUseCase,
+                sendChatMessage = financesApplication().container.sendChatMessageUseCase
             )
         }
     }

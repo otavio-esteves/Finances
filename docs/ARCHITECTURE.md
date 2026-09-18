@@ -2,7 +2,7 @@
 
 Este documento descreve a estrutura arquitetural, os princípios de design e os fluxos de dados do aplicativo Finances.
 
-> **Nota de escopo (2026):** o projeto está migrando de um app de lançamento manual de transações para um app centrado em **importação de extratos bancários + síntese por IA local**, com uma tela inicial (gráfico de uso de capital por categoria) e uma segunda tela de chat com IA local, acessada por swipe. Este documento já descreve a arquitetura-alvo; seções marcadas como **(planejado)** ainda não estão implementadas.
+> **Nota de escopo (2026):** o projeto está migrando de um app de lançamento manual de transações para um app centrado em **importação de extratos bancários + síntese por IA local**, com uma tela inicial (gráfico de uso de capital por categoria) e uma segunda tela de chat com IA local, acessada por swipe. A navegação raiz por `HorizontalPager`, o gráfico da Home e a tela de Chat já estão implementados; seções ainda marcadas como **(planejado)** cobrem apenas a tela de Importar Extrato e o motor de IA real.
 
 ## Visão Geral
 O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em camadas para garantir separação de interesses, testabilidade e manutenibilidade. A migração de escopo adiciona duas responsabilidades novas ao domínio: **importar e interpretar extratos** e **sintetizar/conversar via IA local** — ambas mantendo o princípio de que nenhum dado financeiro do usuário sai do dispositivo.
@@ -15,13 +15,13 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
 - **Tecnologia:** Jetpack Compose.
 - **Responsabilidade:** Renderizar o estado da tela e capturar interações do usuário.
 - **Princípio:** Deve ser "burra" e puramente declarativa. Não contém lógica de negócio ou acesso direto a dados.
-- **Navegação principal (planejado):** a raiz do app passa a ser um `HorizontalPager` de duas páginas — **Home** (índice 0) e **Chat** (índice 1) — navegáveis por swipe. As demais telas (Transações, Categorias, Importar Extrato, Configurações) são acessadas a partir da Home como navegação secundária (`NavHost` aninhado ou rotas empilhadas sobre o pager), não como páginas do pager.
+- **Navegação principal (implementado):** a raiz do app é um `HorizontalPager` de duas páginas — **Home** (índice 0, `DashboardScreen`) e **Chat** (índice 1, `ChatScreen`) — navegáveis por swipe, hospedado por `HomeChatPager` e montado na rota `Dashboard` do `FinancesNavHost`. As demais telas (Transações, Categorias, Importar Extrato, Configurações) são acessadas a partir da Home como navegação secundária (rotas empilhadas no mesmo `NavHost`, sobre a rota do pager), não como páginas do pager.
 
 ### 2. Camada de Presentation (ViewModel)
 - **Tecnologia:** `ViewModel` do Android, `StateFlow`.
 - **Responsabilidade:** Gerenciar o estado da UI (**UDF - Unidirectional Data Flow**). Recebe eventos da UI e interage com os *Use Cases* e interfaces de repositórios do domínio injetadas por construtor.
 - **Comunicação:** Expõe `uiState` via `StateFlow`; `TransactionsViewModel` também expõe o período selecionado.
-- **Novos ViewModels (planejado):** `ChatViewModel` (mensagens, envio, streaming de resposta) e `ImportStatementViewModel` (seleção de arquivo, progresso, resultado da síntese). `DashboardViewModel` passa a expor também os dados de composição por categoria para o gráfico da Home.
+- **Novos ViewModels:** `ChatViewModel` (implementado: histórico via `GetChatHistoryUseCase`, rascunho e envio via `SendChatMessageUseCase`; sem streaming de resposta ainda) e `ImportStatementViewModel` (planejado: seleção de arquivo, progresso, resultado da síntese). `DashboardViewModel` já expõe `categorySummaries` (via `GetCategorySummariesUseCase`) para o gráfico da Home.
 
 ### 3. Camada de Domain (Domínio)
 - **Componentes:** *Models*, *Use Cases*, *Repository Interfaces*.
@@ -39,7 +39,7 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
   - `LocalAiRepository`: contrato para categorização (`suggestCategories(entries, knownCategories): List<CategorySuggestion>`) e chat (`sendMessage(message, context): ChatMessage`), isolando o domínio do motor de IA escolhido.
   - `ChatRepository`: persistência do histórico de conversas (`getMessages(): Flow<List<ChatMessage>>`, `addMessage(message)`).
   - `StatementImportRepository`: persistência do histórico de importações (`getImports(): Flow<List<ImportedStatement>>`, `addImport(statementImport)`).
-- **Use Cases (implementado):** `ImportStatementUseCase` (lê o arquivo via `StatementParserRepository`), `SynthesizeStatementUseCase` (sugere categorias via `LocalAiRepository`), `ConfirmStatementImportUseCase` (persiste as sugestões confirmadas como `Transaction(origin = IMPORTED)` via `AddTransactionUseCase` e registra o import via `StatementImportRepository`), `SendChatMessageUseCase` (monta o `FinancialContext`, persiste a mensagem do usuário e a resposta via `ChatRepository`, e retorna a resposta), `GetChatHistoryUseCase`. `GetCategorySummariesUseCase`, já existente, é reaproveitado como fonte de dados do gráfico da Home (**planejado**: a tela ainda não consome esses dados em forma de gráfico).
+- **Use Cases (implementado):** `ImportStatementUseCase` (lê o arquivo via `StatementParserRepository`), `SynthesizeStatementUseCase` (sugere categorias via `LocalAiRepository`), `ConfirmStatementImportUseCase` (persiste as sugestões confirmadas como `Transaction(origin = IMPORTED)` via `AddTransactionUseCase` e registra o import via `StatementImportRepository`), `SendChatMessageUseCase` (monta o `FinancialContext`, persiste a mensagem do usuário e a resposta via `ChatRepository`, e retorna a resposta), `GetChatHistoryUseCase`. `GetCategorySummariesUseCase`, já existente, é reaproveitado como fonte de dados do gráfico da Home, consumido por `DashboardViewModel`/`CategoryUsageChart`.
 
 ### 4. Camada de Data (Dados)
 - **Componentes:** *Room Database*, *DAOs*, *Repository Implementations*, *Mappers*.
@@ -77,24 +77,23 @@ O projeto segue uma arquitetura inspirada em **Clean Architecture**, dividida em
 
 O extrato original não é retido após a importação; apenas as transações resultantes (com origem `IMPORTED`) e os metadados em `StatementImportEntity` persistem. A cadeia de casos de uso já existe e está coberta por testes; falta apenas a tela que a aciona.
 
-### Exemplo 2: Dashboard com Gráfico por Categoria (planejado)
+### Exemplo 2: Dashboard com Gráfico por Categoria (implementado)
 
 A UI (`DashboardScreen`) coleta `DashboardViewModel.uiState`, que combina:
 - `GetMonthlyBalanceUseCase(period)` → saldo, receitas e despesas do mês.
-- `GetCategorySummariesUseCase(period)` → composição por categoria, usada para renderizar o gráfico de uso de capital.
+- `GetTransactionsByMonthUseCase(period)` → totais de receitas e despesas do mês.
+- `GetCategorySummariesUseCase(period)` → composição por categoria, renderizada por `CategoryUsageChart` (barra de composição horizontal + legenda, sem dependência de lib externa de gráficos) na Home.
 
-O gráfico em si (e a lib de gráficos a ser escolhida) ainda não existem — a Home atual mostra apenas totais numéricos.
+### Exemplo 3: Chat com IA Local (implementado)
 
-### Exemplo 3: Chat com IA Local (domínio/dados implementados; UI planejada)
-
-`ChatScreen` (planejado — segunda página do pager, à direita da Home)
-  → `ChatViewModel` (planejado)
+`ChatScreen` (segunda página do `HomeChatPager`, à direita da Home)
+  → `ChatViewModel`
   → `SendChatMessageUseCase(message)`:
     1. monta o `FinancialContext` a partir dos dados já persistidos (via `GetMonthlyBalanceUseCase`/`GetCategorySummariesUseCase`), nunca enviado para fora do dispositivo;
     2. persiste a mensagem do usuário via `ChatRepository.addMessage`;
     3. chama `LocalAiRepository.sendMessage(message, context)` e persiste a resposta via `ChatRepository.addMessage`;
     4. retorna a resposta.
-  → `GetChatHistoryUseCase` expõe o histórico persistido (`ChatMessageEntity`) para quando a tela existir.
+  → `GetChatHistoryUseCase` expõe o histórico persistido (`ChatMessageEntity`), coletado por `ChatViewModel.uiState` e renderizado pela `ChatScreen`. A resposta é gerada de forma síncrona (sem streaming) pelo stand-in atual de `LocalAiRepository`.
 
 ### Exemplo 4: Listagem de Transações (existente)
 
@@ -163,4 +162,4 @@ Passo a passo geral para a **próxima** migration (ex: v2 → v3):
 ---
 
 ## Injeção de Dependências
-Utilizamos **Manual Dependency Injection** através do `AppContainer` inicializado na classe `MainApplication`. Isso mantém o projeto simples, sem o overhead de bibliotecas como Dagger/Hilt, mas permitindo fácil substituição de implementações para testes: cada teste de use case/ViewModel define suas próprias implementações fake das interfaces de repositório (`FakeTransactionsRepository`, `FakeCategoriesRepository`, `FakeLocalAiRepository`, `FakeChatRepository`, `FakeStatementImportRepository` etc.) como classes privadas no próprio arquivo de teste — não há repositórios fake compartilhados em `data/repository`. Quando `ImportStatementViewModel`/`ChatViewModel` forem criados, devem seguir o mesmo padrão.
+Utilizamos **Manual Dependency Injection** através do `AppContainer` inicializado na classe `MainApplication`. Isso mantém o projeto simples, sem o overhead de bibliotecas como Dagger/Hilt, mas permitindo fácil substituição de implementações para testes: cada teste de use case/ViewModel define suas próprias implementações fake das interfaces de repositório (`FakeTransactionsRepository`, `FakeCategoriesRepository`, `FakeLocalAiRepository`, `FakeChatRepository`, `FakeStatementImportRepository` etc.) como classes privadas no próprio arquivo de teste — não há repositórios fake compartilhados em `data/repository`. `ChatViewModelTest` já segue esse padrão; quando `ImportStatementViewModel` for criado, deve seguir o mesmo padrão.
