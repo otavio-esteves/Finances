@@ -2,8 +2,10 @@ package br.com.otavioesteves.finances.di
 
 import android.content.Context
 import br.com.otavioesteves.finances.data.DefaultDateProvider
+import br.com.otavioesteves.finances.data.ai.EngineAwareLocalAiRepository
 import br.com.otavioesteves.finances.data.ai.EngineAwareTransactionCategorizer
 import br.com.otavioesteves.finances.data.ai.ImportedModelLocalAiEngine
+import br.com.otavioesteves.finances.data.ai.LiteRtLocalAiRepository
 import br.com.otavioesteves.finances.data.ai.LiteRtTransactionCategorizer
 import br.com.otavioesteves.finances.data.ai.RuleBasedLocalAiRepository
 import br.com.otavioesteves.finances.data.local.AppDatabase
@@ -129,7 +131,21 @@ class DefaultAppContainer(
         RuleBasedLocalAiRepository(dateProvider)
     }
 
-    override val localAiRepository: LocalAiRepository by lazy { ruleBasedLocalAi }
+    private val liteRtLocalAiRepository: LiteRtLocalAiRepository by lazy {
+        LiteRtLocalAiRepository(
+            localAiEngine = localAiEngine,
+            ruleBasedRepository = ruleBasedLocalAi,
+            dateProvider = dateProvider
+        )
+    }
+
+    override val localAiRepository: LocalAiRepository by lazy {
+        EngineAwareLocalAiRepository(
+            localAiEngine = localAiEngine,
+            aiRepository = liteRtLocalAiRepository,
+            ruleBasedRepository = ruleBasedLocalAi
+        )
+    }
 
     private val importedModelLocalAiEngine: ImportedModelLocalAiEngine by lazy {
         ImportedModelLocalAiEngine(context)
