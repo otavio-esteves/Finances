@@ -557,6 +557,17 @@ partir dos dados reais (hoje só responde sobre o mês corrente); primeiro token
 em tempo aceitável; girar a tela no meio da resposta não vaza o motor nem
 duplica a requisição.
 
+**Status: versão reduzida implementada em 2026-09-19, sem substituir esta
+fase.** `data/ai/LiteRtLocalAiRepository.kt` (+ `EngineAwareLocalAiRepository.kt`)
+faz o chat chamar o motor LiteRT-LM já importado, testado num S21 físico
+(import do modelo confirmado; resposta de ponta a ponta ainda não confirmada
+na sessão que escreveu isto). O que falta desta fase continua em aberto:
+contrato `FinancialChat`/`ChatChunk`, streaming, RAG de verdade (a versão
+atual só usa saldo + resumo por categoria do `FinancialContext` de hoje, sem
+retrieval por transação), engine "morno" entre mensagens (hoje recarrega o
+bundle inteiro a cada mensagem — inaceitável em latência), e a medição da
+Fase 4 (que ainda não rodou).
+
 ### Fase 6 — Degradação, ciclo de vida e limpeza
 Liberar o motor em background, reagir a `onTrimMemory`, timeout global,
 descarte seguro do extrato original após a importação (já está no roadmap de
