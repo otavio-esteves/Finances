@@ -8,8 +8,6 @@ import br.com.otavioesteves.finances.domain.model.ChatRole
 import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
-import br.com.otavioesteves.finances.domain.model.CategorySuggestion
-import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.ChatRepository
@@ -75,11 +73,6 @@ class ChatViewModelTest {
 
     private class FakeLocalAiRepository : LocalAiRepository {
         var callCount = 0
-
-        override suspend fun suggestCategories(
-            entries: List<RawStatementEntry>,
-            knownCategories: List<Category>
-        ): List<CategorySuggestion> = throw NotImplementedError("Not used in this test")
 
         override suspend fun sendMessage(message: String, context: FinancialContext): ChatMessage {
             callCount++

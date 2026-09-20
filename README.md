@@ -124,21 +124,31 @@ O projeto usa AGP **8.13.2**, Gradle **8.13**, Kotlin **2.0.21**, KSP **2.0.21-1
 
 A versão do KSP acompanha Kotlin 2.0.21. A combinação atual com Gradle/AGP está além da faixa de suporte pleno publicada para o [plugin Kotlin 2.0.21](https://kotlinlang.org/docs/gradle-configure-project.html); a validação local dos comandos abaixo não amplia essa garantia oficial. Uma atualização coordenada de Kotlin/KSP fica para trabalho separado.
 
+O app tem dois flavors de distribuição (`standalone` e `play`, ver
+`docs/PLANO_MOTOR_IA_LOCAL.md` seção 2.5) — hoje idênticos em comportamento,
+já que o asset pack do `play` ainda não foi implementado.
+
 ### Comandos Principais
-- **Gerar APK de Debug:**
+- **Gerar APK de Debug (flavor standalone, usado no CI e para sideload):**
   ```bash
-  ./gradlew assembleDebug
+  ./gradlew assembleStandaloneDebug
   ```
 - **Executar Testes Unitários:**
   ```bash
-  ./gradlew test
+  ./gradlew testStandaloneDebugUnitTest
   ```
 - **Executar Android Lint:**
   ```bash
-  ./gradlew lint
+  ./gradlew lintStandaloneDebug
   ```
 
-O CI executa `test`, `lint`, `assembleDebug` e `connectedDebugAndroidTest`, nessa ordem, com Temurin 17. O APK é gerado em `app/build/outputs/apk/debug/app-debug.apk`. Os testes em `app/src/androidTest` exigem um emulador Android e são executados no CI com API 35.
+O CI executa `testStandaloneDebugUnitTest`, `lintStandaloneDebug`,
+`assembleStandaloneDebug` e `connectedStandaloneDebugAndroidTest`, nessa
+ordem, com Temurin 17. O APK é gerado em
+`app/build/outputs/apk/standalone/debug/app-standalone-debug.apk`. Os testes
+em `app/src/androidTest` exigem um emulador Android e são executados no CI
+com API 35 — incluem um teste que falha caso `android.permission.INTERNET`
+apareça no manifest instalado, mesmo por merge de uma dependência transitiva.
 
 ---
 *Este projeto é um MVP funcional em constante evolução, atualmente em migração de escopo para importação de extratos + IA local.*

@@ -9,6 +9,7 @@ import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
+import br.com.otavioesteves.finances.domain.model.SuggestionSource
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -38,10 +39,11 @@ class RuleBasedLocalAiRepositoryTest {
             type = TransactionType.EXPENSE
         )
 
-        val suggestions = repository.suggestCategories(listOf(entry), listOf(mercado, salario))
+        val suggestions = repository.categorize(listOf(entry), listOf(mercado, salario)).getOrThrow()
 
         assertEquals(mercado, suggestions.single().suggestedCategory)
         assertTrue(suggestions.single().confidence > 0f)
+        assertEquals(SuggestionSource.RULE, suggestions.single().source)
     }
 
     @Test
@@ -54,7 +56,7 @@ class RuleBasedLocalAiRepositoryTest {
             type = TransactionType.EXPENSE
         )
 
-        val suggestion = repository.suggestCategories(listOf(entry), listOf(outros)).single()
+        val suggestion = repository.categorize(listOf(entry), listOf(outros)).getOrThrow().single()
 
         assertEquals(outros, suggestion.suggestedCategory)
     }
@@ -69,7 +71,7 @@ class RuleBasedLocalAiRepositoryTest {
             type = TransactionType.EXPENSE
         )
 
-        val suggestion = repository.suggestCategories(listOf(entry), listOf(salario)).single()
+        val suggestion = repository.categorize(listOf(entry), listOf(salario)).getOrThrow().single()
 
         assertNull(suggestion.suggestedCategory)
         assertEquals(0f, suggestion.confidence)

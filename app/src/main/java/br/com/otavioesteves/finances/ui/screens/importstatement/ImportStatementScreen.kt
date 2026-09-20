@@ -1,8 +1,5 @@
 package br.com.otavioesteves.finances.ui.screens.importstatement
 
-import android.content.Context
-import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +50,7 @@ import br.com.otavioesteves.finances.ui.components.FinanceCard
 import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
 import br.com.otavioesteves.finances.utils.DateFormatter
 import br.com.otavioesteves.finances.utils.MoneyFormatter
+import br.com.otavioesteves.finances.utils.queryDisplayName
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,7 +66,7 @@ fun ImportStatementScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let { selectedUri ->
-            val fileName = queryFileName(context, selectedUri) ?: "extrato"
+            val fileName = queryDisplayName(context, selectedUri) ?: "extrato"
             val bytes = context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
             if (bytes != null) {
                 viewModel.onFileSelected(fileName, bytes)
@@ -121,13 +119,6 @@ fun ImportStatementScreen(
             }
         }
     }
-}
-
-private fun queryFileName(context: Context, uri: Uri): String? {
-    return context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        if (nameIndex >= 0 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
-    } ?: uri.lastPathSegment
 }
 
 @Composable

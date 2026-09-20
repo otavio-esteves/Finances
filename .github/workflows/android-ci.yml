@@ -26,13 +26,13 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run Unit Tests
-      run: ./gradlew test
+      run: ./gradlew testStandaloneDebugUnitTest
 
     - name: Run Android Lint
-      run: ./gradlew lint
+      run: ./gradlew lintStandaloneDebug
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      run: ./gradlew assembleStandaloneDebug
 
     - name: Run Instrumented Tests
       uses: reactivecircus/android-emulator-runner@v2
@@ -40,4 +40,4 @@ jobs:
         api-level: 35
         arch: x86_64
         target: google_apis
-        script: ./gradlew connectedDebugAndroidTest
+        script: ./gradlew connectedStandaloneDebugAndroidTest

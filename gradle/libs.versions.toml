@@ -1,8 +1,8 @@
 [versions]
 agp = "8.13.2"
-kotlin = "2.0.21"
-ksp = "2.0.21-1.0.28"
-room = "2.6.1"
+kotlin = "2.2.21"
+ksp = "2.2.21-2.0.5"
+room = "2.8.5"
 serialization = "1.7.3"
 coroutines = "1.9.0"
 coreKtx = "1.17.0"
@@ -14,6 +14,7 @@ activityCompose = "1.11.0"
 composeBom = "2024.09.00"
 navigationCompose = "2.8.0"
 desugarJdkLibs = "2.1.5"
+litertlm = "0.16.1"
 
 [libraries]
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
@@ -41,6 +42,7 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
+litertlm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litertlm" }
 
 [plugins]
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

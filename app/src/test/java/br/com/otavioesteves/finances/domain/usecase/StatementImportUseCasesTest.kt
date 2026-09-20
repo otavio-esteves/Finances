@@ -1,12 +1,11 @@
 package br.com.otavioesteves.finances.domain.usecase
 
 import br.com.otavioesteves.finances.domain.DateProvider
+import br.com.otavioesteves.finances.domain.ai.TransactionCategorizer
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.CategorySuggestion
 import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.CategoryType
-import br.com.otavioesteves.finances.domain.model.ChatMessage
-import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.model.ImportedStatement
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
@@ -15,7 +14,6 @@ import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionOrigin
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
-import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
 import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
@@ -62,12 +60,12 @@ class StatementImportUseCasesTest {
         val category = Category(id = 1L, name = "Mercado", type = CategoryType.EXPENSE)
         val suggestion = CategorySuggestion(entry = entry, suggestedCategory = category, confidence = 1f)
         val categoriesRepository = FakeCategoriesRepository(listOf(category))
-        val localAiRepository = FakeLocalAiRepository(listOf(suggestion))
+        val transactionCategorizer = FakeTransactionCategorizer(listOf(suggestion))
 
-        val result = SynthesizeStatementUseCase(localAiRepository, categoriesRepository)(listOf(entry))
+        val result = SynthesizeStatementUseCase(transactionCategorizer, categoriesRepository)(listOf(entry))
 
         assertEquals(listOf(suggestion), result)
-        assertEquals(listOf(category), localAiRepository.lastKnownCategories)
+        assertEquals(listOf(category), transactionCategorizer.lastCategories)
     }
 
     @Test
@@ -144,21 +142,18 @@ class StatementImportUseCasesTest {
             flowOf(emptyList())
     }
 
-    private class FakeLocalAiRepository(
+    private class FakeTransactionCategorizer(
         private val suggestions: List<CategorySuggestion>
-    ) : LocalAiRepository {
-        var lastKnownCategories: List<Category>? = null
+    ) : TransactionCategorizer {
+        var lastCategories: List<Category>? = null
 
-        override suspend fun suggestCategories(
+        override suspend fun categorize(
             entries: List<RawStatementEntry>,
-            knownCategories: List<Category>
-        ): List<CategorySuggestion> {
-            lastKnownCategories = knownCategories
-            return suggestions
-        }
-
-        override suspend fun sendMessage(message: String, context: FinancialContext): ChatMessage {
-            throw NotImplementedError("Not used in this test")
+            categories: List<Category>,
+            onProgress: (done: Int, total: Int) -> Unit
+        ): Result<List<CategorySuggestion>> {
+            lastCategories = categories
+            return Result.success(suggestions)
         }
     }
 

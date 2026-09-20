@@ -2,6 +2,9 @@ package br.com.otavioesteves.finances.di
 
 import android.content.Context
 import br.com.otavioesteves.finances.data.DefaultDateProvider
+import br.com.otavioesteves.finances.data.ai.EngineAwareTransactionCategorizer
+import br.com.otavioesteves.finances.data.ai.ImportedModelLocalAiEngine
+import br.com.otavioesteves.finances.data.ai.LiteRtTransactionCategorizer
 import br.com.otavioesteves.finances.data.ai.RuleBasedLocalAiRepository
 import br.com.otavioesteves.finances.data.local.AppDatabase
 import br.com.otavioesteves.finances.data.repository.RoomCategoriesRepository
@@ -10,6 +13,9 @@ import br.com.otavioesteves.finances.data.repository.RoomStatementImportReposito
 import br.com.otavioesteves.finances.data.repository.RoomTransactionsRepository
 import br.com.otavioesteves.finances.data.statement.CsvOfxStatementParser
 import br.com.otavioesteves.finances.domain.DateProvider
+import br.com.otavioesteves.finances.domain.ai.LocalAiEngine
+import br.com.otavioesteves.finances.domain.ai.ModelImporter
+import br.com.otavioesteves.finances.domain.ai.TransactionCategorizer
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.ChatRepository
 import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
@@ -42,6 +48,9 @@ interface AppContainer {
     val dateProvider: DateProvider
     val statementParserRepository: StatementParserRepository
     val localAiRepository: LocalAiRepository
+    val transactionCategorizer: TransactionCategorizer
+    val localAiEngine: LocalAiEngine
+    val modelImporter: ModelImporter
     val chatRepository: ChatRepository
     val statementImportRepository: StatementImportRepository
     val importStatementUseCase: ImportStatementUseCase
@@ -116,8 +125,33 @@ class DefaultAppContainer(
         CsvOfxStatementParser()
     }
 
-    override val localAiRepository: LocalAiRepository by lazy {
+    private val ruleBasedLocalAi: RuleBasedLocalAiRepository by lazy {
         RuleBasedLocalAiRepository(dateProvider)
+    }
+
+    override val localAiRepository: LocalAiRepository by lazy { ruleBasedLocalAi }
+
+    private val importedModelLocalAiEngine: ImportedModelLocalAiEngine by lazy {
+        ImportedModelLocalAiEngine(context)
+    }
+
+    override val localAiEngine: LocalAiEngine by lazy { importedModelLocalAiEngine }
+
+    override val modelImporter: ModelImporter by lazy { importedModelLocalAiEngine }
+
+    private val liteRtTransactionCategorizer: LiteRtTransactionCategorizer by lazy {
+        LiteRtTransactionCategorizer(
+            localAiEngine = localAiEngine,
+            ruleBasedCategorizer = ruleBasedLocalAi
+        )
+    }
+
+    override val transactionCategorizer: TransactionCategorizer by lazy {
+        EngineAwareTransactionCategorizer(
+            localAiEngine = localAiEngine,
+            aiCategorizer = liteRtTransactionCategorizer,
+            ruleBasedCategorizer = ruleBasedLocalAi
+        )
     }
 
     override val chatRepository: ChatRepository by lazy {
@@ -133,7 +167,7 @@ class DefaultAppContainer(
     }
 
     override val synthesizeStatementUseCase: SynthesizeStatementUseCase by lazy {
-        SynthesizeStatementUseCase(localAiRepository, categoriesRepository)
+        SynthesizeStatementUseCase(transactionCategorizer, categoriesRepository)
     }
 
     override val confirmStatementImportUseCase: ConfirmStatementImportUseCase by lazy {

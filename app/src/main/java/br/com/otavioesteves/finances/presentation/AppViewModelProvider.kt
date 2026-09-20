@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.createSavedStateHandle
 import br.com.otavioesteves.finances.MainApplication
 import br.com.otavioesteves.finances.presentation.addtransaction.AddTransactionViewModel
+import br.com.otavioesteves.finances.presentation.aimodel.AiModelViewModel
 import br.com.otavioesteves.finances.presentation.categories.CategoriesViewModel
 import br.com.otavioesteves.finances.presentation.chat.ChatViewModel
 import br.com.otavioesteves.finances.presentation.dashboard.DashboardViewModel
@@ -71,6 +72,12 @@ object AppViewModelProvider {
                 synthesizeStatement = financesApplication().container.synthesizeStatementUseCase,
                 confirmStatementImport = financesApplication().container.confirmStatementImportUseCase,
                 categoriesRepository = financesApplication().container.categoriesRepository
+            )
+        }
+        initializer {
+            AiModelViewModel(
+                localAiEngine = financesApplication().container.localAiEngine,
+                modelImporter = financesApplication().container.modelImporter
             )
         }
     }

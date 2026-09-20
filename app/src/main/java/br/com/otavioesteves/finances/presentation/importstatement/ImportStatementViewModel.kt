@@ -3,6 +3,7 @@ package br.com.otavioesteves.finances.presentation.importstatement
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.domain.model.Category
+import br.com.otavioesteves.finances.domain.model.SuggestionSource
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.usecase.ConfirmStatementImportUseCase
 import br.com.otavioesteves.finances.domain.usecase.ImportStatementUseCase
@@ -54,7 +55,11 @@ class ImportStatementViewModel(
     fun onCategorySelected(index: Int, category: Category) {
         val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
         val updatedSuggestions = current.suggestions.toMutableList().apply {
-            this[index] = this[index].copy(suggestedCategory = category, confidence = 1f)
+            this[index] = this[index].copy(
+                suggestedCategory = category,
+                confidence = 1f,
+                source = SuggestionSource.USER
+            )
         }
         _uiState.value = current.copy(suggestions = updatedSuggestions)
     }

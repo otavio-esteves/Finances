@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.presentation.importstatement
 
 import br.com.otavioesteves.finances.domain.DateProvider
+import br.com.otavioesteves.finances.domain.ai.TransactionCategorizer
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.CategorySuggestion
 import br.com.otavioesteves.finances.domain.model.CategorySummary
@@ -12,12 +13,9 @@ import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
-import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
 import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
-import br.com.otavioesteves.finances.domain.model.ChatMessage
-import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.usecase.AddTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.ConfirmStatementImportUseCase
 import br.com.otavioesteves.finances.domain.usecase.ImportStatementUseCase
@@ -69,16 +67,14 @@ class ImportStatementViewModelTest {
         }
     }
 
-    private class FakeLocalAiRepository(
+    private class FakeTransactionCategorizer(
         private val suggestions: List<CategorySuggestion>
-    ) : LocalAiRepository {
-        override suspend fun suggestCategories(
+    ) : TransactionCategorizer {
+        override suspend fun categorize(
             entries: List<RawStatementEntry>,
-            knownCategories: List<Category>
-        ): List<CategorySuggestion> = suggestions
-
-        override suspend fun sendMessage(message: String, context: FinancialContext): ChatMessage =
-            throw NotImplementedError("Not used in this test")
+            categories: List<Category>,
+            onProgress: (done: Int, total: Int) -> Unit
+        ): Result<List<CategorySuggestion>> = Result.success(suggestions)
     }
 
     private class FakeCategoriesRepository(
@@ -129,7 +125,7 @@ class ImportStatementViewModelTest {
     ): ImportStatementViewModel {
         val importStatement = ImportStatementUseCase(FakeStatementParserRepository(entries, parserFailure))
         val synthesizeStatement = SynthesizeStatementUseCase(
-            FakeLocalAiRepository(suggestions),
+            FakeTransactionCategorizer(suggestions),
             FakeCategoriesRepository(categories)
         )
         val confirmStatementImport = ConfirmStatementImportUseCase(

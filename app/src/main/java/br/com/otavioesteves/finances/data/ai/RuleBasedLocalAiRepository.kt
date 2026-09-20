@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.data.ai
 
 import br.com.otavioesteves.finances.domain.DateProvider
+import br.com.otavioesteves.finances.domain.ai.TransactionCategorizer
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.CategorySuggestion
 import br.com.otavioesteves.finances.domain.model.CategoryType
@@ -8,24 +9,31 @@ import br.com.otavioesteves.finances.domain.model.ChatMessage
 import br.com.otavioesteves.finances.domain.model.ChatRole
 import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
+import br.com.otavioesteves.finances.domain.model.SuggestionSource
 import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import br.com.otavioesteves.finances.utils.formatMonthPeriod
 
 /**
- * Deterministic, keyword-based stand-in for an on-device LLM. Unblocks the
- * import and chat flows before the real local AI engine is chosen (see
- * docs/ARCHITECTURE.md, "Decisão de Arquitetura: Motor de IA Local").
+ * Deterministic, keyword-based stand-in for an on-device LLM. Permanent
+ * fallback for [TransactionCategorizer] when the real engine is absent or
+ * unsupported (see docs/ARCHITECTURE.md, "Decisão de Arquitetura: Motor de IA
+ * Local"); still the only [LocalAiRepository] (chat) implementation until
+ * Fase 5 wires retrieval-augmented chat.
  */
 class RuleBasedLocalAiRepository(
     private val dateProvider: DateProvider
-) : LocalAiRepository {
+) : LocalAiRepository, TransactionCategorizer {
 
-    override suspend fun suggestCategories(
+    override suspend fun categorize(
         entries: List<RawStatementEntry>,
-        knownCategories: List<Category>
-    ): List<CategorySuggestion> {
-        return entries.map { entry -> suggestCategory(entry, knownCategories) }
+        categories: List<Category>,
+        onProgress: (done: Int, total: Int) -> Unit
+    ): Result<List<CategorySuggestion>> {
+        val suggestions = entries.mapIndexed { index, entry ->
+            suggestCategory(entry, categories).also { onProgress(index + 1, entries.size) }
+        }
+        return Result.success(suggestions)
     }
 
     private fun suggestCategory(entry: RawStatementEntry, knownCategories: List<Category>): CategorySuggestion {
@@ -38,14 +46,20 @@ class RuleBasedLocalAiRepository(
             words.any { word -> description.contains(word) }
         }
         if (keywordMatch != null) {
-            return CategorySuggestion(entry = entry, suggestedCategory = keywordMatch, confidence = 0.8f)
+            return CategorySuggestion(
+                entry = entry,
+                suggestedCategory = keywordMatch,
+                confidence = 0.8f,
+                source = SuggestionSource.RULE
+            )
         }
 
         val fallback = candidates.firstOrNull { it.name.equals(FALLBACK_CATEGORY_NAME, ignoreCase = true) }
         return CategorySuggestion(
             entry = entry,
             suggestedCategory = fallback,
-            confidence = if (fallback != null) 0.3f else 0f
+            confidence = if (fallback != null) 0.3f else 0f,
+            source = SuggestionSource.RULE
         )
     }
 

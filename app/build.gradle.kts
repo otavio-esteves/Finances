@@ -36,6 +36,21 @@ android {
         }
     }
 
+    // Fase 2b (docs/PLANO_MOTOR_IA_LOCAL.md, seção 2.5): "play" adds the
+    // install-time asset pack once one exists; "standalone" (sideload, CI,
+    // and today's only working path) relies solely on manual import via SAF.
+    // Both flavors share the same code today — the asset pack + Play Asset
+    // Delivery resolution for "play" is not wired yet.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("standalone") {
+            dimension = "distribution"
+        }
+        create("play") {
+            dimension = "distribution"
+        }
+    }
+
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
@@ -77,6 +92,11 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
+
+    // Fase 3 (docs/PLANO_MOTOR_IA_LOCAL.md): motor de inferência on-device.
+    // Versão pinada deliberadamente (não "latest.release") — ver seção 8,
+    // risco "API do LiteRT-LM instável entre versões".
+    implementation(libs.litertlm.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
