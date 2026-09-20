@@ -75,6 +75,7 @@ class DashboardViewModelTest {
             getMonthlyBalance = getMonthlyBalance,
             getTransactionsByMonth = getTransactionsByMonth,
             getCategorySummaries = getCategorySummaries,
+            categoriesRepository = FakeCategoriesRepository(),
             dateProvider = fakeDateProvider
         )
 
@@ -88,6 +89,7 @@ class DashboardViewModelTest {
             getMonthlyBalance = GetMonthlyBalanceUseCase(repository),
             getTransactionsByMonth = GetTransactionsByMonthUseCase(repository),
             getCategorySummaries = GetCategorySummariesUseCase(FakeCategoriesRepository()),
+            categoriesRepository = FakeCategoriesRepository(),
             dateProvider = fakeDateProvider
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {

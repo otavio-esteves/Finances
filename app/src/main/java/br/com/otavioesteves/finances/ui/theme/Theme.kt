@@ -1,48 +1,46 @@
 package br.com.otavioesteves.finances.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
+// shadcn/ui "zinc" theme, dark variant — the app is dark-only by design.
 private val DarkColorScheme = darkColorScheme(
-    primary = AppPrimary,
-    onPrimary = AppOnPrimary,
-    background = AppBackground,
-    onBackground = AppOnBackground,
-    surface = AppSurface,
-    onSurface = AppOnSurface,
-    surfaceVariant = AppSurfaceVariant,
-    onSurfaceVariant = AppOnSurfaceMuted,
-    error = AppExpense,
+    primary = ZincPrimary,
+    onPrimary = ZincPrimaryForeground,
+    background = ZincBackground,
+    onBackground = ZincForeground,
+    surface = ZincCard,
+    onSurface = ZincCardForeground,
+    surfaceVariant = ZincSecondary,
+    onSurfaceVariant = ZincMutedForeground,
+    secondary = ZincSecondary,
+    onSecondary = ZincSecondaryForeground,
+    error = ZincDestructive,
+    onError = ZincDestructiveForeground,
     tertiary = AppIncome,
-    outline = AppDivider
+    outline = ZincBorder,
+    outlineVariant = ZincBorder
 )
 
-// We force Dark Theme for this app as requested
+// shadcn radius scale: --radius: 0.5rem (8dp), sm/md/lg/xl derived from it.
 private val AppShapes = Shapes(
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp)
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(6.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(12.dp),
+    extraLarge = RoundedCornerShape(16.dp)
 )
 
 @Composable
 fun FinancesTheme(
-    darkTheme: Boolean = true,
-    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else DarkColorScheme // Force dark for now
-
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = DarkColorScheme,
         typography = Typography,
         shapes = AppShapes,
         content = content

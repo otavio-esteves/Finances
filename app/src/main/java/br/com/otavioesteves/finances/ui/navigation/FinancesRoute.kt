@@ -7,10 +7,6 @@ sealed interface FinancesRoute {
         override val route: String = "dashboard"
     }
 
-    data object Categories : FinancesRoute {
-        override val route: String = "categories"
-    }
-
     data object AddTransaction : FinancesRoute {
         override val route: String = "add-transaction"
     }
@@ -19,8 +15,8 @@ sealed interface FinancesRoute {
         override val route: String = "transactions"
     }
 
-    data object Settings : FinancesRoute {
-        override val route: String = "settings"
+    data object AiModel : FinancesRoute {
+        override val route: String = "settings/ai-model"
     }
 
     data object ImportStatement : FinancesRoute {

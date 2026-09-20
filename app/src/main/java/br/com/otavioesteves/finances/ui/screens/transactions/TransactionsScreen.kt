@@ -39,22 +39,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.otavioesteves.finances.domain.model.Transaction
-import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.presentation.AppViewModelProvider
-import br.com.otavioesteves.finances.presentation.transactions.TransactionItem
 import br.com.otavioesteves.finances.presentation.transactions.TransactionsUiState
 import br.com.otavioesteves.finances.presentation.transactions.TransactionsViewModel
-import br.com.otavioesteves.finances.ui.components.AmountText
 import br.com.otavioesteves.finances.ui.components.EmptyState
 import br.com.otavioesteves.finances.ui.components.MonthPeriodSelector
-import br.com.otavioesteves.finances.utils.DateFormatter
+import br.com.otavioesteves.finances.ui.components.TransactionListRow
 import br.com.otavioesteves.finances.utils.ExportFormat
-import br.com.otavioesteves.finances.utils.MoneyFormatter
 import br.com.otavioesteves.finances.utils.formatMonthPeriod
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -214,10 +209,21 @@ private fun TransactionsContent(
                 modifier = modifier.fillMaxSize()
             ) {
                 items(state.transactions, key = { it.transaction.id }) { item ->
-                    TransactionRow(
-                        item = item,
-                        onDelete = { onDeleteTransaction(item.transaction) },
-                        modifier = Modifier.clickable { onTransactionClick(item.transaction) }
+                    TransactionListRow(
+                        transaction = item.transaction,
+                        categoryName = item.category?.name,
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .clickable { onTransactionClick(item.transaction) },
+                        trailing = {
+                            IconButton(onClick = { onDeleteTransaction(item.transaction) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Excluir transação",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     )
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -226,49 +232,6 @@ private fun TransactionsContent(
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun TransactionRow(
-    item: TransactionItem,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val transaction = item.transaction
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = transaction.description,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = "${item.category?.name ?: "Sem categoria"} • ${DateFormatter.format(transaction.date)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        
-        AmountText(
-            amount = MoneyFormatter.format(transaction.amount),
-            isPositive = transaction.type == TransactionType.INCOME,
-            style = MaterialTheme.typography.bodyLarge
-        )
-
-        IconButton(onClick = onDelete) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = "Excluir transação",
-                tint = MaterialTheme.colorScheme.error
-            )
         }
     }
 }

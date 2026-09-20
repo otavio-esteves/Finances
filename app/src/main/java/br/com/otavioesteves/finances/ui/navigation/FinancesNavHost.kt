@@ -8,12 +8,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import br.com.otavioesteves.finances.ui.screens.addtransaction.AddTransactionScreen
-import br.com.otavioesteves.finances.ui.screens.categories.CategoriesScreen
+import br.com.otavioesteves.finances.ui.screens.aimodel.AiModelScreen
 import br.com.otavioesteves.finances.ui.screens.categorydetails.CategoryDetailsScreen
-import br.com.otavioesteves.finances.ui.screens.home.HomeChatPager
+import br.com.otavioesteves.finances.ui.screens.home.MainTabsScreen
 import br.com.otavioesteves.finances.ui.screens.importstatement.ImportStatementScreen
 import br.com.otavioesteves.finances.ui.screens.transactions.TransactionsScreen
-import br.com.otavioesteves.finances.ui.screens.settings.SettingsScreen
 
 @Composable
 fun FinancesNavHost(modifier: Modifier = Modifier) {
@@ -25,21 +24,23 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
         modifier = modifier
     ) {
         composable(FinancesRoute.Dashboard.route) {
-            HomeChatPager(
-                onCategoriesClick = {
-                    navController.navigate(FinancesRoute.Categories.route)
-                },
+            MainTabsScreen(
                 onAddTransactionClick = {
                     navController.navigate(FinancesRoute.AddTransaction.route)
                 },
                 onHistoryClick = {
                     navController.navigate(FinancesRoute.Transactions.route)
                 },
-                onSettingsClick = {
-                    navController.navigate(FinancesRoute.Settings.route)
-                },
                 onImportStatementClick = {
                     navController.navigate(FinancesRoute.ImportStatement.route)
+                },
+                onCategoryClick = { categorySummary ->
+                    navController.navigate(
+                        FinancesRoute.CategoryDetails(categorySummary.category.id).route
+                    )
+                },
+                onAiModelClick = {
+                    navController.navigate(FinancesRoute.AiModel.route)
                 }
             )
         }
@@ -50,8 +51,8 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
             )
         }
 
-        composable(FinancesRoute.Settings.route) {
-            SettingsScreen(
+        composable(FinancesRoute.AiModel.route) {
+            AiModelScreen(
                 onBackClick = { navController.popBackStack() }
             )
         }
@@ -75,16 +76,6 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
         ) {
             AddTransactionScreen(
                 onBackClick = { navController.popBackStack() }
-            )
-        }
-
-        composable(FinancesRoute.Categories.route) {
-            CategoriesScreen(
-                onCategoryClick = { category ->
-                    navController.navigate(
-                        FinancesRoute.CategoryDetails(category.category.id).route
-                    )
-                }
             )
         }
 

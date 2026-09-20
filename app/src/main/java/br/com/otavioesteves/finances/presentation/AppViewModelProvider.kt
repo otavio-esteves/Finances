@@ -43,6 +43,7 @@ object AppViewModelProvider {
                 getMonthlyBalance = financesApplication().container.getMonthlyBalanceUseCase,
                 getTransactionsByMonth = financesApplication().container.getTransactionsByMonthUseCase,
                 getCategorySummaries = financesApplication().container.getCategorySummariesUseCase,
+                categoriesRepository = financesApplication().container.categoriesRepository,
                 dateProvider = financesApplication().container.dateProvider
             )
         }
