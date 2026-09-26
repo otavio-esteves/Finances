@@ -4,8 +4,8 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Lifecycle of the on-device inference engine, independent of which runtime
- * backs it (see docs/ARCHITECTURE.md, "Decisão de Arquitetura: Motor de IA Local").
- * Until Fase 3 wires a real engine, every [LocalAiEngine] stays [AiEngineState.NotProvisioned].
+ * backs it (see docs/ARCHITECTURE.md, "Motor de IA local"). A Ready state
+ * means a bundle passed the initial file check, not that inference succeeded.
  */
 sealed interface AiEngineState {
     data object NotProvisioned : AiEngineState
@@ -24,7 +24,7 @@ data class InstalledModel(
     val path: String
 )
 
-/** Where the model bundle came from — see docs/ARCHITECTURE.md, seção 2. */
+/** Where the model bundle came from — see docs/ARCHITECTURE.md, "Motor de IA local". */
 enum class ModelSource { ASSET_PACK, USER_IMPORTED }
 
 enum class UnsupportedReason { INSUFFICIENT_RAM, UNSUPPORTED_ABI, NO_STORAGE }

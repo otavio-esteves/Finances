@@ -21,9 +21,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * [TransactionCategorizer] backed by a real LiteRT-LM engine
- * (docs/PLANO_MOTOR_IA_LOCAL.md, Fase 3). Every call to the
- * `com.google.ai.edge.litertlm.*` API is isolated to this one file — see
- * seção 8, risco "API do LiteRT-LM instável entre versões" — so that any
+ * (docs/PLANO_MOTOR_IA_LOCAL.md, Fase 3). Categorization calls to the
+ * `com.google.ai.edge.litertlm.*` API are isolated here, so that any
  * mismatch between what's written here and the real API (this was written
  * against the library's public docs, not against a compiler — see the
  * inline notes below) is easy to find and fix in one place.
@@ -38,7 +37,7 @@ import kotlinx.serialization.json.Json
  * be the correct accessor instead).
  *
  * Falls back to [ruleBasedCategorizer] whenever the engine fails to load or
- * a chunk's JSON can't be parsed even after one retry (seção 4, "Fallback").
+ * a chunk's JSON can't be parsed even after one retry (see the plan's fallback decision).
  * Per-transaction, a suggestion below [confidenceThreshold] also falls back
  * — never leaves a transaction on a low-confidence AI guess.
  */
@@ -146,7 +145,7 @@ class LiteRtTransactionCategorizer(
 
     private fun buildPrompt(chunk: List<RawStatementEntry>, categories: List<Category>): String {
         // Só descrição, valor e data — nunca dados de titular/conta/agência,
-        // que não existem em RawStatementEntry (ver docs/PLANO_MOTOR_IA_LOCAL.md, seção 7).
+        // que não existem em RawStatementEntry (ver docs/PLANO_MOTOR_IA_LOCAL.md, "Verificação e privacidade").
         val entriesJson = chunk.mapIndexed { index, entry ->
             """{"index":$index,"description":"${entry.description.replace("\"", "'")}","amount":${entry.amount.cents},"date":"${entry.date}","type":"${entry.type.name}"}"""
         }.joinToString(prefix = "[", postfix = "]", separator = ",")

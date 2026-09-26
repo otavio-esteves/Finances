@@ -20,8 +20,9 @@ import kotlinx.coroutines.withContext
 
 /**
  * [LocalAiRepository] backed by a real LiteRT-LM engine — a scoped-down
- * stand-in for the `FinancialChat`/RAG contract docs/PLANO_MOTOR_IA_LOCAL.md
- * § 3/5 plans for Fase 5: free-text, not streamed, and grounded only in the
+ * stand-in for the `FinancialChat`/RAG contract planned in
+ * docs/PLANO_MOTOR_IA_LOCAL.md, "Chat que consulta as finanças": free-text,
+ * not streamed, and grounded only in the
  * current month's balance + category totals ([FinancialContext]), not a
  * per-transaction retrieval. Built to validate the imported engine can hold a
  * conversation at all. Every `com.google.ai.edge.litertlm.*` call is isolated

@@ -7,7 +7,7 @@ import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 /**
  * Categorizes a batch of raw statement entries. Implementations may be
  * AI-backed (Fase 3) or the permanent rule-based fallback — see
- * docs/ARCHITECTURE.md, "Decisão de Arquitetura: Motor de IA Local".
+ * docs/ARCHITECTURE.md, "Motor de IA local".
  */
 interface TransactionCategorizer {
     suspend fun categorize(

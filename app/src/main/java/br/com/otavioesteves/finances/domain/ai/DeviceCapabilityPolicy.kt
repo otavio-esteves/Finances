@@ -2,9 +2,9 @@ package br.com.otavioesteves.finances.domain.ai
 
 /**
  * Pure capacity heuristics gating whether the local AI engine is offered at
- * all (docs/PLANO_MOTOR_IA_LOCAL.md, seção 4, "Detecção de capacidade").
- * Thresholds are first-pass placeholders — Fase 4 replaces them with numbers
- * measured on real target devices.
+ * all (docs/PLANO_MOTOR_IA_LOCAL.md, "Importação do modelo").
+ * Thresholds are first-pass placeholders; device measurements must replace
+ * them before promising model support on intermediate hardware.
  */
 object DeviceCapabilityPolicy {
     const val MIN_TOTAL_RAM_BYTES = 6L * 1024 * 1024 * 1024

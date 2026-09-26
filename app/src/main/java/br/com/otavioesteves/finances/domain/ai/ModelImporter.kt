@@ -4,7 +4,7 @@ import java.io.InputStream
 
 /**
  * Provisions a user-supplied model bundle onto the device (Fase 2a — import
- * manual via SAF). See docs/PLANO_MOTOR_IA_LOCAL.md, seção 2.3 e 4.
+ * manual via SAF). See docs/PLANO_MOTOR_IA_LOCAL.md, "Importação do modelo".
  */
 interface ModelImporter {
     suspend fun importModel(displayName: String, openStream: () -> InputStream): Result<InstalledModel>

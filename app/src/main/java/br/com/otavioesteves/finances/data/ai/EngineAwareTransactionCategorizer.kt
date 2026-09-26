@@ -11,7 +11,7 @@ import br.com.otavioesteves.finances.domain.model.RawStatementEntry
  * Resolves which [TransactionCategorizer] to use per call, based on the
  * engine's *current* state — not fixed at DI wiring time, since the user can
  * import or remove a model at runtime from the Modelo de IA screen (Fase 2a).
- * See docs/PLANO_MOTOR_IA_LOCAL.md, seção 4, "Resolução de qual modelo usar".
+ * See docs/PLANO_MOTOR_IA_LOCAL.md, "Importação do modelo".
  */
 class EngineAwareTransactionCategorizer(
     private val localAiEngine: LocalAiEngine,

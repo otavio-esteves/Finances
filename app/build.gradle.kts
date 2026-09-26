@@ -36,7 +36,7 @@ android {
         }
     }
 
-    // Fase 2b (docs/PLANO_MOTOR_IA_LOCAL.md, seção 2.5): "play" adds the
+    // Fase 2b (docs/PLANO_MOTOR_IA_LOCAL.md, seção 5): "play" adds the
     // install-time asset pack once one exists; "standalone" (sideload, CI,
     // and today's only working path) relies solely on manual import via SAF.
     // Both flavors share the same code today — the asset pack + Play Asset
@@ -95,8 +95,8 @@ dependencies {
     ksp(libs.room.compiler)
 
     // Fase 3 (docs/PLANO_MOTOR_IA_LOCAL.md): motor de inferência on-device.
-    // Versão pinada deliberadamente (não "latest.release") — ver seção 8,
-    // risco "API do LiteRT-LM instável entre versões".
+    // Versão pinada deliberadamente (não "latest.release"); validar a API
+    // e a inferência real conforme docs/PLANO_MOTOR_IA_LOCAL.md, seção 4.
     implementation(libs.litertlm.android)
 
     testImplementation(libs.junit)

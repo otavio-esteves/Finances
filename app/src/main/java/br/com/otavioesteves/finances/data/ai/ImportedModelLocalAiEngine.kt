@@ -19,7 +19,7 @@ import java.util.Locale
 
 /**
  * [LocalAiEngine] backed by a model the user imported manually via SAF
- * (Fase 2a — docs/PLANO_MOTOR_IA_LOCAL.md, seção 2.3). [warmUp] itself is
+ * (Fase 2a — docs/PLANO_MOTOR_IA_LOCAL.md, "Importação do modelo"). [warmUp] itself is
  * still only a format/size sanity check on the bundle, not a load of the
  * LiteRT-LM runtime — the real engine lives in [LiteRtTransactionCategorizer]
  * and [LiteRtLocalAiRepository] (Fase 3/5), which read [state]/[InstalledModel.path]

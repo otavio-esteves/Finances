@@ -17,9 +17,8 @@ import br.com.otavioesteves.finances.utils.formatMonthPeriod
 /**
  * Deterministic, keyword-based stand-in for an on-device LLM. Permanent
  * fallback for [TransactionCategorizer] when the real engine is absent or
- * unsupported (see docs/ARCHITECTURE.md, "Decisão de Arquitetura: Motor de IA
- * Local"); still the only [LocalAiRepository] (chat) implementation until
- * Fase 5 wires retrieval-augmented chat.
+ * unsupported (see docs/ARCHITECTURE.md, "Motor de IA local"); also provides
+ * limited chat responses when the model is unavailable or inference fails.
  */
 class RuleBasedLocalAiRepository(
     private val dateProvider: DateProvider

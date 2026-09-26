@@ -43,7 +43,7 @@ import br.com.otavioesteves.finances.utils.queryDisplayName
 /**
  * Página oficial de download do bundle padrão (Gemma 4 E2B `.litertlm`).
  * Vazio de propósito: preencher com a URL real antes do lançamento (ver
- * docs/PLANO_MOTOR_IA_LOCAL.md, seção 2.3). Enquanto vazia, o botão de
+ * docs/PLANO_MOTOR_IA_LOCAL.md, "Importação do modelo"). Enquanto vazia, o botão de
  * atalho para a página fica oculto — importar continua funcionando via SAF.
  */
 private const val MODEL_DOWNLOAD_PAGE_URL = ""
