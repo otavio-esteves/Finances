@@ -12,7 +12,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Icon
@@ -59,13 +58,6 @@ fun FinancesBottomBar(
                 icon = Icons.Filled.Home,
                 label = "Início",
                 selected = selectedTab == MainTab.HOME,
-                onClick = onTabSelected
-            )
-            PageButton(
-                tab = MainTab.CHARTS,
-                icon = Icons.Filled.BarChart,
-                label = "Gráficos",
-                selected = selectedTab == MainTab.CHARTS,
                 onClick = onTabSelected
             )
             PageButton(

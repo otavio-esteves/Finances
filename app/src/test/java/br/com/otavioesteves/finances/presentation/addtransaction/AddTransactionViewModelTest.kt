@@ -7,6 +7,7 @@ import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
+import br.com.otavioesteves.finances.domain.model.TransactionOrigin
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
@@ -49,7 +50,10 @@ class AddTransactionViewModelTest {
         var deletedId: Long? = null
         var shouldFailDelete = false
 
-        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(transactions)
+        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(transactions.find { it.id == id })
+        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(transactions.filter {
+            it.date.year == period.year && it.date.monthValue == period.month
+        })
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {
             transactions = transactions + transaction
@@ -65,7 +69,7 @@ class AddTransactionViewModelTest {
     }
 
     private class FakeCategoriesRepository : CategoriesRepository {
-        override fun getCategories(): Flow<List<Category>> = flowOf(emptyList())
+        override fun getCategories(): Flow<List<Category>> = flowOf(listOf(Category(1, "Alimentação", CategoryType.EXPENSE)))
         override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> = flowOf(emptyList())
     }
 
@@ -89,6 +93,26 @@ class AddTransactionViewModelTest {
 
         assertEquals("Test", viewModel.uiState.value.description)
         assertTrue(viewModel.isEditMode)
+    }
+
+    @Test
+    fun `editing an older imported transaction preserves its origin`() = runTest {
+        val original = createFakeTransaction(7).copy(
+            date = LocalDate.of(2025, 8, 3),
+            origin = TransactionOrigin.IMPORTED
+        )
+        val repository = FakeTransactionsRepository(listOf(original))
+        val viewModel = createViewModel(repository, transactionId = 7)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(original.date, viewModel.uiState.value.date)
+        viewModel.onDescriptionChange("Corrigida")
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("Corrigida", repository.transactions.single().description)
+        assertEquals(TransactionOrigin.IMPORTED, repository.transactions.single().origin)
+        assertTrue(viewModel.uiState.value.isSaveSuccessful)
     }
 
     @Test

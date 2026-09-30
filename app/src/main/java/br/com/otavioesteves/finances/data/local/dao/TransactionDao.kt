@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
+    @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
+    fun getTransactionById(id: Long): Flow<TransactionEntity?>
+
     @Query("SELECT * FROM transactions WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, id DESC")
     fun getTransactionsByDateRange(startDate: String, endDate: String): Flow<List<TransactionEntity>>
 

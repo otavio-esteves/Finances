@@ -28,7 +28,7 @@ O valor monetário usa `Money` em centavos (`Long`), evitando ponto flutuante pa
 
 ## Navegação e experiência
 
-`FinancesNavHost` abre `MainTabsScreen`. Um `HorizontalPager` coloca `DashboardScreen` (Início) à esquerda de `ChatScreen`; uma pill flutuante alterna entre as duas páginas. O botão de menu inferior abre `CategoriesScreen` (Gráfico), `SettingsScreen` (Config), histórico, importação e lançamento manual. Importação, histórico, inclusão/edição de transações, detalhes de categoria e gerenciamento do modelo abrem como rotas secundárias do `NavHost`.
+`FinancesNavHost` abre `MainTabsScreen`. Um `HorizontalPager` coloca `DashboardScreen` (Início) à esquerda de `ChatScreen`; uma pill flutuante alterna entre as duas páginas. O botão de menu inferior abre `ChartsScreen` (Gráficos), `CategoriesScreen` (Categorias), `SettingsScreen` (Config), histórico, importação e lançamento manual. Importação, histórico, inclusão/edição de transações, detalhes de categoria e gerenciamento do modelo abrem como rotas secundárias do `NavHost`.
 
 O Chat está **imediatamente à direita da Início** no pager e na pill inferior, conforme a ideia central do produto. Menu e importação são botões circulares independentes, ao lado da pill; o lançamento manual continua acessível pelo menu.
 
@@ -50,7 +50,7 @@ O gráfico e os totais já fornecem um resumo visual. **Insights proativos em li
 
 ## Chat à direita da Início
 
-`ChatViewModel` usa `SendChatMessageUseCase` e `GetChatHistoryUseCase`. Ao abrir a tela, consulta as 100 mensagens mais recentes; a pessoa pode carregar blocos anteriores no topo. O estado do campo de texto é coletado separadamente da lista para evitar recomposição da conversa a cada tecla. Ao enviar uma pergunta, o caso de uso monta `FinancialContext` com saldo e totais por categoria do **mês corrente**, salva a pergunta, chama `LocalAiRepository.sendMessage` e salva a resposta. `EngineAwareLocalAiRepository` escolhe LiteRT-LM se o modelo estiver `Ready`; caso contrário, responde pelo fallback por regras. O adaptador LiteRT-LM também usa esse fallback quando a inferência falha.
+`ChatViewModel` usa `SendChatMessageUseCase` e `GetChatHistoryUseCase`. Ao abrir a tela, consulta as 100 mensagens mais recentes; a pessoa pode carregar blocos anteriores no topo. O estado do campo de texto é coletado separadamente da lista para evitar recomposição da conversa a cada tecla. Ao enviar uma pergunta, o caso de uso verifica se ela pede outro período ou dias específicos; nesse caso, informa a limitação sem apresentar os números do mês corrente como resposta. Para perguntas compatíveis, monta `FinancialContext` com saldo e totais por categoria do **mês corrente**, salva a pergunta, chama `LocalAiRepository.sendMessage` e salva a resposta. `EngineAwareLocalAiRepository` escolhe LiteRT-LM se o modelo estiver `Ready`; caso contrário, responde pelo fallback por regras. O adaptador LiteRT-LM também usa esse fallback quando a inferência falha.
 
 O Chat **não lê lançamentos individuais nem resolve períodos pedidos no texto**. Não há recuperação contextual por transação, streaming ou motor mantido em memória entre perguntas. Para responder “quanto gastei com mercado em fevereiro?” com precisão, o próximo contrato deve primeiro resolver o período, consultar as transações/categorias pertinentes no Room e só então montar a resposta. O Chat permanece **somente leitura**: respostas não alteram transações nem categorias.
 

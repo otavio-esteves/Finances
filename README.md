@@ -30,7 +30,7 @@ O lançamento manual, a edição de transações e o backup complementam esse fl
 | Visualização | Início com saldo mensal, gráfico de composição por categoria e transações recentes; telas de categorias e histórico com seleção de mês. |
 | Chat | Histórico persistido, carregado inicialmente em blocos de 100 mensagens, e respostas baseadas no saldo e nos totais por categoria do mês corrente. Com modelo disponível, usa LiteRT-LM; sem ele ou se a inferência falhar, usa respostas limitadas por regras. Não há recuperação de transações individuais, streaming nem insights proativos. |
 | Dados | Room local, lançamentos manuais, exportação CSV/JSON e backup/restauração JSON. |
-| Navegação | Início e Chat formam duas páginas lado a lado, com gesto horizontal e uma pill flutuante de dois ícones. O botão circular à esquerda abre o menu com Gráfico, Configurações, Histórico e lançamento manual; o botão circular à direita abre a importação. |
+| Navegação | Início e Chat formam duas páginas lado a lado, com gesto horizontal e uma pill flutuante de dois ícones. O botão circular à esquerda abre o menu com Gráficos, Categorias, Configurações, Histórico e lançamento manual; o botão circular à direita abre a importação. |
 
 ### Próximas entregas ligadas à ideia central
 

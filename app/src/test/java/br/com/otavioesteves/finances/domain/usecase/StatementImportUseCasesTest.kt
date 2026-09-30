@@ -187,6 +187,7 @@ class StatementImportUseCasesTest {
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
+        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         val addedTransactions = mutableListOf<Transaction>()
 
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())

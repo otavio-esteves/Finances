@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.Category
-import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
@@ -20,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.math.BigDecimal
 
 class AddTransactionViewModel(
     private val addTransactionUseCase: AddTransactionUseCase,
@@ -35,6 +35,7 @@ class AddTransactionViewModel(
 
     private val _uiState = MutableStateFlow(AddTransactionUiState(date = dateProvider.getCurrentDate()))
     val uiState: StateFlow<AddTransactionUiState> = _uiState.asStateFlow()
+    private var editingTransaction: Transaction? = null
 
     init {
         viewModelScope.launch {
@@ -50,16 +51,14 @@ class AddTransactionViewModel(
     private suspend fun loadTransaction(id: Long) {
         _uiState.update { it.copy(isLoading = true) }
         
-        val currentDate = _uiState.value.date
-        val period = MonthPeriod(currentDate.year, currentDate.monthValue)
-        
-        val transaction = getTransactionUseCase(id, period).first()
+        val transaction = getTransactionUseCase(id).first()
         
         if (transaction != null) {
+            editingTransaction = transaction
             _uiState.update { state ->
                 state.copy(
                     description = transaction.description,
-                    amount = (transaction.amount.cents.toDouble() / 100).toString().replace('.', ','),
+                    amount = BigDecimal.valueOf(transaction.amount.cents, 2).toPlainString().replace('.', ','),
                     type = transaction.type,
                     selectedCategory = state.categories.find { it.id == transaction.categoryId },
                     date = transaction.date,
@@ -147,8 +146,19 @@ class AddTransactionViewModel(
 
         viewModelScope.launch {
             try {
-                val transaction = Transaction(
-                    id = transactionId ?: 0,
+                val existing = editingTransaction
+                if (isEditMode && existing == null) {
+                    _uiState.update { it.copy(error = "Transação não encontrada") }
+                    return@launch
+                }
+                val transaction = (existing ?: Transaction(
+                    id = 0,
+                    description = currentState.description.trim(),
+                    amount = parsedAmount!!,
+                    categoryId = currentState.selectedCategory!!.id,
+                    date = currentState.date,
+                    type = currentState.type
+                )).copy(
                     description = currentState.description.trim(),
                     amount = parsedAmount!!,
                     categoryId = currentState.selectedCategory!!.id,
@@ -156,8 +166,8 @@ class AddTransactionViewModel(
                     type = currentState.type,
                     notes = currentState.notes.trim().takeIf { it.isNotEmpty() }
                 )
-                
-                if (transactionId != null && transactionId > 0) {
+
+                if (isEditMode) {
                     updateTransactionUseCase(transaction)
                 } else {
                     addTransactionUseCase(transaction)

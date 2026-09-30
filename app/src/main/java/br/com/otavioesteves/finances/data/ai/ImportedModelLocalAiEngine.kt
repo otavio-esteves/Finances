@@ -58,6 +58,7 @@ class ImportedModelLocalAiEngine(
         }
         return withContext(Dispatchers.IO) {
             val tempFile = File(modelsDir, "$MODEL_FILE_NAME.tmp")
+            val previousState = _state.value
             try {
                 modelsDir.mkdirs()
                 val digest = MessageDigest.getInstance("SHA-256")
@@ -69,15 +70,16 @@ class ImportedModelLocalAiEngine(
 
                 if (!isPlausibleBundle(tempFile)) {
                     tempFile.delete()
-                    _state.value = AiEngineState.Failed(AiError.ModelNotLoaded)
+                    if (previousState !is AiEngineState.Ready) {
+                        _state.value = AiEngineState.Failed(AiError.ModelNotLoaded)
+                    }
                     return@withContext Result.failure(
                         IllegalArgumentException("Arquivo selecionado não parece ser um modelo válido")
                     )
                 }
 
                 if (!tempFile.renameTo(modelFile)) {
-                    tempFile.copyTo(modelFile, overwrite = true)
-                    tempFile.delete()
+                    throw IllegalStateException("Não foi possível substituir o modelo instalado")
                 }
 
                 val sha256 = digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it) }
@@ -100,7 +102,9 @@ class ImportedModelLocalAiEngine(
                 Result.success(installedModel)
             } catch (e: Exception) {
                 tempFile.delete()
-                _state.value = AiEngineState.Failed(AiError.Unknown(e))
+                if (previousState !is AiEngineState.Ready) {
+                    _state.value = AiEngineState.Failed(AiError.Unknown(e))
+                }
                 Result.failure(e)
             }
         }

@@ -41,6 +41,7 @@ class DashboardViewModelTest {
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
+        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         var requestedRecentLimit: Int? = null
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
         override fun getRecentTransactions(period: MonthPeriod, limit: Int): Flow<List<Transaction>> {

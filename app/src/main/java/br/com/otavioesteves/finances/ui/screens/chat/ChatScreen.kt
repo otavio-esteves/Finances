@@ -68,12 +68,15 @@ fun ChatScreen(
     viewModel: ChatViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val historyPage by viewModel.historyPage.collectAsStateWithLifecycle()
+    val error by viewModel.errorState.collectAsStateWithLifecycle()
 
     ChatContent(
         messages = historyPage.messages,
         hasOlder = historyPage.hasOlder,
         onLoadOlder = viewModel::loadOlderMessages,
         onDraftChange = viewModel::onDraftChange,
+        error = error,
+        onErrorDismiss = viewModel::clearError,
         composer = { ChatComposerFromViewModel(viewModel) },
         modifier = modifier
     )
@@ -93,7 +96,9 @@ private fun ChatContent(
     onLoadOlder: () -> Unit,
     onDraftChange: (String) -> Unit,
     composer: @Composable () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    error: String? = null,
+    onErrorDismiss: () -> Unit = {}
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -178,6 +183,20 @@ private fun ChatContent(
             }
         }
 
+        if (error != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = error,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                TextButton(onClick = onErrorDismiss) { Text("Fechar") }
+            }
+        }
         composer()
     }
 }

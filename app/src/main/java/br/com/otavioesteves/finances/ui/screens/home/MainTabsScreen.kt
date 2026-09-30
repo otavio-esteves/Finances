@@ -74,9 +74,9 @@ import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.remember
 import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 
-private enum class Section { MAIN, CATEGORIES, SETTINGS }
+private enum class Section { MAIN, CHARTS, CATEGORIES, SETTINGS }
 
-/** Home, charts and chat share the primary swipeable surface. */
+/** Home and chat share the primary swipeable surface. */
 @Composable
 fun MainTabsScreen(
     onAddTransactionClick: () -> Unit,
@@ -153,8 +153,9 @@ fun MainTabsScreen(
                         DrawerLabel("VISÃO GERAL")
                         DrawerMenuItem("Início", Icons.Filled.Home,
                             section == Section.MAIN && pagerState.currentPage == MainTab.HOME.ordinal) { showTab(MainTab.HOME) }
-                        DrawerMenuItem("Gráficos", Icons.Filled.BarChart,
-                            section == Section.MAIN && pagerState.currentPage == MainTab.CHARTS.ordinal) { showTab(MainTab.CHARTS) }
+                        DrawerMenuItem("Gráficos", Icons.Filled.BarChart, section == Section.CHARTS) {
+                            showSection(Section.CHARTS)
+                        }
                         DrawerMenuItem("Chat", Icons.AutoMirrored.Filled.Chat,
                             section == Section.MAIN && pagerState.currentPage == MainTab.CHAT.ordinal) { showTab(MainTab.CHAT) }
                         DrawerMenuItem("Categorias", Icons.Filled.PieChart, section == Section.CATEGORIES) {
@@ -209,10 +210,12 @@ fun MainTabsScreen(
                                 onHistoryClick = onHistoryClick,
                                 hazeState = hazeState
                             )
-                            MainTab.CHARTS -> ChartsScreen()
                             MainTab.CHAT -> ChatScreen()
                         }
                     }
+                    Section.CHARTS -> ChartsScreen(
+                        modifier = Modifier.fillMaxSize().hazeSource(hazeState)
+                    )
                     Section.CATEGORIES -> CategoriesScreen(
                         onCategoryClick = onCategoryClick,
                         modifier = Modifier.fillMaxSize().hazeSource(hazeState)

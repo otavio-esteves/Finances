@@ -104,6 +104,9 @@ class TransactionUseCasesTest {
     ) : TransactionsRepository {
         private val transactions = MutableStateFlow(initialTransactions)
 
+        override fun getTransaction(id: Long): Flow<Transaction?> =
+            transactions.map { current -> current.find { it.id == id } }
+
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> {
             return transactions.map { currentTransactions ->
                 currentTransactions.filter { transaction ->

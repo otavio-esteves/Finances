@@ -7,6 +7,7 @@ import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.repository.ChatRepository
 import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
 import kotlinx.coroutines.flow.first
+import br.com.otavioesteves.finances.utils.formatMonthPeriod
 
 class SendChatMessageUseCase(
     private val localAiRepository: LocalAiRepository,
@@ -17,11 +18,12 @@ class SendChatMessageUseCase(
 ) {
     suspend operator fun invoke(message: String): ChatMessage {
         val period = dateProvider.getCurrentMonthPeriod()
-        val context = FinancialContext(
+        val currentMonthQuestion = canAnswerWithCurrentMonth(message, period)
+        val context = if (currentMonthQuestion) FinancialContext(
             period = period,
             monthlyBalance = getMonthlyBalanceUseCase(period).first(),
             categorySummaries = getCategorySummariesUseCase(period).first()
-        )
+        ) else null
 
         chatRepository.addMessage(
             ChatMessage(
@@ -32,7 +34,13 @@ class SendChatMessageUseCase(
             )
         )
 
-        val reply = localAiRepository.sendMessage(message, context)
+        val reply = if (context == null) ChatMessage(
+            id = 0,
+            role = ChatRole.ASSISTANT,
+            content = "No momento, só consigo consultar o resumo de ${formatMonthPeriod(period)} de ${period.year}. " +
+                "Ainda não consigo responder perguntas sobre outros períodos ou dias específicos.",
+            createdAt = dateProvider.getCurrentDateTime()
+        ) else localAiRepository.sendMessage(message, context)
         chatRepository.addMessage(reply)
         return reply
     }

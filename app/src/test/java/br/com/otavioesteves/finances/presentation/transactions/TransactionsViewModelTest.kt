@@ -42,6 +42,7 @@ class TransactionsViewModelTest {
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
+        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         var deletedId: Long? = null
         var shouldFail = false
         var transactions: List<Transaction> = emptyList()

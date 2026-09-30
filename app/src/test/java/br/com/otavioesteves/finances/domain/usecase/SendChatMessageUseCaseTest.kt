@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
 
@@ -67,6 +68,38 @@ class SendChatMessageUseCaseTest {
         assertEquals(expectedReply, chatRepository.savedMessages[1])
     }
 
+    @Test
+    fun invoke_refusesAnotherMonthWithoutSendingCurrentMonthFiguresToAi() = runBlocking {
+        val period = MonthPeriod(2026, 1)
+        val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "incorreto", LocalDateTime.now()))
+        val chat = FakeChatRepository()
+        val useCase = SendChatMessageUseCase(
+            ai, chat,
+            GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.fromCents(100_000))),
+            GetCategorySummariesUseCase(FakeCategoriesRepository(emptyList())),
+            FakeDateProvider(period)
+        )
+
+        val reply = useCase("Quanto gastei em fevereiro de 2026?")
+
+        assertTrue(reply.content.contains("só consigo consultar o resumo de Janeiro de 2026"))
+        assertEquals(null, ai.lastMessage)
+        assertEquals(2, chat.savedMessages.size)
+    }
+
+    @Test
+    fun invoke_refusesRelativePeriodAndAcceptsCurrentMonth() = runBlocking {
+        val period = MonthPeriod(2026, 1)
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei no mês passado?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei na última semana?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em janeiro de 2025?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em fev/2026?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em 02/2026?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em 2026-02?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em 05/01/2026?", period))
+        assertEquals(true, canAnswerWithCurrentMonth("Quanto gastei em janeiro de 2026?", period))
+    }
+
     private class FakeDateProvider(private val period: MonthPeriod) : DateProvider {
         override fun getCurrentMonthPeriod(): MonthPeriod = period
         override fun getCurrentDate(): java.time.LocalDate = period.toYearMonth().atDay(1)
@@ -74,6 +107,7 @@ class SendChatMessageUseCaseTest {
     }
 
     private class FakeTransactionsRepository(private val balance: Money) : TransactionsRepository {
+        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(balance)
         override suspend fun addTransaction(transaction: Transaction) = Unit

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModel(
@@ -28,6 +29,8 @@ class ChatViewModel(
     val draftState: StateFlow<String> = draft.asStateFlow()
     private val isSending = MutableStateFlow(false)
     val isSendingState: StateFlow<Boolean> = isSending.asStateFlow()
+    private val error = MutableStateFlow<String?>(null)
+    val errorState: StateFlow<String?> = error.asStateFlow()
 
     val historyPage: StateFlow<ChatHistoryPage> = historyLimit.flatMapLatest { limit ->
         getChatHistory(limit + 1).map { loaded ->
@@ -69,6 +72,10 @@ class ChatViewModel(
         draft.value = value
     }
 
+    fun clearError() {
+        error.value = null
+    }
+
     fun loadOlderMessages() {
         if (historyPage.value.hasOlder) historyLimit.value += HISTORY_PAGE_SIZE
     }
@@ -77,11 +84,17 @@ class ChatViewModel(
         val message = draft.value.trim()
         if (message.isEmpty() || isSending.value) return
 
+        isSending.value = true
+        error.value = null
         draft.value = ""
         viewModelScope.launch {
-            isSending.value = true
             try {
                 sendChatMessage(message)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (draft.value.isBlank()) draft.value = message
+                error.value = "Não foi possível enviar a mensagem. Tente novamente."
             } finally {
                 isSending.value = false
             }

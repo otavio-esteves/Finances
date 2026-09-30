@@ -129,6 +129,8 @@ fun AiModelScreen(
                 is AiEngineState.Ready -> ReadyContent(
                     displayName = engineState.model.displayName,
                     verified = engineState.model.verified,
+                    isImporting = uiState.isImporting,
+                    onReplaceClick = { filePickerLauncher.launch("*/*") },
                     onRemoveClick = viewModel::onRemoveModel
                 )
 
@@ -204,6 +206,8 @@ private fun NotProvisionedContent(
 private fun ReadyContent(
     displayName: String,
     verified: Boolean,
+    isImporting: Boolean,
+    onReplaceClick: () -> Unit,
     onRemoveClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -233,8 +237,14 @@ private fun ReadyContent(
         }
 
         PrimaryActionButton(
+            text = if (isImporting) "Importando modelo..." else "Substituir modelo",
+            onClick = onReplaceClick,
+            enabled = !isImporting
+        )
+        PrimaryActionButton(
             text = "Remover modelo",
             onClick = onRemoveClick,
+            enabled = !isImporting,
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         )

@@ -50,6 +50,7 @@ class ChatViewModelTest {
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
+        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) = Unit
@@ -73,9 +74,11 @@ class ChatViewModelTest {
 
     private class FakeLocalAiRepository : LocalAiRepository {
         var callCount = 0
+        var shouldFail = false
 
         override suspend fun sendMessage(message: String, context: FinancialContext): ChatMessage {
             callCount++
+            if (shouldFail) throw IllegalStateException("AI unavailable")
             return ChatMessage(
                 id = callCount.toLong(),
                 role = ChatRole.ASSISTANT,
@@ -160,6 +163,21 @@ class ChatViewModelTest {
 
         assertEquals(0, localAiRepository.callCount)
         assertTrue(viewModel.uiState.value.messages.isEmpty())
+    }
+
+    @Test
+    fun `sendMessage failure restores draft and exposes error`() = runTest {
+        localAiRepository.shouldFail = true
+        viewModel.onDraftChange("Qual é meu saldo?")
+
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("Qual é meu saldo?", viewModel.draftState.value)
+        assertEquals(false, viewModel.isSendingState.value)
+        assertTrue(viewModel.errorState.value != null)
+        viewModel.clearError()
+        assertEquals(null, viewModel.errorState.value)
     }
 
     @Test

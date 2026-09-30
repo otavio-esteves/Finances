@@ -15,6 +15,9 @@ class RoomTransactionsRepository(
     private val transactionDao: TransactionDao
 ) : TransactionsRepository {
 
+    override fun getTransaction(id: Long): Flow<Transaction?> =
+        transactionDao.getTransactionById(id).map { it?.toDomain() }
+
     override fun getTransactionsForYear(year: Int): Flow<List<Transaction>> {
         val startDate = LocalDate.of(year, 1, 1)
         val endDate = LocalDate.of(year, 12, 31)
