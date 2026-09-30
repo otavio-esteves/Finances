@@ -9,6 +9,8 @@ import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
 import br.com.otavioesteves.finances.utils.ExportFormat
+import br.com.otavioesteves.finances.utils.DateFormatter
+import br.com.otavioesteves.finances.utils.MoneyFormatter
 import br.com.otavioesteves.finances.utils.TransactionExporter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,13 +19,19 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TransactionsViewModel(
     private val getTransactionsByMonth: GetTransactionsByMonthUseCase,
     private val deleteTransaction: DeleteTransactionUseCase,
     private val categoriesRepository: CategoriesRepository,
-    dateProvider: DateProvider
+    dateProvider: DateProvider,
+    private val mappingDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val _selectedMonthPeriod = MutableStateFlow(dateProvider.getCurrentMonthPeriod())
@@ -42,11 +50,13 @@ class TransactionsViewModel(
                 transactions.map { transaction ->
                     TransactionItem(
                         transaction = transaction,
-                        category = categoryMap[transaction.categoryId]
+                        category = categoryMap[transaction.categoryId],
+                        formattedAmount = MoneyFormatter.format(transaction.amount),
+                        formattedDate = DateFormatter.format(transaction.date)
                     )
                 }
             }
-        },
+        }.flowOn(mappingDispatcher),
         _transactionToDelete,
         _error
     ) { items, toDelete, errorMsg ->

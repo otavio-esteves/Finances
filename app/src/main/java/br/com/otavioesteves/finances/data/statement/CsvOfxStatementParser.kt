@@ -24,10 +24,12 @@ class CsvOfxStatementParser : StatementParserRepository {
     }
 
     private fun parseCsv(text: String): List<RawStatementEntry> {
-        val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
-        require(lines.size >= 2) { "CSV vazio ou sem linhas de transação" }
+        val content = text.removePrefix("\uFEFF")
+        val rows = splitCsvRecords(content, detectDelimiter(content))
+            .filter { row -> row.any { it.isNotBlank() } }
+        require(rows.size >= 2) { "CSV vazio ou sem linhas de transação" }
 
-        val header = splitCsvLine(lines.first()).map { it.trim().lowercase() }
+        val header = rows.first().map { it.trim().lowercase() }
         val dateIndex = header.indexOfFirst { it.contains("data") || it.contains("date") }
         val descriptionIndex = header.indexOfFirst {
             it.contains("descri") || it.contains("histor") || it.contains("memo") || it.contains("description")
@@ -38,8 +40,10 @@ class CsvOfxStatementParser : StatementParserRepository {
             "CSV não contém as colunas esperadas de data, descrição e valor"
         }
 
-        return lines.drop(1).map { line ->
-            val fields = splitCsvLine(line)
+        return rows.drop(1).map { fields ->
+            require(fields.size > maxOf(dateIndex, descriptionIndex, amountIndex)) {
+                "Linha CSV com menos colunas que o cabeçalho"
+            }
             val amountCents = parseAmountCents(fields[amountIndex])
             RawStatementEntry(
                 description = fields[descriptionIndex].trim(),
@@ -90,25 +94,63 @@ class CsvOfxStatementParser : StatementParserRepository {
         return LocalDate.parse(digitsOnly.substring(0, 8), DateTimeFormatter.BASIC_ISO_DATE)
     }
 
-    private fun splitCsvLine(line: String): List<String> {
-        val fields = mutableListOf<String>()
-        val current = StringBuilder()
+    private fun detectDelimiter(text: String): Char {
         var insideQuotes = false
-        var i = 0
-        while (i < line.length) {
-            val char = line[i]
-            when {
-                char == '"' -> insideQuotes = !insideQuotes
-                char == ',' && !insideQuotes -> {
-                    fields += current.toString()
-                    current.clear()
+        var commas = 0
+        var semicolons = 0
+        var index = 0
+        while (index < text.length) {
+            when (text[index]) {
+                '"' -> {
+                    if (insideQuotes && text.getOrNull(index + 1) == '"') index++
+                    else insideQuotes = !insideQuotes
                 }
-                else -> current.append(char)
+                '\n', '\r' -> if (!insideQuotes) break
+                ',' -> if (!insideQuotes) commas++
+                ';' -> if (!insideQuotes) semicolons++
             }
-            i++
+            index++
         }
-        fields += current.toString()
-        return fields
+        return if (semicolons > commas) ';' else ','
+    }
+
+    private fun splitCsvRecords(text: String, delimiter: Char): List<List<String>> {
+        val records = mutableListOf<List<String>>()
+        val fields = mutableListOf<String>()
+        val field = StringBuilder()
+        var insideQuotes = false
+        var index = 0
+
+        fun finishRecord() {
+            fields += field.toString()
+            field.clear()
+            records += fields.toList()
+            fields.clear()
+        }
+
+        while (index < text.length) {
+            val char = text[index]
+            when {
+                char == '"' && insideQuotes && text.getOrNull(index + 1) == '"' -> {
+                    field.append('"')
+                    index++
+                }
+                char == '"' -> insideQuotes = !insideQuotes
+                char == delimiter && !insideQuotes -> {
+                    fields += field.toString()
+                    field.clear()
+                }
+                (char == '\r' || char == '\n') && !insideQuotes -> {
+                    finishRecord()
+                    if (char == '\r' && text.getOrNull(index + 1) == '\n') index++
+                }
+                else -> field.append(char)
+            }
+            index++
+        }
+        require(!insideQuotes) { "CSV com aspas não fechadas" }
+        if (field.isNotEmpty() || fields.isNotEmpty()) finishRecord()
+        return records
     }
 
     private companion object {

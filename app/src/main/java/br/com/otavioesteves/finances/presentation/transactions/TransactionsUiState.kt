@@ -6,7 +6,9 @@ import br.com.otavioesteves.finances.domain.model.Transaction
 
 data class TransactionItem(
     val transaction: Transaction,
-    val category: Category?
+    val category: Category?,
+    val formattedAmount: String? = null,
+    val formattedDate: String? = null
 )
 
 data class TransactionsUiState(

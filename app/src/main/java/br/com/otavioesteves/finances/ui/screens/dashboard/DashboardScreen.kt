@@ -1,29 +1,31 @@
 package br.com.otavioesteves.finances.ui.screens.dashboard
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.otavioesteves.finances.domain.model.Category
@@ -42,17 +44,16 @@ import br.com.otavioesteves.finances.ui.components.EmptyState
 import br.com.otavioesteves.finances.ui.components.FinanceCard
 import br.com.otavioesteves.finances.ui.components.MonthPeriodSelector
 import br.com.otavioesteves.finances.ui.components.TransactionListRow
-import br.com.otavioesteves.finances.ui.theme.AppAccent
-import br.com.otavioesteves.finances.ui.theme.AppAccentForeground
+import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 import br.com.otavioesteves.finances.ui.theme.FinancesTheme
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import java.time.LocalDate
+import dev.chrisbanes.haze.HazeState
 
 @Composable
 fun DashboardScreen(
-    onAddTransactionClick: () -> Unit,
     onHistoryClick: () -> Unit,
-    onImportStatementClick: () -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
@@ -60,11 +61,10 @@ fun DashboardScreen(
 
     DashboardContent(
         state = uiState,
-        onAddTransactionClick = onAddTransactionClick,
         onHistoryClick = onHistoryClick,
-        onImportStatementClick = onImportStatementClick,
         onPreviousMonthClick = { viewModel.onMonthSelected(uiState.monthPeriod.previousMonth()) },
         onNextMonthClick = { viewModel.onMonthSelected(uiState.monthPeriod.nextMonth()) },
+        hazeState = hazeState,
         modifier = modifier
     )
 }
@@ -72,69 +72,42 @@ fun DashboardScreen(
 @Composable
 private fun DashboardContent(
     state: DashboardUiState,
-    onAddTransactionClick: () -> Unit,
     onHistoryClick: () -> Unit,
-    onImportStatementClick: () -> Unit,
     onPreviousMonthClick: () -> Unit,
     onNextMonthClick: () -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier
 ) {
-    Scaffold(
-        modifier = modifier,
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddTransactionClick,
-                containerColor = AppAccent,
-                contentColor = AppAccentForeground
-            ) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Adicionar transação")
-            }
-        }
-    ) { paddingValues ->
+    Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                MonthPeriodSelector(
-                    monthPeriod = state.monthPeriod,
-                    onPreviousClick = onPreviousMonthClick,
-                    onNextClick = onNextMonthClick,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onImportStatementClick) {
-                    Icon(
-                        imageVector = Icons.Filled.UploadFile,
-                        contentDescription = "Importar extrato",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+            Spacer(modifier = Modifier.height(48.dp))
+
+            BalanceHero(balance = state.monthlyBalance)
+
+            FinanceCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Gastos por categoria",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    CategoryUsageChart(
+                        summaries = state.categorySummaries,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
 
-            Text(
-                text = "Saldo do mês: ${MoneyFormatter.format(state.monthlyBalance)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            FinanceCard(modifier = Modifier.fillMaxWidth()) {
-                CategoryUsageChart(
-                    summaries = state.categorySummaries,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                )
-            }
-
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -142,31 +115,76 @@ private fun DashboardContent(
                 ) {
                     Text(
                         text = "Transações",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     TextButton(onClick = onHistoryClick) {
                         Text(
                             text = "Ver todas",
                             style = MaterialTheme.typography.labelLarge,
-                            color = AppAccent
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
-
                 if (state.recentTransactions.isEmpty()) {
-                    EmptyState(message = "Nenhuma transação neste mês ainda.")
+                    FinanceCard(modifier = Modifier.fillMaxWidth()) {
+                        EmptyState(message = "Nenhuma transação neste mês ainda.")
+                    }
                 } else {
-                    Column {
-                        state.recentTransactions.forEach { item ->
-                            TransactionListRow(
-                                transaction = item.transaction,
-                                categoryName = item.category?.name
-                            )
+                    FinanceCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            state.recentTransactions.forEachIndexed { index, item ->
+                                TransactionListRow(
+                                    transaction = item.transaction,
+                                    categoryName = item.category?.name
+                                )
+                                if (index < state.recentTransactions.lastIndex) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                                }
+                            }
                         }
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(104.dp))
+        }
+        MonthPeriodSelector(
+            monthPeriod = state.monthPeriod,
+            onPreviousClick = onPreviousMonthClick,
+            onNextClick = onNextMonthClick,
+            hazeState = hazeState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 20.dp, vertical = 16.dp)
+        )
+    }
+}
+
+@Composable
+private fun BalanceHero(balance: Money) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(FinancesThemeTokens.colors.heroSurface)
+    ) {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Text(
+                text = "VISÃO DO MÊS",
+                style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.4.sp),
+                color = FinancesThemeTokens.colors.heroLabel
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = "Saldo do mês",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+            )
+            Text(
+                text = MoneyFormatter.format(balance),
+                style = MaterialTheme.typography.headlineMedium,
+                color = if (balance.cents >= 0) FinancesThemeTokens.colors.income else FinancesThemeTokens.colors.expense
+            )
         }
     }
 }
@@ -215,9 +233,7 @@ private fun DashboardScreenPreview() {
                     )
                 )
             ),
-            onAddTransactionClick = {},
             onHistoryClick = {},
-            onImportStatementClick = {},
             onPreviousMonthClick = {},
             onNextMonthClick = {}
         )

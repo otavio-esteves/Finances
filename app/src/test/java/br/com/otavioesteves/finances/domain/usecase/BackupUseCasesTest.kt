@@ -38,6 +38,15 @@ class BackupUseCasesTest {
         
         assertEquals(1, repo.savedBackup?.categories?.size)
         assertEquals("Pizza", repo.savedBackup?.transactions?.first()?.description)
+        assertEquals(TransactionOrigin.MANUAL, repo.savedBackup?.transactions?.first()?.origin)
+        assertEquals(emptyList<ChatMessageExportModel>(), repo.savedBackup?.chatMessages)
+    }
+
+    @Test
+    fun `createBackupUseCase serializes version two history`() = runBlocking {
+        val repo = FakeBackupRepository()
+        val json = CreateBackupUseCase(repo)()
+        assertEquals(true, json.contains("\"version\": 2"))
     }
 
     @Test(expected = Exception::class)

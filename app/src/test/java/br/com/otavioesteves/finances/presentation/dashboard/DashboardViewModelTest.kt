@@ -41,7 +41,12 @@ class DashboardViewModelTest {
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
+        var requestedRecentLimit: Int? = null
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
+        override fun getRecentTransactions(period: MonthPeriod, limit: Int): Flow<List<Transaction>> {
+            requestedRecentLimit = limit
+            return flowOf(emptyList())
+        }
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {}
         override suspend fun removeTransaction(transactionId: Long) {}
@@ -101,5 +106,23 @@ class DashboardViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(previousMonth, viewModel.uiState.value.monthPeriod)
+    }
+
+    @Test
+    fun `dashboard requests only six recent transactions`() = runTest {
+        val repository = FakeTransactionsRepository()
+        val viewModel = DashboardViewModel(
+            getMonthlyBalance = GetMonthlyBalanceUseCase(repository),
+            getTransactionsByMonth = GetTransactionsByMonthUseCase(repository),
+            getCategorySummaries = GetCategorySummariesUseCase(FakeCategoriesRepository()),
+            categoriesRepository = FakeCategoriesRepository(),
+            dateProvider = fakeDateProvider
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect()
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(6, repository.requestedRecentLimit)
     }
 }

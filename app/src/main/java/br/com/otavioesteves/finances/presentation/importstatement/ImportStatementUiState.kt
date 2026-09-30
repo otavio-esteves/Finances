@@ -16,7 +16,9 @@ sealed interface ImportStatementUiState {
         val isConfirming: Boolean = false
     ) : ImportStatementUiState {
         val canConfirm: Boolean
-            get() = suggestions.isNotEmpty() && suggestions.all { it.suggestedCategory != null } && !isConfirming
+            get() = suggestions.isNotEmpty() && suggestions.all {
+                it.suggestedCategory?.type?.name == it.entry.type.name
+            } && !isConfirming
     }
 
     data class Success(val transactionCount: Int) : ImportStatementUiState

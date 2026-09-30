@@ -175,7 +175,7 @@ class DefaultAppContainer(
     }
 
     override val statementImportRepository: StatementImportRepository by lazy {
-        RoomStatementImportRepository(database.statementImportDao())
+        RoomStatementImportRepository(database)
     }
 
     override val importStatementUseCase: ImportStatementUseCase by lazy {
@@ -187,7 +187,7 @@ class DefaultAppContainer(
     }
 
     override val confirmStatementImportUseCase: ConfirmStatementImportUseCase by lazy {
-        ConfirmStatementImportUseCase(addTransactionUseCase, statementImportRepository, dateProvider)
+        ConfirmStatementImportUseCase(statementImportRepository, dateProvider)
     }
 
     override val sendChatMessageUseCase: SendChatMessageUseCase by lazy {

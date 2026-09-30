@@ -16,6 +16,11 @@ class RoomChatRepository(
         return chatMessageDao.getAllMessages().map { entities -> entities.map { it.toDomain() } }
     }
 
+    override fun getRecentMessages(limit: Int): Flow<List<ChatMessage>> {
+        require(limit > 0)
+        return chatMessageDao.getRecentMessages(limit).map { entities -> entities.map { it.toDomain() } }
+    }
+
     override suspend fun addMessage(message: ChatMessage) {
         chatMessageDao.insertMessage(message.toEntity())
     }

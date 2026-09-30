@@ -3,6 +3,7 @@ package br.com.otavioesteves.finances.presentation.addtransaction
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.CategorySummary
+import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
@@ -87,6 +88,17 @@ class AddTransactionViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("Test", viewModel.uiState.value.description)
+        assertTrue(viewModel.isEditMode)
+    }
+
+    @Test
+    fun `changing transaction type clears incompatible category`() = runTest {
+        val viewModel = createViewModel(FakeTransactionsRepository())
+        viewModel.onCategoryChange(Category(1, "Alimentação", CategoryType.EXPENSE))
+        viewModel.onTypeChange(TransactionType.INCOME)
+
+        assertEquals(null, viewModel.uiState.value.selectedCategory)
+        assertFalse(viewModel.isEditMode)
     }
 
     @Test

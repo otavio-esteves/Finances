@@ -7,5 +7,6 @@ import kotlinx.coroutines.flow.Flow
 class GetChatHistoryUseCase(
     private val repository: ChatRepository
 ) {
-    operator fun invoke(): Flow<List<ChatMessage>> = repository.getMessages()
+    operator fun invoke(limit: Int? = null): Flow<List<ChatMessage>> =
+        if (limit == null) repository.getMessages() else repository.getRecentMessages(limit)
 }

@@ -34,7 +34,7 @@ class DashboardViewModel(
     val uiState: StateFlow<DashboardUiState> = _selectedMonthPeriod.flatMapLatest { period ->
         combine(
             getMonthlyBalance(period),
-            getTransactionsByMonth(period),
+            getTransactionsByMonth(period, RECENT_TRANSACTIONS_LIMIT),
             getCategorySummaries(period),
             categoriesRepository.getCategories()
         ) { monthlyBalance, transactions, categorySummaries, categories ->
@@ -44,8 +44,6 @@ class DashboardViewModel(
                 monthlyBalance = monthlyBalance,
                 categorySummaries = categorySummaries,
                 recentTransactions = transactions
-                    .sortedByDescending { it.date }
-                    .take(RECENT_TRANSACTIONS_LIMIT)
                     .map { transaction ->
                         TransactionItem(transaction = transaction, category = categoryMap[transaction.categoryId])
                     }

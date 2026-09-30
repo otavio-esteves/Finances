@@ -31,6 +31,8 @@ class AddTransactionViewModel(
     private val transactionId: Long? = null
 ) : ViewModel() {
 
+    val isEditMode: Boolean = transactionId != null && transactionId > 0
+
     private val _uiState = MutableStateFlow(AddTransactionUiState(date = dateProvider.getCurrentDate()))
     val uiState: StateFlow<AddTransactionUiState> = _uiState.asStateFlow()
 
@@ -79,7 +81,13 @@ class AddTransactionViewModel(
     }
 
     fun onTypeChange(type: TransactionType) {
-        _uiState.update { it.copy(type = type) }
+        _uiState.update { state ->
+            state.copy(
+                type = type,
+                selectedCategory = state.selectedCategory?.takeIf { it.type.name == type.name },
+                categoryError = null
+            )
+        }
     }
 
     fun onCategoryChange(category: Category) {
@@ -130,8 +138,8 @@ class AddTransactionViewModel(
             hasError = true
         }
 
-        if (currentState.selectedCategory == null) {
-            _uiState.update { it.copy(categoryError = "Categoria é obrigatória") }
+        if (currentState.selectedCategory?.type?.name != currentState.type.name) {
+            _uiState.update { it.copy(categoryError = "Selecione uma categoria do mesmo tipo") }
             hasError = true
         }
         

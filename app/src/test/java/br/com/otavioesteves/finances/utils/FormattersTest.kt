@@ -55,6 +55,17 @@ class FormattersTest {
     fun parseMoney_returnsNullForInvalidFormats() {
         assertEquals(null, MoneyFormatter.parse("abc"))
         assertEquals(null, MoneyFormatter.parse(""))
+        assertEquals(null, MoneyFormatter.parse("12,3456"))
+        assertEquals(null, MoneyFormatter.parse("10xyz"))
+        assertEquals(null, MoneyFormatter.parse("12-3"))
+        assertEquals(null, MoneyFormatter.parse("92233720368547758,08"))
+    }
+
+    @Test
+    fun parseMoney_parsesGroupedWholeNumbersWithoutLosingValue() {
+        assertEquals(Money.fromCents(123_400), MoneyFormatter.parse("1.234"))
+        assertEquals(Money.fromCents(123_400), MoneyFormatter.parse("1,234"))
+        assertEquals(Money.fromCents(-1_050), MoneyFormatter.parse("-R$ 10,50"))
     }
 
     @Test

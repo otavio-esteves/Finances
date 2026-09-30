@@ -78,19 +78,17 @@ class StatementImportUseCasesTest {
             type = TransactionType.EXPENSE
         )
         val suggestion = CategorySuggestion(entry = entry, suggestedCategory = category, confidence = 1f)
-        val transactionsRepository = FakeTransactionsRepository()
         val statementImportRepository = FakeStatementImportRepository()
         val importedAt = LocalDateTime.of(2026, 1, 15, 10, 0)
         val useCase = ConfirmStatementImportUseCase(
-            AddTransactionUseCase(transactionsRepository),
             statementImportRepository,
             FakeDateProvider(importedAt)
         )
 
         val result = useCase("extrato.csv", listOf(suggestion))
 
-        assertEquals(1, transactionsRepository.addedTransactions.size)
-        val persisted = transactionsRepository.addedTransactions.single()
+        assertEquals(1, statementImportRepository.addedTransactions.size)
+        val persisted = statementImportRepository.addedTransactions.single()
         assertEquals(TransactionOrigin.IMPORTED, persisted.origin)
         assertEquals(entry.description, persisted.description)
         assertEquals(category.id, persisted.categoryId)
@@ -100,6 +98,7 @@ class StatementImportUseCasesTest {
             result
         )
         assertEquals(result, statementImportRepository.addedImports.single())
+        assertEquals(64, statementImportRepository.fingerprints.single().length)
     }
 
     @Test
@@ -112,13 +111,43 @@ class StatementImportUseCasesTest {
         )
         val suggestion = CategorySuggestion(entry = entry, suggestedCategory = null, confidence = 0f)
         val useCase = ConfirmStatementImportUseCase(
-            AddTransactionUseCase(FakeTransactionsRepository()),
             FakeStatementImportRepository(),
             FakeDateProvider(LocalDateTime.of(2026, 1, 15, 10, 0))
         )
 
         val threw = runCatching { useCase("extrato.csv", listOf(suggestion)) }.isFailure
         assertTrue(threw)
+    }
+
+    @Test
+    fun confirmStatementImport_rejectsCategoryWithDifferentTransactionType() = runBlocking {
+        val entry = RawStatementEntry("Mercado", Money.fromCents(5_000), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
+        val suggestion = CategorySuggestion(entry, Category(1, "Salário", CategoryType.INCOME), 1f)
+        val repository = FakeStatementImportRepository()
+        val useCase = ConfirmStatementImportUseCase(repository, FakeDateProvider(LocalDateTime.of(2026, 1, 15, 10, 0)))
+
+        assertTrue(runCatching { useCase("extrato.csv", listOf(suggestion)) }.isFailure)
+        assertTrue(repository.addedTransactions.isEmpty())
+    }
+
+    @Test
+    fun confirmStatementImport_fingerprintIgnoresCategoryCorrection() = runBlocking {
+        val entry = RawStatementEntry(
+            description = "Mercado",
+            amount = Money.fromCents(5_000),
+            date = LocalDate.of(2026, 1, 10),
+            type = TransactionType.EXPENSE
+        )
+        val repository = FakeStatementImportRepository()
+        val useCase = ConfirmStatementImportUseCase(
+            repository,
+            FakeDateProvider(LocalDateTime.of(2026, 1, 15, 10, 0))
+        )
+
+        useCase("primeiro.csv", listOf(CategorySuggestion(entry, Category(1, "Mercado", CategoryType.EXPENSE), 0.8f)))
+        useCase("renomeado.csv", listOf(CategorySuggestion(entry, Category(2, "Alimentação", CategoryType.EXPENSE), 1f)))
+
+        assertEquals(repository.fingerprints[0], repository.fingerprints[1])
     }
 
     private class FakeStatementParserRepository(
@@ -171,10 +200,18 @@ class StatementImportUseCasesTest {
 
     private class FakeStatementImportRepository : StatementImportRepository {
         val addedImports = mutableListOf<ImportedStatement>()
+        val addedTransactions = mutableListOf<Transaction>()
+        val fingerprints = mutableListOf<String>()
 
         override fun getImports(): Flow<List<ImportedStatement>> = flowOf(addedImports)
-        override suspend fun addImport(statementImport: ImportedStatement) {
+        override suspend fun confirmImport(
+            statementImport: ImportedStatement,
+            transactions: List<Transaction>,
+            fingerprint: String
+        ) {
             addedImports += statementImport
+            addedTransactions += transactions
+            fingerprints += fingerprint
         }
     }
 

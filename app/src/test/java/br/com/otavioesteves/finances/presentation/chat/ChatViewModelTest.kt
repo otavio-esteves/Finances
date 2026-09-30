@@ -161,4 +161,26 @@ class ChatViewModelTest {
         assertEquals(0, localAiRepository.callCount)
         assertTrue(viewModel.uiState.value.messages.isEmpty())
     }
+
+    @Test
+    fun `history loads recent messages first and older messages on request`() = runTest {
+        chatRepository.history.value = (1L..150L).map { id ->
+            ChatMessage(id, ChatRole.USER, "Mensagem $id", LocalDateTime.of(2026, 1, 15, 10, 0))
+        }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.historyPage.collect()
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(100, viewModel.historyPage.value.messages.size)
+        assertEquals(51L, viewModel.historyPage.value.messages.first().id)
+        assertTrue(viewModel.historyPage.value.hasOlder)
+
+        viewModel.loadOlderMessages()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(150, viewModel.historyPage.value.messages.size)
+        assertEquals(1L, viewModel.historyPage.value.messages.first().id)
+        assertEquals(false, viewModel.historyPage.value.hasOlder)
+    }
 }

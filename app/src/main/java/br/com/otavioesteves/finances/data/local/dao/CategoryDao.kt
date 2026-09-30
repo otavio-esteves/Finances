@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CategoryDao {
+    @Query("SELECT * FROM categories ORDER BY id ASC")
+    suspend fun getAllCategoriesForBackup(): List<CategoryEntity>
+
     @Query("SELECT * FROM categories")
     fun getAllCategories(): Flow<List<CategoryEntity>>
 

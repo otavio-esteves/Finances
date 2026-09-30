@@ -11,10 +11,12 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 object MoneyFormatter {
+    private val ptBrLocale = Locale.forLanguageTag("pt-BR")
+    private val currencyFormat = ThreadLocal.withInitial { NumberFormat.getCurrencyInstance(ptBrLocale) }
+
     fun format(value: Money): String {
-        val ptBrLocale = Locale.forLanguageTag("pt-BR")
         val decimalValue = BigDecimal.valueOf(value.cents, 2)
-        val formatter = NumberFormat.getCurrencyInstance(ptBrLocale)
+        val formatter = requireNotNull(currencyFormat.get())
         val formatted = formatter.format(decimalValue)
         
         // Fix negative formatting if the JVM places minus sign after currency symbol
@@ -28,42 +30,32 @@ object MoneyFormatter {
     }
 
     fun parse(value: String): Money? {
-        try {
-            var sanitized = value.trim()
-            if (sanitized.isEmpty()) return null
-
-            // Retain only digits, comma, dot, and minus sign
-            sanitized = sanitized.replace(Regex("[^0-9.,-]"), "")
-            
-            if (sanitized.isEmpty()) return null
-
-            // Handle cases like "1.250,75" or "1,250.75" or "1250.75" or "1250,75"
-            val lastCommaIndex = sanitized.lastIndexOf(',')
-            val lastDotIndex = sanitized.lastIndexOf('.')
-            
-            val standardized = if (lastCommaIndex > lastDotIndex) {
-                // Brazilian format: "1.250,75" or "1250,75"
-                sanitized.replace(".", "").replace(',', '.')
-            } else if (lastDotIndex > lastCommaIndex) {
-                // US format: "1,250.75" or "1250.75"
-                sanitized.replace(",", "")
-            } else {
-                // No separators, e.g., "1250"
-                sanitized
-            }
-
-            val parsed = BigDecimal(standardized)
-            val cents = parsed.multiply(BigDecimal(100)).toLong()
-            return Money.fromCents(cents)
-        } catch (e: Exception) {
-            return null
+        val match = AMOUNT_INPUT.matchEntire(value.trim().replace('\u00a0', ' ')) ?: return null
+        val number = match.groupValues[2]
+        val standardized = when {
+            BR_GROUPED.matches(number) -> number.replace(".", "").replace(',', '.')
+            US_GROUPED.matches(number) -> number.replace(",", "")
+            PLAIN_DECIMAL.matches(number) -> number.replace(',', '.')
+            WHOLE_NUMBER.matches(number) -> number
+            else -> return null
         }
+        return runCatching {
+            val cents = BigDecimal(standardized).movePointRight(2).longValueExact()
+            Money.fromCents(if (match.groupValues[1] == "-") Math.negateExact(cents) else cents)
+        }.getOrNull()
     }
+
+    private val AMOUNT_INPUT = Regex("^(-?)\\s*(?:R\\$\\s*)?([0-9][0-9.,]*)$")
+    private val BR_GROUPED = Regex("^[0-9]{1,3}(?:\\.[0-9]{3})+(?:,[0-9]{1,2})?$")
+    private val US_GROUPED = Regex("^[0-9]{1,3}(?:,[0-9]{3})+(?:\\.[0-9]{1,2})?$")
+    private val PLAIN_DECIMAL = Regex("^[0-9]+[.,][0-9]{1,2}$")
+    private val WHOLE_NUMBER = Regex("^[0-9]+$")
 }
 
 object DateFormatter {
+    private val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+
     fun format(date: LocalDate): String {
-        val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
         return date.format(formatter)
     }
 }

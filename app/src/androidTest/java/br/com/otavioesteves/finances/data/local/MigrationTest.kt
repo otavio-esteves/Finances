@@ -67,4 +67,87 @@ class MigrationTest {
                 "VALUES (1, 'USER', 'Quanto gastei em janeiro?', '2026-01-15T10:00:00')"
         )
     }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate2To3_preservesOldImportsAndAddsUniqueFingerprint() {
+        helper.createDatabase(testDbName, 2).apply {
+            execSQL(
+                "INSERT INTO statement_imports (id, fileName, importedAt, transactionCount) " +
+                    "VALUES (1, 'antigo.csv', '2026-01-15T10:00:00', 3)"
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDbName, 3, true, AppDatabase.MIGRATION_2_3)
+        db.query("SELECT fingerprint FROM statement_imports WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertTrue(it.isNull(0))
+        }
+        db.execSQL(
+            "INSERT INTO statement_imports (fileName, importedAt, transactionCount, fingerprint) " +
+                "VALUES ('novo.csv', '2026-01-16T10:00:00', 1, 'abc')"
+        )
+        assertTrue(runCatching {
+            db.execSQL(
+                "INSERT INTO statement_imports (fileName, importedAt, transactionCount, fingerprint) " +
+                    "VALUES ('repetido.csv', '2026-01-17T10:00:00', 1, 'abc')"
+            )
+        }.isFailure)
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate3To4_addsDateOrderIndexWithoutLosingTransactions() {
+        helper.createDatabase(testDbName, 3).apply {
+            execSQL(
+                "INSERT INTO categories (id, name, type) VALUES (1, 'Alimentação', 'EXPENSE')"
+            )
+            execSQL(
+                "INSERT INTO transactions (id, description, amountCents, categoryId, date, type, notes, origin) " +
+                    "VALUES (1, 'Mercado', 5000, 1, '2026-01-10', 'EXPENSE', NULL, 'IMPORTED')"
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDbName, 4, true, AppDatabase.MIGRATION_3_4)
+        db.query("SELECT description FROM transactions WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("Mercado", it.getString(0))
+        }
+        db.query("PRAGMA index_list('transactions')").use { cursor ->
+            val nameColumn = cursor.getColumnIndexOrThrow("name")
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameColumn) == "index_transactions_date_id") found = true
+            }
+            assertTrue(found)
+        }
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate4To5_addsChatOrderIndexWithoutLosingMessages() {
+        helper.createDatabase(testDbName, 4).apply {
+            execSQL(
+                "INSERT INTO chat_messages (id, role, content, createdAt) " +
+                    "VALUES (1, 'USER', 'Pergunta', '2026-01-15T10:00:00')"
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDbName, 5, true, AppDatabase.MIGRATION_4_5)
+        db.query("SELECT content FROM chat_messages WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("Pergunta", it.getString(0))
+        }
+        db.query("PRAGMA index_list('chat_messages')").use { cursor ->
+            val nameColumn = cursor.getColumnIndexOrThrow("name")
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameColumn) == "index_chat_messages_createdAt_id") found = true
+            }
+            assertTrue(found)
+        }
+    }
 }

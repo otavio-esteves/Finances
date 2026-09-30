@@ -19,29 +19,30 @@ class CategoriesViewModel(
 ) : ViewModel() {
 
     private val initialMonthPeriod = dateProvider.getCurrentMonthPeriod()
+    private val _selectedMonthPeriod = MutableStateFlow(initialMonthPeriod)
+    val selectedMonthPeriod: StateFlow<MonthPeriod> = _selectedMonthPeriod.asStateFlow()
     private val _uiState = MutableStateFlow<CategoriesUiState>(CategoriesUiState.Loading)
     val uiState: StateFlow<CategoriesUiState> = _uiState.asStateFlow()
 
-    private var selectedMonthPeriod: MonthPeriod = initialMonthPeriod
     private var loadJob: Job? = null
 
     init {
-        loadCategorySummaries(selectedMonthPeriod)
+        loadCategorySummaries(_selectedMonthPeriod.value)
     }
 
     fun onEvent(event: CategoriesEvent) {
         when (event) {
             is CategoriesEvent.OnMonthChanged -> {
-                if (event.monthPeriod != selectedMonthPeriod) {
-                    selectedMonthPeriod = event.monthPeriod
-                    loadCategorySummaries(selectedMonthPeriod)
+                if (event.monthPeriod != _selectedMonthPeriod.value) {
+                    _selectedMonthPeriod.value = event.monthPeriod
+                    loadCategorySummaries(event.monthPeriod)
                 }
             }
 
             is CategoriesEvent.OnCategoryClicked -> Unit
 
             CategoriesEvent.OnRetryClicked -> {
-                loadCategorySummaries(selectedMonthPeriod)
+                loadCategorySummaries(_selectedMonthPeriod.value)
             }
         }
     }

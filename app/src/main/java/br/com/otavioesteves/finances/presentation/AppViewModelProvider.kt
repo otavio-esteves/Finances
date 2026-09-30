@@ -10,6 +10,7 @@ import br.com.otavioesteves.finances.presentation.addtransaction.AddTransactionV
 import br.com.otavioesteves.finances.presentation.aimodel.AiModelViewModel
 import br.com.otavioesteves.finances.presentation.categories.CategoriesViewModel
 import br.com.otavioesteves.finances.presentation.chat.ChatViewModel
+import br.com.otavioesteves.finances.presentation.charts.ChartsViewModel
 import br.com.otavioesteves.finances.presentation.dashboard.DashboardViewModel
 import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementViewModel
 import br.com.otavioesteves.finances.presentation.transactions.TransactionsViewModel
@@ -43,6 +44,14 @@ object AppViewModelProvider {
                 getMonthlyBalance = financesApplication().container.getMonthlyBalanceUseCase,
                 getTransactionsByMonth = financesApplication().container.getTransactionsByMonthUseCase,
                 getCategorySummaries = financesApplication().container.getCategorySummariesUseCase,
+                categoriesRepository = financesApplication().container.categoriesRepository,
+                dateProvider = financesApplication().container.dateProvider
+            )
+        }
+        initializer {
+            ChartsViewModel(
+                getCategorySummaries = financesApplication().container.getCategorySummariesUseCase,
+                transactionsRepository = financesApplication().container.transactionsRepository,
                 categoriesRepository = financesApplication().container.categoriesRepository,
                 dateProvider = financesApplication().container.dateProvider
             )

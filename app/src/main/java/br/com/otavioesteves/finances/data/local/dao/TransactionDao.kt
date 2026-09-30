@@ -13,6 +13,9 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, id DESC")
     fun getTransactionsByDateRange(startDate: String, endDate: String): Flow<List<TransactionEntity>>
 
+    @Query("SELECT * FROM transactions WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, id DESC LIMIT :limit")
+    fun getRecentTransactionsByDateRange(startDate: String, endDate: String, limit: Int): Flow<List<TransactionEntity>>
+
     @Query("""
         SELECT SUM(
             CASE 

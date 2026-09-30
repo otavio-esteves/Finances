@@ -8,7 +8,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -20,7 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +45,7 @@ import br.com.otavioesteves.finances.presentation.AppViewModelProvider
 import br.com.otavioesteves.finances.presentation.aimodel.AiModelViewModel
 import br.com.otavioesteves.finances.ui.components.FinanceCard
 import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
+import br.com.otavioesteves.finances.ui.components.financeTopAppBarColors
 import br.com.otavioesteves.finances.utils.queryDisplayName
 
 /**
@@ -58,6 +66,7 @@ fun AiModelScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val scrollState = rememberScrollState()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -79,8 +88,10 @@ fun AiModelScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
+                colors = financeTopAppBarColors(scrollState.value == 0),
                 title = { Text("Modelo de IA") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
@@ -94,8 +105,14 @@ fun AiModelScreen(
         Column(
             modifier = modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(24.dp),
+                .verticalScroll(scrollState)
+                .navigationBarsPadding()
+                .padding(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = paddingValues.calculateTopPadding() + 20.dp,
+                    bottom = 20.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             when (val engineState = uiState.engineState) {

@@ -45,6 +45,25 @@ class CsvOfxStatementParserTest {
     }
 
     @Test
+    fun parse_csv_readsSemicolonDelimitedMultilineAndEscapedQuotes() = runBlocking {
+        val csv = "Data;Descrição;Valor\r\n10/01/2026;\"Mercado\r\n\"\"Central\"\"\";-1.250,75\r\n"
+
+        val entries = parser.parse("extrato.csv", csv.toByteArray())
+
+        assertEquals(1, entries.size)
+        assertEquals("Mercado\r\n\"Central\"", entries.single().description)
+        assertEquals(125_075L, entries.single().amount.cents)
+    }
+
+    @Test
+    fun parse_csv_rejectsUnclosedQuotedField() {
+        val csv = "Data,Descrição,Valor\n10/01/2026,\"Mercado,-10.00"
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { parser.parse("extrato.csv", csv.toByteArray()) }
+        }
+    }
+
+    @Test
     fun parse_ofx_readsTransactionsFromStmttrnBlocks() = runBlocking {
         val ofx = """
             <OFX>

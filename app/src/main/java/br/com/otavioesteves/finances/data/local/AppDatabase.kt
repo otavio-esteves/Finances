@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
         StatementImportEntity::class,
         ChatMessageEntity::class
     ],
-    version = 2,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -68,6 +68,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE statement_imports ADD COLUMN fingerprint TEXT")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_statement_imports_fingerprint " +
+                        "ON statement_imports (fingerprint)"
+                )
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_transactions_date_id ON transactions (date, id)"
+                )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_chat_messages_createdAt_id " +
+                        "ON chat_messages (createdAt, id)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -75,7 +102,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "finances_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .addCallback(AppDatabaseCallback(scope))
                     .build()
                 INSTANCE = instance

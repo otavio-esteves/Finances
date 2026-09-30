@@ -15,8 +15,6 @@ import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
-import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
-import br.com.otavioesteves.finances.domain.usecase.AddTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.ConfirmStatementImportUseCase
 import br.com.otavioesteves.finances.domain.usecase.ImportStatementUseCase
 import br.com.otavioesteves.finances.domain.usecase.SynthesizeStatementUseCase
@@ -84,22 +82,17 @@ class ImportStatementViewModelTest {
         override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> = flowOf(emptyList())
     }
 
-    private class FakeTransactionsRepository : TransactionsRepository {
-        val added = mutableListOf<Transaction>()
-        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
-        override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
-        override suspend fun addTransaction(transaction: Transaction) {
-            added += transaction
-        }
-        override suspend fun removeTransaction(transactionId: Long) = Unit
-        override suspend fun updateTransaction(transaction: Transaction) = Unit
-    }
-
     private class FakeStatementImportRepository : StatementImportRepository {
         val imports = mutableListOf<ImportedStatement>()
+        val transactions = mutableListOf<Transaction>()
         override fun getImports(): Flow<List<ImportedStatement>> = flowOf(imports)
-        override suspend fun addImport(statementImport: ImportedStatement) {
+        override suspend fun confirmImport(
+            statementImport: ImportedStatement,
+            transactions: List<Transaction>,
+            fingerprint: String
+        ) {
             imports += statementImport
+            this.transactions += transactions
         }
     }
 
@@ -120,7 +113,6 @@ class ImportStatementViewModelTest {
         ),
         categories: List<Category> = listOf(mercado, transporte),
         parserFailure: Exception? = null,
-        transactionsRepository: FakeTransactionsRepository = FakeTransactionsRepository(),
         statementImportRepository: FakeStatementImportRepository = FakeStatementImportRepository()
     ): ImportStatementViewModel {
         val importStatement = ImportStatementUseCase(FakeStatementParserRepository(entries, parserFailure))
@@ -129,7 +121,6 @@ class ImportStatementViewModelTest {
             FakeCategoriesRepository(categories)
         )
         val confirmStatementImport = ConfirmStatementImportUseCase(
-            AddTransactionUseCase(transactionsRepository),
             statementImportRepository,
             fakeDateProvider
         )
@@ -137,7 +128,9 @@ class ImportStatementViewModelTest {
             importStatement,
             synthesizeStatement,
             confirmStatementImport,
-            FakeCategoriesRepository(categories)
+            FakeCategoriesRepository(categories),
+            ioDispatcher = testDispatcher,
+            cpuDispatcher = testDispatcher
         )
     }
 
@@ -177,6 +170,16 @@ class ImportStatementViewModelTest {
     }
 
     @Test
+    fun `onFileSelected rejects files above size limit`() = runTest {
+        val viewModel = createViewModel()
+        viewModel.onFileSelected("grande.csv", ByteArray(10 * 1024 * 1024 + 1))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value as ImportStatementUiState.Error
+        assertTrue(state.message.contains("10 MB"))
+    }
+
+    @Test
     fun `canConfirm is false while a suggestion has no category`() = runTest {
         val viewModel = createViewModel(
             suggestions = listOf(CategorySuggestion(entry = entry, suggestedCategory = null, confidence = 0f))
@@ -205,10 +208,8 @@ class ImportStatementViewModelTest {
 
     @Test
     fun `onConfirmImport persists transaction and import history`() = runTest {
-        val transactionsRepository = FakeTransactionsRepository()
         val statementImportRepository = FakeStatementImportRepository()
         val viewModel = createViewModel(
-            transactionsRepository = transactionsRepository,
             statementImportRepository = statementImportRepository
         )
 
@@ -217,7 +218,7 @@ class ImportStatementViewModelTest {
         viewModel.onConfirmImport()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(1, transactionsRepository.added.size)
+        assertEquals(1, statementImportRepository.transactions.size)
         assertEquals(1, statementImportRepository.imports.size)
         assertEquals(ImportStatementUiState.Success(1), viewModel.uiState.value)
     }

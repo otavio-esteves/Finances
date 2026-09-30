@@ -44,8 +44,9 @@ class TransactionsViewModelTest {
     private class FakeTransactionsRepository : TransactionsRepository {
         var deletedId: Long? = null
         var shouldFail = false
+        var transactions: List<Transaction> = emptyList()
 
-        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
+        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(transactions)
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {}
         override suspend fun removeTransaction(transactionId: Long) {
@@ -139,12 +140,29 @@ class TransactionsViewModelTest {
         assertEquals(previousMonth, viewModel.selectedMonthPeriod.value)
     }
 
+    @Test
+    fun `history rows receive formatted text before composition`() = runTest {
+        val transaction = createFakeTransaction(id = 7)
+        val repository = FakeTransactionsRepository().apply { transactions = listOf(transaction) }
+        val viewModel = createViewModel(repository)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect()
+        }
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val item = viewModel.uiState.value.transactions.single()
+        assertEquals("R\$ 1,00", item.formattedAmount)
+        assertEquals(br.com.otavioesteves.finances.utils.DateFormatter.format(transaction.date), item.formattedDate)
+    }
+
     private fun createViewModel(repository: FakeTransactionsRepository): TransactionsViewModel {
         return TransactionsViewModel(
             getTransactionsByMonth = GetTransactionsByMonthUseCase(repository),
             deleteTransaction = DeleteTransactionUseCase(repository),
             categoriesRepository = FakeCategoriesRepository(),
-            dateProvider = fakeDateProvider
+            dateProvider = fakeDateProvider,
+            mappingDispatcher = testDispatcher
         )
     }
 

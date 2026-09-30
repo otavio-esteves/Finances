@@ -13,6 +13,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,8 +34,12 @@ fun TransactionListRow(
     transaction: Transaction,
     categoryName: String?,
     modifier: Modifier = Modifier,
+    formattedAmount: String? = null,
+    formattedDate: String? = null,
     trailing: @Composable RowScope.() -> Unit = {}
 ) {
+    val amountText = formattedAmount ?: remember(transaction.amount.cents) { MoneyFormatter.format(transaction.amount) }
+    val dateText = formattedDate ?: remember(transaction.date) { DateFormatter.format(transaction.date) }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -44,7 +49,9 @@ fun TransactionListRow(
     ) {
         val iconColor = categoryColor(transaction.categoryId)
         Icon(
-            imageVector = transactionIcon(categoryName, transaction.type),
+            imageVector = remember(categoryName, transaction.type) {
+                transactionIcon(categoryName, transaction.type)
+            },
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
@@ -61,14 +68,14 @@ fun TransactionListRow(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "${categoryName ?: "Sem categoria"} • ${DateFormatter.format(transaction.date)}",
+                text = "${categoryName ?: "Sem categoria"} • $dateText",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
         AmountText(
-            amount = MoneyFormatter.format(transaction.amount),
+            amount = amountText,
             isPositive = transaction.type == TransactionType.INCOME,
             style = MaterialTheme.typography.bodyLarge
         )

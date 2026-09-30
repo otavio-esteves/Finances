@@ -2,9 +2,22 @@ package br.com.otavioesteves.finances.ui.screens.transactions
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,16 +42,21 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -49,8 +67,12 @@ import br.com.otavioesteves.finances.presentation.transactions.TransactionsViewM
 import br.com.otavioesteves.finances.ui.components.EmptyState
 import br.com.otavioesteves.finances.ui.components.MonthPeriodSelector
 import br.com.otavioesteves.finances.ui.components.TransactionListRow
+import br.com.otavioesteves.finances.ui.components.financeTopAppBarColors
 import br.com.otavioesteves.finances.utils.ExportFormat
-import br.com.otavioesteves.finances.utils.formatMonthPeriod
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,28 +85,38 @@ fun TransactionsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showMenu by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val isAtTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 } }
+
+    fun exportTo(uri: Uri, format: ExportFormat) {
+        scope.launch {
+            try {
+                val data = withContext(Dispatchers.Default) { viewModel.getExportData(format) }
+                withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openOutputStream(uri)
+                        ?: throw IllegalStateException("Não foi possível abrir o destino do arquivo.")
+                    stream.use { it.write(data.toByteArray(Charsets.UTF_8)) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar(e.message ?: "Não foi possível exportar as transações.")
+            }
+        }
+    }
 
     val csvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
-        uri?.let {
-            val data = viewModel.getExportData(ExportFormat.CSV)
-            context.contentResolver.openOutputStream(it)?.use { stream ->
-                stream.write(data.toByteArray())
-            }
-        }
+        uri?.let { exportTo(it, ExportFormat.CSV) }
     }
 
     val jsonLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
-        uri?.let {
-            val data = viewModel.getExportData(ExportFormat.JSON)
-            context.contentResolver.openOutputStream(it)?.use { stream ->
-                stream.write(data.toByteArray())
-            }
-        }
+        uri?.let { exportTo(it, ExportFormat.JSON) }
     }
 
     LaunchedEffect(uiState.error) {
@@ -113,18 +145,11 @@ fun TransactionsScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(text = "Histórico")
-                        Text(
-                            text = formatMonthPeriod(uiState.monthPeriod),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
+            CenterAlignedTopAppBar(
+                colors = financeTopAppBarColors(isAtTop),
+                title = { Text("Histórico") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(
@@ -162,75 +187,88 @@ fun TransactionsScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         modifier = modifier
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
-            MonthPeriodSelector(
-                monthPeriod = uiState.monthPeriod,
-                onPreviousClick = { viewModel.onMonthSelected(uiState.monthPeriod.previousMonth()) },
-                onNextClick = { viewModel.onMonthSelected(uiState.monthPeriod.nextMonth()) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
-            )
-            TransactionsContent(
-                state = uiState,
-                onDeleteTransaction = viewModel::onDeleteRequest,
-                onTransactionClick = onTransactionClick,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        TransactionsContent(
+            state = uiState,
+            onPreviousMonth = { viewModel.onMonthSelected(uiState.monthPeriod.previousMonth()) },
+            onNextMonth = { viewModel.onMonthSelected(uiState.monthPeriod.nextMonth()) },
+            onDeleteTransaction = viewModel::onDeleteRequest,
+            onTransactionClick = onTransactionClick,
+            listState = listState,
+            scaffoldPadding = paddingValues,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
 @Composable
 private fun TransactionsContent(
     state: TransactionsUiState,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
     onDeleteTransaction: (Transaction) -> Unit,
     onTransactionClick: (Transaction) -> Unit,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    scaffoldPadding: PaddingValues,
     modifier: Modifier = Modifier
 ) {
-    when {
-        state.isLoading -> {
-            Column(
-                modifier = modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                CircularProgressIndicator()
-            }
-        }
-        state.transactions.isEmpty() -> {
-            EmptyState(
-                message = "Nenhuma transação encontrada para este mês.",
-                modifier = modifier.fillMaxSize()
+    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
+    val layoutDirection = LocalLayoutDirection.current
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(
+            start = scaffoldPadding.calculateLeftPadding(layoutDirection) + 20.dp,
+            end = scaffoldPadding.calculateRightPadding(layoutDirection) + 20.dp,
+            top = scaffoldPadding.calculateTopPadding(),
+            bottom = bottomPadding
+        )
+    ) {
+        item(key = "month_selector") {
+            MonthPeriodSelector(
+                monthPeriod = state.monthPeriod,
+                onPreviousClick = onPreviousMonth,
+                onNextClick = onNextMonth,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp)
             )
         }
-        else -> {
-            LazyColumn(
-                modifier = modifier.fillMaxSize()
-            ) {
-                items(state.transactions, key = { it.transaction.id }) { item ->
-                    TransactionListRow(
-                        transaction = item.transaction,
-                        categoryName = item.category?.name,
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .clickable { onTransactionClick(item.transaction) },
-                        trailing = {
-                            IconButton(onClick = { onDeleteTransaction(item.transaction) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Excluir transação",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
+        when {
+            state.isLoading -> item(key = "loading") {
+                Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
+            }
+            state.transactions.isEmpty() -> item(key = "empty") {
+                EmptyState(message = "Nenhuma transação encontrada para este mês.")
+            }
+            else -> items(
+                items = state.transactions,
+                key = { it.transaction.id },
+                contentType = { "transaction" }
+            ) { item ->
+                val shape = MaterialTheme.shapes.large
+                TransactionListRow(
+                    transaction = item.transaction,
+                    categoryName = item.category?.name,
+                    formattedAmount = item.formattedAmount,
+                    formattedDate = item.formattedDate,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(shape)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.24f), shape)
+                        .clickable { onTransactionClick(item.transaction) }
+                        .padding(horizontal = 14.dp),
+                    trailing = {
+                        IconButton(onClick = { onDeleteTransaction(item.transaction) }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Excluir transação",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                )
             }
         }
     }

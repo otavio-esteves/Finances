@@ -8,7 +8,7 @@ import kotlinx.serialization.json.Json
 class CreateBackupUseCase(private val repository: BackupRepository) {
     suspend operator fun invoke(): String {
         val backup = repository.createBackup()
-        return Json { prettyPrint = true }.encodeToString(backup)
+        return Json { prettyPrint = true; encodeDefaults = true }.encodeToString(backup)
     }
 }
 
@@ -19,6 +19,7 @@ class RestoreBackupUseCase(private val repository: BackupRepository) {
         if (backup.categories.isEmpty() && backup.transactions.isNotEmpty()) {
             throw IllegalArgumentException("Backup inválido: transações sem categorias")
         }
+        require(backup.version in 1..2) { "Versão de backup não suportada: ${backup.version}" }
         repository.restoreBackup(backup)
     }
 }

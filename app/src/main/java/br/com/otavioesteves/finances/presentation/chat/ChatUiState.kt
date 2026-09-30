@@ -7,3 +7,8 @@ data class ChatUiState(
     val draft: String = "",
     val isSending: Boolean = false
 )
+
+data class ChatHistoryPage(
+    val messages: List<ChatMessage> = emptyList(),
+    val hasOlder: Boolean = false
+)

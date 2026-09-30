@@ -18,7 +18,7 @@ import java.time.LocalDate
             onDelete = ForeignKey.RESTRICT
         )
     ],
-    indices = [Index("categoryId")]
+    indices = [Index("categoryId"), Index(value = ["date", "id"])]
 )
 data class TransactionEntity(
     @PrimaryKey(autoGenerate = true)

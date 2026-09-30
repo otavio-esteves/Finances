@@ -8,7 +8,8 @@ import kotlinx.coroutines.flow.Flow
 class GetTransactionsByMonthUseCase(
     private val repository: TransactionsRepository
 ) {
-    operator fun invoke(period: MonthPeriod): Flow<List<Transaction>> {
-        return repository.getTransactions(period)
+    operator fun invoke(period: MonthPeriod, limit: Int? = null): Flow<List<Transaction>> {
+        return if (limit == null) repository.getTransactions(period)
+        else repository.getRecentTransactions(period, limit)
     }
 }

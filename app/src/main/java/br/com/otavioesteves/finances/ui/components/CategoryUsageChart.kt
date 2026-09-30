@@ -24,15 +24,38 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import java.math.BigDecimal
+import java.math.RoundingMode
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
+import java.util.Locale
 import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.ui.theme.CategoryPalette
 import br.com.otavioesteves.finances.ui.theme.OtherCategoryColor
+import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import kotlin.math.roundToInt
 
 private val MAX_SLOTS = CategoryPalette.size - 1 // last slot reserved for "Outros"
+private val PT_BR = Locale.forLanguageTag("pt-BR")
+
+internal fun chartCenterAmount(amount: Money): String {
+    val value = BigDecimal.valueOf(amount.cents, 2)
+    val billion = BigDecimal("1000000000")
+    val million = BigDecimal("1000000")
+    val thousand = BigDecimal("1000")
+    val unit = when {
+        value >= billion -> billion to "bi"
+        value >= million -> million to "mi"
+        value >= BigDecimal("10000") -> thousand to "mil"
+        else -> return MoneyFormatter.format(amount)
+    }
+    val compact = value.divide(unit.first, 1, RoundingMode.DOWN)
+    val formatter = DecimalFormat("#,##0.#", DecimalFormatSymbols(PT_BR))
+    return "R$ ${formatter.format(compact)} ${unit.second}"
+}
 
 private data class CategoryChartSlice(
     val label: String,
@@ -41,7 +64,11 @@ private data class CategoryChartSlice(
     val color: Color
 )
 
-private fun buildChartSlices(summaries: List<CategorySummary>): List<CategoryChartSlice> {
+private fun buildChartSlices(
+    summaries: List<CategorySummary>,
+    palette: List<Color>,
+    otherColor: Color
+): List<CategoryChartSlice> {
     val expenses = summaries
         .filter { it.category.type == CategoryType.EXPENSE && it.totalAmount.cents > 0 }
         .sortedByDescending { it.totalAmount.cents }
@@ -57,7 +84,7 @@ private fun buildChartSlices(summaries: List<CategorySummary>): List<CategoryCha
             label = summary.category.name,
             amount = summary.totalAmount,
             fraction = summary.totalAmount.cents / totalCents,
-            color = CategoryPalette[index]
+            color = palette[index]
         )
     }
 
@@ -68,7 +95,7 @@ private fun buildChartSlices(summaries: List<CategorySummary>): List<CategoryCha
         label = "Outros",
         amount = otherAmount,
         fraction = otherAmount.cents / totalCents,
-        color = OtherCategoryColor
+        color = otherColor
     )
 }
 
@@ -77,7 +104,10 @@ fun CategoryUsageChart(
     summaries: List<CategorySummary>,
     modifier: Modifier = Modifier
 ) {
-    val slices = remember(summaries) { buildChartSlices(summaries) }
+    val colors = FinancesThemeTokens.colors
+    val slices = remember(summaries, colors) {
+        buildChartSlices(summaries, colors.categoryPalette, colors.otherCategory)
+    }
 
     if (slices.isEmpty()) {
         EmptyState(
@@ -88,6 +118,8 @@ fun CategoryUsageChart(
     }
 
     val totalAmount = remember(slices) { Money.fromCents(slices.sumOf { it.amount.cents }) }
+    val centerAmount = remember(totalAmount) { chartCenterAmount(totalAmount) }
+    val fullAmount = remember(totalAmount) { MoneyFormatter.format(totalAmount) }
 
     Column(
         modifier = modifier,
@@ -96,12 +128,20 @@ fun CategoryUsageChart(
     ) {
         DonutRing(
             slices = slices,
-            centerLabel = MoneyFormatter.format(totalAmount),
+            centerLabel = centerAmount,
             centerCaption = "em gastos",
             modifier = Modifier
                 .fillMaxWidth(0.62f)
                 .aspectRatio(1f)
         )
+        if (centerAmount != fullAmount) {
+            Text(
+                text = "Total: $fullAmount",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
         DonutLegend(slices = slices)
     }
 }
@@ -153,12 +193,16 @@ private fun DonutRing(
             }
         }
 
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier.fillMaxWidth(0.68f),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
                 text = centerLabel,
-                style = MaterialTheme.typography.titleLarge,
+                style = if (centerLabel.length > 10) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 1
             )
             Text(
                 text = centerCaption,
