@@ -9,7 +9,7 @@ O processamento e os dados financeiros ficam no aparelho. A revisão das categor
 1. **Receber a fatura ou o extrato.** A pessoa seleciona um arquivo no seletor do Android. Hoje o parser aceita **CSV e OFX**; suporte a PDF, comum em faturas de cartão, ainda está planejado. O suporte depende também do formato exportado pela instituição.
 2. **Organizar automaticamente.** O app extrai os lançamentos e sugere categorias. Quando há um modelo LiteRT-LM importado e disponível, tenta usá-lo; caso contrário, usa regras locais. A pessoa revisa e pode corrigir cada sugestão antes de confirmar a importação.
 3. **Entender os gastos.** A Início mostra o saldo do mês, a composição por categoria e transações recentes. A visão de categorias e os filtros de mês ajudam a localizar os maiores gastos. **Insights escritos e proativos** ainda são uma meta do produto, não uma função pronta.
-4. **Perguntar à IA.** O Chat é a aba imediatamente à direita de Início na barra inferior. Ele responde com os dados locais disponíveis. Hoje recebe saldo e totais por categoria do **mês corrente**; consultas sobre outros meses ou lançamentos específicos exigem a ampliação do contexto planejada para o chat.
+4. **Perguntar à IA.** O Chat fica à direita da Início, acessível pela barra inferior ou por gesto horizontal. Ele responde com os dados locais disponíveis. Hoje recebe saldo e totais por categoria do **mês corrente**; consultas sobre outros meses ou lançamentos específicos exigem a ampliação do contexto planejada para o chat.
 
 ```text
 Arquivo CSV/OFX → extração → sugestão de categoria → revisão → transações locais
@@ -25,17 +25,17 @@ O lançamento manual, a edição de transações e o backup complementam esse fl
 
 | Área | Estado atual |
 |---|---|
-| Entrada de arquivos | Importação local de CSV/OFX, com revisão e correção das categorias sugeridas antes da confirmação. |
+| Entrada de arquivos | Importação local de CSV/OFX de até 10 MB, com revisão e correção das categorias sugeridas antes da confirmação. O lote é salvo de forma atômica; repetir os mesmos lançamentos na mesma ordem é recusado. |
 | Organização | Categorização por regras como fallback permanente; integração com LiteRT-LM para tentar categorizar com um modelo importado. A qualidade dessa inferência ainda precisa ser medida com extratos reais anonimizados. |
 | Visualização | Início com saldo mensal, gráfico de composição por categoria e transações recentes; telas de categorias e histórico com seleção de mês. |
-| Chat | Histórico persistido e respostas baseadas no saldo e nos totais por categoria do mês corrente. Com modelo disponível, usa LiteRT-LM; sem ele ou se a inferência falhar, usa respostas limitadas por regras. Não há recuperação de transações individuais, streaming nem insights proativos. |
+| Chat | Histórico persistido, carregado inicialmente em blocos de 100 mensagens, e respostas baseadas no saldo e nos totais por categoria do mês corrente. Com modelo disponível, usa LiteRT-LM; sem ele ou se a inferência falhar, usa respostas limitadas por regras. Não há recuperação de transações individuais, streaming nem insights proativos. |
 | Dados | Room local, lançamentos manuais, exportação CSV/JSON e backup/restauração JSON. |
-| Navegação | Barra inferior: **Início → Chat → Gráfico → Config**. O Chat fica à direita da Início; **não há gesto de swipe entre essas telas** na implementação atual. |
+| Navegação | Início e Chat formam duas páginas lado a lado, com gesto horizontal e uma pill flutuante de dois ícones. O botão circular à esquerda abre o menu com Gráfico, Configurações, Histórico e lançamento manual; o botão circular à direita abre a importação. |
 
 ### Próximas entregas ligadas à ideia central
 
 1. Ler **PDF de faturas e extratos** e ampliar a compatibilidade com arquivos reais de diferentes instituições.
-2. Medir e melhorar a categorização automática, inclusive o tratamento de lançamentos incertos e possíveis duplicatas.
+2. Medir e melhorar a categorização automática, inclusive o tratamento de lançamentos incertos e duplicatas em faturas parcialmente sobrepostas.
 3. Gerar **insights proativos** a partir dos dados confirmados, como categorias com maior peso e mudanças entre períodos, com números verificáveis no histórico.
 4. Ampliar o Chat para perguntas sobre períodos e transações específicas, com recuperação de dados, respostas progressivas e menor tempo de espera.
 5. Concluir a distribuição do modelo no flavor `play` e validar a experiência de ponta a ponta em aparelhos reais. Os flavors `play` e `standalone` existem, mas ainda têm o mesmo comportamento; o asset pack não foi integrado.

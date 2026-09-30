@@ -14,7 +14,7 @@ O [README](../README.md) mostra a experiência de produto e o estado atual. A [a
 | Tirar dúvidas | Chat na aba imediatamente à direita da Início; contexto de saldo e totais por categoria do mês corrente. | Perguntas por período e categoria, consulta aos lançamentos relevantes, resposta progressiva e latência aceitável. |
 | Modelo no aparelho | Import manual de `.litertlm`; fallback por regras. | Modelo distribuído no flavor `play`, import manual opcional e seleção de modelo validada em aparelhos reais. |
 
-O Chat fica à direita **na barra inferior atual**. A navegação por swipe imaginada em documentos anteriores não está implementada. A geração de insights escritos também não está implementada; o gráfico atual é um resumo visual.
+O Chat fica à direita da Início no `HorizontalPager` e na barra inferior de duas páginas. A geração de insights escritos ainda não está implementada; o gráfico atual é um resumo visual.
 
 ## 2. Decisões mantidas
 
@@ -57,7 +57,7 @@ Os testes JVM cobrem os roteadores e a lógica independente do SDK. Ainda faltam
 
 - Adicionar extração defensiva de PDF e mapear as variações de faturas de cartão e extratos bancários. O parser atual de CSV exige colunas reconhecíveis de data, descrição e valor; `.ofx`/`.qfx` usam blocos de transação OFX.
 - Definir formatos de amostra anonimizados e testes por instituição; mostrar erro compreensível para arquivos incompatíveis ou malformados.
-- Identificar possíveis duplicatas e tornar a confirmação do lote atômica ou recuperável. Hoje `ConfirmStatementImportUseCase` insere uma transação por vez e depois registra a importação.
+- A confirmação do lote agora é atômica e recusa um conjunto idêntico de lançamentos extraídos na mesma ordem. Ainda falta identificar lançamentos parcialmente sobrepostos, arquivos reordenados e duplicatas de importações anteriores à migração 2→3.
 - **Aceite:** importar uma fatura real de cada formato suportado sem perder valor/data/descrição, revisar sugestões e repetir o arquivo sem duplicar lançamentos silenciosamente.
 
 ### B. Categorização confiável

@@ -12,7 +12,7 @@ Arquivo → parser → lançamentos brutos → categorizador → revisão humana
                                      Início / Gráfico / Chat à direita
 ```
 
-**Estado atual:** CSV/OFX, revisão de categorias, dashboard e Chat limitado ao resumo do mês corrente. **Alvo:** PDF de faturas, mais formatos de instituições, insights gerados a partir de números verificáveis e Chat capaz de consultar períodos e transações específicas. O código usa uma **barra inferior** na ordem Início, Chat, Gráfico e Config; não há `HorizontalPager` nem navegação por swipe.
+**Estado atual:** CSV/OFX, revisão de categorias, dashboard e Chat limitado ao resumo do mês corrente. **Alvo:** PDF de faturas, mais formatos de instituições, insights gerados a partir de números verificáveis e Chat capaz de consultar períodos e transações específicas. Início e Chat são as duas páginas do `HorizontalPager`, acessíveis por gesto horizontal e por uma barra inferior compacta.
 
 ## Camadas e responsabilidades
 
@@ -28,9 +28,9 @@ O valor monetário usa `Money` em centavos (`Long`), evitando ponto flutuante pa
 
 ## Navegação e experiência
 
-`FinancesNavHost` abre `MainTabsScreen`. A barra inferior seleciona `DashboardScreen` (Início), `ChatScreen`, `CategoriesScreen` (Gráfico) ou `SettingsScreen` (Config). Importação, histórico, inclusão/edição de transações, detalhes de categoria e gerenciamento do modelo abrem como rotas secundárias do `NavHost`.
+`FinancesNavHost` abre `MainTabsScreen`. Um `HorizontalPager` coloca `DashboardScreen` (Início) à esquerda de `ChatScreen`; uma pill flutuante alterna entre as duas páginas. O botão de menu inferior abre `CategoriesScreen` (Gráfico), `SettingsScreen` (Config), histórico, importação e lançamento manual. Importação, histórico, inclusão/edição de transações, detalhes de categoria e gerenciamento do modelo abrem como rotas secundárias do `NavHost`.
 
-O Chat está **imediatamente à direita da Início na barra inferior**, conforme a ideia central do produto. Um gesto horizontal direto entre as telas pode ser estudado como melhoria de navegação, mas não faz parte da implementação atual.
+O Chat está **imediatamente à direita da Início** no pager e na pill inferior, conforme a ideia central do produto. Menu e importação são botões circulares independentes, ao lado da pill; o lançamento manual continua acessível pelo menu.
 
 ## Fluxo de importação e categorização
 
@@ -38,19 +38,19 @@ O Chat está **imediatamente à direita da Início na barra inferior**, conforme
 2. `ImportStatementUseCase` chama `StatementParserRepository`. `CsvOfxStatementParser` produz `RawStatementEntry` com descrição, valor, data e tipo. Ele reconhece `.ofx`/`.qfx` por extensão; os demais nomes são tentados como CSV. No CSV, são esperadas colunas de data, descrição e valor. PDF ainda não é interpretado.
 3. `SynthesizeStatementUseCase` consulta as categorias conhecidas e chama `TransactionCategorizer`. `EngineAwareTransactionCategorizer` escolhe LiteRT-LM se o estado do modelo for `Ready`; caso contrário, usa `RuleBasedLocalAiRepository`. O adaptador LiteRT-LM também recorre às regras quando falha ou quando uma resposta tem baixa confiança.
 4. A tela mostra as sugestões. A pessoa pode escolher uma categoria por lançamento; essa correção passa a ter `source = USER`. Só é possível confirmar quando todos têm categoria.
-5. `ConfirmStatementImportUseCase` salva cada entrada como `Transaction(origin = IMPORTED)` e registra um `ImportedStatement` com nome do arquivo, quantidade e data da importação.
+5. `ConfirmStatementImportUseCase` calcula uma impressão digital dos lançamentos extraídos. `RoomStatementImportRepository` grava o registro e todas as `Transaction(origin = IMPORTED)` em uma transação Room. Se o mesmo conjunto de lançamentos, na mesma ordem, for confirmado novamente, a importação é recusada sem novos inserts.
 
-O fluxo atual guarda as transações confirmadas e os metadados, sem copiar o arquivo original para o armazenamento permanente do app. **Ainda não há deduplicação nem transação única envolvendo todo o lote**: se houver falha após alguns inserts, o caso de uso não faz rollback conjunto. Isso deve ser tratado antes de prometer importação idempotente de faturas.
+O fluxo guarda as transações confirmadas e os metadados, sem copiar o arquivo original para o armazenamento permanente do app. A impressão digital ignora as categorias sugeridas, mas depende dos lançamentos extraídos e de sua ordem. Ela impede repetir um lote idêntico importado após esta mudança; não detecta faturas parcialmente sobrepostas, lançamentos reordenados ou importações antigas, que não têm impressão digital.
 
 ## Visualização e insights
 
-`DashboardViewModel` combina saldo, resumos por categoria e transações recentes para o período selecionado. `CategoryUsageChart` apresenta a composição por categoria; `CategoriesViewModel` e `TransactionsViewModel` permitem navegar por mês. Os dados são lidos dos repositórios Room por casos de uso como `GetMonthlyBalanceUseCase`, `GetCategorySummariesUseCase` e `GetTransactionsByMonthUseCase`.
+`DashboardViewModel` combina saldo, resumos por categoria e os seis lançamentos mais recentes para o período selecionado. A lista recente usa `LIMIT 6` no Room; o Histórico continua carregando o mês completo. `CategoryUsageChart` apresenta a composição por categoria; `CategoriesViewModel` e `TransactionsViewModel` permitem navegar por mês. Os dados são lidos dos repositórios Room por casos de uso como `GetMonthlyBalanceUseCase`, `GetCategorySummariesUseCase` e `GetTransactionsByMonthUseCase`.
 
 O gráfico e os totais já fornecem um resumo visual. **Insights proativos em linguagem natural não existem ainda.** A implementação futura deve derivá-los das transações confirmadas, registrar o período e os números usados e permitir que a pessoa confira cada afirmação no histórico. Um insight não deve tratar uma categoria sugerida mas ainda não confirmada como fato.
 
 ## Chat à direita da Início
 
-`ChatViewModel` usa `SendChatMessageUseCase` e `GetChatHistoryUseCase`. Ao enviar uma pergunta, o caso de uso monta `FinancialContext` com saldo e totais por categoria do **mês corrente**, salva a pergunta, chama `LocalAiRepository.sendMessage` e salva a resposta. `EngineAwareLocalAiRepository` escolhe LiteRT-LM se o modelo estiver `Ready`; caso contrário, responde pelo fallback por regras. O adaptador LiteRT-LM também usa esse fallback quando a inferência falha.
+`ChatViewModel` usa `SendChatMessageUseCase` e `GetChatHistoryUseCase`. Ao abrir a tela, consulta as 100 mensagens mais recentes; a pessoa pode carregar blocos anteriores no topo. O estado do campo de texto é coletado separadamente da lista para evitar recomposição da conversa a cada tecla. Ao enviar uma pergunta, o caso de uso monta `FinancialContext` com saldo e totais por categoria do **mês corrente**, salva a pergunta, chama `LocalAiRepository.sendMessage` e salva a resposta. `EngineAwareLocalAiRepository` escolhe LiteRT-LM se o modelo estiver `Ready`; caso contrário, responde pelo fallback por regras. O adaptador LiteRT-LM também usa esse fallback quando a inferência falha.
 
 O Chat **não lê lançamentos individuais nem resolve períodos pedidos no texto**. Não há recuperação contextual por transação, streaming ou motor mantido em memória entre perguntas. Para responder “quanto gastei com mercado em fevereiro?” com precisão, o próximo contrato deve primeiro resolver o período, consultar as transações/categorias pertinentes no Room e só então montar a resposta. O Chat permanece **somente leitura**: respostas não alteram transações nem categorias.
 
@@ -66,7 +66,7 @@ O projeto possui flavors `standalone` e `play`, atualmente equivalentes. A distr
 
 ## Persistência, privacidade e limites
 
-Room está na versão **2**. `MIGRATION_1_2` acrescentou `origin` às transações, as tabelas de importações e de histórico de Chat. O schema fica em `app/schemas` e `MigrationTest` verifica a migração em teste instrumentado. Backups e exportações manuais usam o seletor de arquivos; os arquivos gerados não recebem criptografia pelo app.
+Room está na versão **5**. `MIGRATION_1_2` acrescentou `origin` às transações, as tabelas de importações e de histórico de Chat. `MIGRATION_2_3` acrescentou a impressão digital única às importações. `MIGRATION_3_4` acrescentou um índice por data e id para as listas ordenadas; `MIGRATION_4_5` indexou data e id do histórico de Chat. O schema fica em `app/schemas` e `MigrationTest` verifica as migrações em teste instrumentado. Backups e exportações manuais usam o seletor de arquivos; os arquivos gerados não recebem criptografia pelo app.
 
 O manifest não declara `android.permission.INTERNET`. O CI executa um teste instrumentado que verifica as permissões do app instalado, incluindo o resultado do merge de manifests. O backup automático do Android está desativado e `MainActivity` usa `FLAG_SECURE`. O banco local e o histórico de Chat não têm criptografia adicional nem bloqueio por PIN/biometria.
 
