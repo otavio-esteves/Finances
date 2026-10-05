@@ -5,6 +5,7 @@ import br.com.otavioesteves.finances.data.DefaultDateProvider
 import br.com.otavioesteves.finances.data.ai.EngineAwareLocalAiRepository
 import br.com.otavioesteves.finances.data.ai.EngineAwareTransactionCategorizer
 import br.com.otavioesteves.finances.data.ai.ImportedModelLocalAiEngine
+import br.com.otavioesteves.finances.data.ai.LiteRtEngineSession
 import br.com.otavioesteves.finances.data.ai.LiteRtLocalAiRepository
 import br.com.otavioesteves.finances.data.ai.LiteRtTransactionCategorizer
 import br.com.otavioesteves.finances.data.ai.RuleBasedLocalAiRepository
@@ -14,6 +15,9 @@ import br.com.otavioesteves.finances.data.repository.RoomChatRepository
 import br.com.otavioesteves.finances.data.repository.RoomStatementImportRepository
 import br.com.otavioesteves.finances.data.repository.RoomTransactionsRepository
 import br.com.otavioesteves.finances.data.statement.CsvOfxStatementParser
+import br.com.otavioesteves.finances.data.statement.FinancialStatementParser
+import br.com.otavioesteves.finances.data.statement.PdfBoxTextExtractor
+import br.com.otavioesteves.finances.data.statement.PdfStatementParser
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.ai.LocalAiEngine
 import br.com.otavioesteves.finances.domain.ai.ModelImporter
@@ -124,18 +128,24 @@ class DefaultAppContainer(
     }
 
     override val statementParserRepository: StatementParserRepository by lazy {
-        CsvOfxStatementParser()
+        FinancialStatementParser(
+            CsvOfxStatementParser(),
+            PdfStatementParser(PdfBoxTextExtractor(context.applicationContext))
+        )
     }
 
     private val ruleBasedLocalAi: RuleBasedLocalAiRepository by lazy {
         RuleBasedLocalAiRepository(dateProvider)
     }
 
+    private val engineSession = LiteRtEngineSession()
+
     private val liteRtLocalAiRepository: LiteRtLocalAiRepository by lazy {
         LiteRtLocalAiRepository(
             localAiEngine = localAiEngine,
             ruleBasedRepository = ruleBasedLocalAi,
-            dateProvider = dateProvider
+            dateProvider = dateProvider,
+            engineSession = engineSession
         )
     }
 
@@ -148,7 +158,7 @@ class DefaultAppContainer(
     }
 
     private val importedModelLocalAiEngine: ImportedModelLocalAiEngine by lazy {
-        ImportedModelLocalAiEngine(context)
+        ImportedModelLocalAiEngine(context, engineSession = engineSession)
     }
 
     override val localAiEngine: LocalAiEngine by lazy { importedModelLocalAiEngine }
@@ -158,7 +168,8 @@ class DefaultAppContainer(
     private val liteRtTransactionCategorizer: LiteRtTransactionCategorizer by lazy {
         LiteRtTransactionCategorizer(
             localAiEngine = localAiEngine,
-            ruleBasedCategorizer = ruleBasedLocalAi
+            ruleBasedCategorizer = ruleBasedLocalAi,
+            engineSession = engineSession
         )
     }
 

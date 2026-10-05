@@ -43,7 +43,7 @@ class AiModelViewModel(
         if (localAiEngine.state.value is AiEngineState.Ready) {
             viewModelScope.launch {
                 localAiEngine.warmUp().onFailure {
-                    errorMessage.value = "O modelo instalado parece corrompido. Importe novamente."
+                    errorMessage.value = "O modelo instalado não pôde ser carregado neste aparelho."
                 }
             }
         }

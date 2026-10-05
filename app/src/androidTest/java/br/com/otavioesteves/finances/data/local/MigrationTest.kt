@@ -150,4 +150,48 @@ class MigrationTest {
             assertTrue(found)
         }
     }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate5To6_addsTransferCategoryWithoutDuplicatingExistingOne() {
+        helper.createDatabase(testDbName, 5).apply {
+            execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Alimentação', 'EXPENSE')")
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDbName, 6, true, AppDatabase.MIGRATION_5_6)
+        db.query("SELECT COUNT(*) FROM categories WHERE type = 'TRANSFER'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(1, it.getInt(0))
+        }
+        db.query("SELECT name FROM categories WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("Alimentação", it.getString(0))
+        }
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate6To7_preservesTransactionsAndAddsOptionalIcon() {
+        helper.createDatabase(testDbName, 6).apply {
+            execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Alimentação', 'EXPENSE')")
+            execSQL(
+                "INSERT INTO transactions (id, description, amountCents, categoryId, date, type, notes, origin) " +
+                    "VALUES (1, 'Mercado', 5000, 1, '2026-01-10', 'EXPENSE', NULL, 'IMPORTED')"
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(testDbName, 7, true, AppDatabase.MIGRATION_6_7)
+        db.query("SELECT description, iconKey FROM transactions WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("Mercado", it.getString(0))
+            assertTrue(it.isNull(1))
+        }
+        db.execSQL("UPDATE transactions SET iconKey = 'market' WHERE id = 1")
+        db.query("SELECT iconKey FROM transactions WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("market", it.getString(0))
+        }
+    }
 }

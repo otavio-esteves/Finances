@@ -10,10 +10,12 @@ data class Transaction(
     val date: LocalDate,
     val type: TransactionType,
     val notes: String? = null,
-    val origin: TransactionOrigin = TransactionOrigin.MANUAL
+    val origin: TransactionOrigin = TransactionOrigin.MANUAL,
+    val iconKey: String? = null
 ) {
     init {
         require(id >= 0) { "id must be positive or zero" }
+        require(!amount.isNegative()) { "amount must not be negative" }
         require(description.isNotBlank()) { "description must not be blank" }
         require(categoryId >= 0) { "categoryId must be positive or zero" }
     }

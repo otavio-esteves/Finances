@@ -25,6 +25,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (providers.gradleProperty("isolatedDeviceValidation").orNull == "true") {
+                applicationIdSuffix = ".validation"
+                versionNameSuffix = "-validation"
+            }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -99,6 +105,7 @@ dependencies {
     // Versão pinada deliberadamente (não "latest.release"); validar a API
     // e a inferência real conforme docs/PLANO_MOTOR_IA_LOCAL.md, seção 4.
     implementation(libs.litertlm.android)
+    implementation(libs.pdfbox.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

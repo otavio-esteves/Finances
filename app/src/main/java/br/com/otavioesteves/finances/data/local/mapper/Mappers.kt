@@ -44,7 +44,8 @@ fun TransactionEntity.toDomain(): Transaction {
         date = this.date,
         type = this.type,
         notes = this.notes,
-        origin = this.origin
+        origin = this.origin,
+        iconKey = this.iconKey
     )
 }
 
@@ -57,7 +58,8 @@ fun Transaction.toEntity(): TransactionEntity {
         date = this.date,
         type = this.type,
         notes = this.notes,
-        origin = this.origin
+        origin = this.origin,
+        iconKey = this.iconKey
     )
 }
 

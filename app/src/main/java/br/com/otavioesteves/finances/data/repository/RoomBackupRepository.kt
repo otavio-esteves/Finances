@@ -12,6 +12,7 @@ import br.com.otavioesteves.finances.domain.model.TransactionExportModel
 import br.com.otavioesteves.finances.domain.model.StatementImportExportModel
 import br.com.otavioesteves.finances.domain.model.ChatMessageExportModel
 import br.com.otavioesteves.finances.domain.repository.BackupRepository
+import br.com.otavioesteves.finances.domain.model.CategoryType
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -32,7 +33,8 @@ class RoomBackupRepository(
                 date = it.date.toString(),
                 type = it.type,
                 notes = it.notes,
-                origin = it.origin
+                origin = it.origin,
+                iconKey = it.iconKey
             )
         }
         val statementImports = database.statementImportDao().getAllImportsForBackup().map {
@@ -53,9 +55,25 @@ class RoomBackupRepository(
         database.withTransaction {
             val categoryIds = backup.categories.map { it.id }.toSet()
             require(categoryIds.size == backup.categories.size) { "Backup inválido: categorias duplicadas" }
+            require(backup.categories.all { it.id > 0 && it.name.isNotBlank() }) {
+                "Backup inválido: categoria sem nome ou ID válido"
+            }
             require(backup.transactions.all { it.categoryId in categoryIds }) {
                 "Backup inválido: transação com categoria inexistente"
             }
+            require(backup.transactions.map { it.id }.distinct().size == backup.transactions.size &&
+                backup.transactions.all { it.id > 0 && it.description.isNotBlank() && it.amountCents >= 0 }
+            ) { "Backup inválido: transações repetidas ou inválidas" }
+            val categoryTypes = backup.categories.associate { it.id to it.type }
+            require(backup.transactions.all { categoryTypes[it.categoryId]?.name == it.type.name }) {
+                "Backup inválido: tipo de transação incompatível com a categoria"
+            }
+            require(backup.chatMessages.map { it.id }.distinct().size == backup.chatMessages.size &&
+                backup.chatMessages.all { it.id > 0 }
+            ) { "Backup inválido: mensagens repetidas ou inválidas" }
+            require(backup.statementImports.map { it.id }.distinct().size == backup.statementImports.size &&
+                backup.statementImports.all { it.id > 0 && it.transactionCount >= 0 }
+            ) { "Backup inválido: importações repetidas ou inválidas" }
             val fingerprints = backup.statementImports.mapNotNull { it.fingerprint }
             require(fingerprints.size == fingerprints.toSet().size) {
                 "Backup inválido: importações duplicadas"
@@ -70,6 +88,9 @@ class RoomBackupRepository(
                 CategoryEntity(it.id, it.name, it.type)
             }
             database.categoryDao().insertCategories(categories)
+            if (categories.none { it.type == CategoryType.TRANSFER }) {
+                database.categoryDao().insertCategories(listOf(CategoryEntity(name = "Transferência", type = CategoryType.TRANSFER)))
+            }
 
             val transactions = backup.transactions.map {
                 TransactionEntity(
@@ -80,7 +101,8 @@ class RoomBackupRepository(
                     date = LocalDate.parse(it.date),
                     type = it.type,
                     notes = it.notes,
-                    origin = it.origin
+                    origin = it.origin,
+                    iconKey = it.iconKey
                 )
             }
             database.transactionDao().insertTransactions(transactions)

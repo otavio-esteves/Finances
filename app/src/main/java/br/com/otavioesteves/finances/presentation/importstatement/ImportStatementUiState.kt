@@ -13,12 +13,14 @@ sealed interface ImportStatementUiState {
         val fileName: String,
         val suggestions: List<CategorySuggestion>,
         val availableCategories: List<Category>,
+        val potentialOverlapCount: Int = 0,
+        val overlapAcknowledged: Boolean = false,
         val isConfirming: Boolean = false
     ) : ImportStatementUiState {
         val canConfirm: Boolean
             get() = suggestions.isNotEmpty() && suggestions.all {
                 it.suggestedCategory?.type?.name == it.entry.type.name
-            } && !isConfirming
+            } && (potentialOverlapCount == 0 || overlapAcknowledged) && !isConfirming
     }
 
     data class Success(val transactionCount: Int) : ImportStatementUiState

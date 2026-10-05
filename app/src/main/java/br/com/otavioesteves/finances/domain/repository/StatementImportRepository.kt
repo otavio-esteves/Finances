@@ -6,5 +6,5 @@ import kotlinx.coroutines.flow.Flow
 
 interface StatementImportRepository {
     fun getImports(): Flow<List<ImportedStatement>>
-    suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String)
+    suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprint: String? = null)
 }

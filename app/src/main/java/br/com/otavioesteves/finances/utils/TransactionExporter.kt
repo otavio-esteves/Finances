@@ -20,7 +20,8 @@ private data class ExportedTransaction(
     val categoryName: String,
     val date: String,
     val type: TransactionType,
-    val notes: String?
+    val notes: String?,
+    val iconKey: String?
 )
 
 class TransactionExporter {
@@ -50,7 +51,8 @@ class TransactionExporter {
                 categoryName = categories[t.categoryId]?.name ?: "Desconhecida",
                 date = t.date.toString(),
                 type = t.type,
-                notes = t.notes
+                notes = t.notes,
+                iconKey = t.iconKey
             )
         }
         val json = Json { prettyPrint = true }

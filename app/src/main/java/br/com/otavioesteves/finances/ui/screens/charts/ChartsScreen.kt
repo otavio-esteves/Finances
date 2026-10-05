@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -37,6 +38,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,6 +62,7 @@ fun ChartsScreen(
     viewModel: ChartsViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val exampleAction by viewModel.exampleAction.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val isAtTop by remember {
         derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 }
@@ -79,6 +82,39 @@ fun ChartsScreen(
                     onNextClick = { viewModel.onMonthSelected(state.monthPeriod.nextMonth()) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp)
                 )
+            }
+            if (state.monthPeriod.year == 2026) {
+                item(key = "examples_2026") {
+                    FinanceCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Exemplos de janeiro a outubro de 2026", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Lançamentos fictícios identificados por [EXEMPLO]. Eles entram nos totais e podem ser removidos aqui.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (state.exampleCount > 0) {
+                                Text("${state.exampleCount} exemplos adicionados", style = MaterialTheme.typography.labelMedium)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = viewModel::addExamples, enabled = !exampleAction.isBusy) {
+                                    Text(if (state.exampleCount == 0) "Adicionar exemplos" else "Completar exemplos")
+                                }
+                                if (state.exampleCount > 0) {
+                                    TextButton(onClick = viewModel::removeExamples, enabled = !exampleAction.isBusy) {
+                                        Text("Remover")
+                                    }
+                                }
+                            }
+                            exampleAction.error?.let { error ->
+                                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
             }
             if (state.isLoading) {
                 item(key = "loading") {
@@ -149,7 +185,7 @@ fun ChartsScreen(
             }
         }
         CenterAlignedTopAppBar(
-            title = { Text("Gráficos") },
+            title = { Text("Gráficos", modifier = Modifier.testTag("charts_title")) },
             colors = financeTopAppBarColors(isAtTop),
             windowInsets = WindowInsets(0, 0, 0, 0),
             modifier = Modifier.align(Alignment.TopCenter)

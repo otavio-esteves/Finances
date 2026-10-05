@@ -168,12 +168,12 @@ class ChatViewModelTest {
     @Test
     fun `sendMessage failure restores draft and exposes error`() = runTest {
         localAiRepository.shouldFail = true
-        viewModel.onDraftChange("Qual é meu saldo?")
+        viewModel.onDraftChange("Faça um resumo das categorias.")
 
         viewModel.sendMessage()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals("Qual é meu saldo?", viewModel.draftState.value)
+        assertEquals("Faça um resumo das categorias.", viewModel.draftState.value)
         assertEquals(false, viewModel.isSendingState.value)
         assertTrue(viewModel.errorState.value != null)
         viewModel.clearError()

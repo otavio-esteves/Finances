@@ -2,28 +2,30 @@ package br.com.otavioesteves.finances.data.statement
 
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
+import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 
 /**
- * Parses bank statements exported as CSV or OFX. Format is detected by file
- * extension; OFX/QFX files are treated as OFX, everything else as CSV.
+ * Parses CSV bills/statements and signed OFX transactions. The selected kind
+ * controls CSV sign interpretation; OFX keeps its own signed amount convention.
  */
 class CsvOfxStatementParser : StatementParserRepository {
 
-    override suspend fun parse(fileName: String, rawContent: ByteArray): List<RawStatementEntry> {
+    override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind): List<RawStatementEntry> {
         val text = rawContent.toString(Charsets.UTF_8)
         return if (fileName.substringAfterLast('.', "").lowercase() in OFX_EXTENSIONS) {
             parseOfx(text)
         } else {
-            parseCsv(text)
+            parseCsv(text, kind)
         }
     }
 
-    private fun parseCsv(text: String): List<RawStatementEntry> {
+    private fun parseCsv(text: String, kind: StatementKind): List<RawStatementEntry> {
         val content = text.removePrefix("\uFEFF")
         val rows = splitCsvRecords(content, detectDelimiter(content))
             .filter { row -> row.any { it.isNotBlank() } }
@@ -47,9 +49,12 @@ class CsvOfxStatementParser : StatementParserRepository {
             val amountCents = parseAmountCents(fields[amountIndex])
             RawStatementEntry(
                 description = fields[descriptionIndex].trim(),
-                amount = Money.fromCents(kotlin.math.abs(amountCents)),
+                amount = Money.fromCents(if (amountCents < 0) Math.negateExact(amountCents) else amountCents),
                 date = parseCsvDate(fields[dateIndex].trim()),
-                type = if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME
+                type = when (kind) {
+                    StatementKind.BANK_STATEMENT -> if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME
+                    StatementKind.CARD_BILL -> if (amountCents < 0) TransactionType.INCOME else TransactionType.EXPENSE
+                }
             )
         }
     }
@@ -70,7 +75,7 @@ class CsvOfxStatementParser : StatementParserRepository {
 
             RawStatementEntry(
                 description = description,
-                amount = Money.fromCents(kotlin.math.abs(amountCents)),
+                amount = Money.fromCents(if (amountCents < 0) Math.negateExact(amountCents) else amountCents),
                 date = parseOfxDate(date),
                 type = if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME
             )
@@ -155,7 +160,7 @@ class CsvOfxStatementParser : StatementParserRepository {
 
     private companion object {
         val OFX_EXTENSIONS = setOf("ofx", "qfx")
-        val BR_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+        val BR_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT)
         // OFX is SGML-based and closing tags (e.g. </STMTTRN>) are often omitted,
         // so a transaction block ends at the next STMTTRN, the list closing tag, or EOF.
         val OFX_TRANSACTION_REGEX = Regex(

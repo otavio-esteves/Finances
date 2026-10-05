@@ -63,6 +63,7 @@ class AddTransactionViewModel(
                     selectedCategory = state.categories.find { it.id == transaction.categoryId },
                     date = transaction.date,
                     notes = transaction.notes ?: "",
+                    iconKey = transaction.iconKey,
                     isLoading = false
                 )
             }
@@ -99,6 +100,10 @@ class AddTransactionViewModel(
 
     fun onNotesChange(notes: String) {
         _uiState.update { it.copy(notes = notes) }
+    }
+
+    fun onIconChange(iconKey: String?) {
+        _uiState.update { it.copy(iconKey = iconKey) }
     }
 
     fun onDeleteRequest() {
@@ -164,7 +169,8 @@ class AddTransactionViewModel(
                     categoryId = currentState.selectedCategory!!.id,
                     date = currentState.date,
                     type = currentState.type,
-                    notes = currentState.notes.trim().takeIf { it.isNotEmpty() }
+                    notes = currentState.notes.trim().takeIf { it.isNotEmpty() },
+                    iconKey = currentState.iconKey
                 )
 
                 if (isEditMode) {

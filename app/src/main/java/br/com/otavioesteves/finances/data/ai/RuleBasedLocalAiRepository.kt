@@ -11,6 +11,7 @@ import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.SuggestionSource
 import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
+import br.com.otavioesteves.finances.domain.usecase.answerFinancialQuestion
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import br.com.otavioesteves.finances.utils.formatMonthPeriod
 
@@ -65,6 +66,11 @@ class RuleBasedLocalAiRepository(
     override suspend fun sendMessage(message: String, context: FinancialContext): ChatMessage {
         val normalized = message.lowercase()
 
+        val numericAnswer = answerFinancialQuestion(message, context)
+        if (numericAnswer != null) {
+            return ChatMessage(0, ChatRole.ASSISTANT, numericAnswer, dateProvider.getCurrentDateTime())
+        }
+
         val matchedSummary = context.categorySummaries.firstOrNull { summary ->
             normalized.contains(summary.category.name.lowercase())
         }
@@ -72,24 +78,33 @@ class RuleBasedLocalAiRepository(
         val content = when {
             matchedSummary != null -> {
                 "Você movimentou ${MoneyFormatter.format(matchedSummary.totalAmount)} em " +
-                    "${matchedSummary.category.name} em ${formatMonthPeriod(context.period)}."
+                    "${matchedSummary.category.name} em ${formatMonthPeriod(context.period)} de ${context.period.year}."
             }
 
             BALANCE_KEYWORDS.any { normalized.contains(it) } -> {
-                "Seu saldo em ${formatMonthPeriod(context.period)} é de " +
+                "Seu saldo em ${formatMonthPeriod(context.period)} de ${context.period.year} é de " +
                     "${MoneyFormatter.format(context.monthlyBalance)}."
             }
 
             context.categorySummaries.isEmpty() -> {
-                "Ainda não há transações registradas em ${formatMonthPeriod(context.period)} para eu analisar."
+                "Ainda não há transações registradas em ${formatMonthPeriod(context.period)} de ${context.period.year} para eu analisar."
+            }
+
+            normalized.contains("com ") -> {
+                "Ainda não consigo consultar lançamentos por estabelecimento. Posso resumir as categorias do mês."
             }
 
             else -> {
                 val topCategories = context.categorySummaries
+                    .filter { it.category.type == CategoryType.EXPENSE }
                     .sortedByDescending { it.totalAmount.cents }
                     .take(3)
                     .joinToString(", ") { "${it.category.name} (${MoneyFormatter.format(it.totalAmount)})" }
-                "Em ${formatMonthPeriod(context.period)}, suas maiores categorias foram: $topCategories."
+                if (topCategories.isEmpty()) {
+                    "Não há despesas por categoria em ${formatMonthPeriod(context.period)} de ${context.period.year}."
+                } else {
+                    "Em ${formatMonthPeriod(context.period)} de ${context.period.year}, suas maiores categorias de despesa foram: $topCategories."
+                }
             }
         }
 

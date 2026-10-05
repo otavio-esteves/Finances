@@ -99,7 +99,8 @@ class AddTransactionViewModelTest {
     fun `editing an older imported transaction preserves its origin`() = runTest {
         val original = createFakeTransaction(7).copy(
             date = LocalDate.of(2025, 8, 3),
-            origin = TransactionOrigin.IMPORTED
+            origin = TransactionOrigin.IMPORTED,
+            iconKey = "market"
         )
         val repository = FakeTransactionsRepository(listOf(original))
         val viewModel = createViewModel(repository, transactionId = 7)
@@ -107,11 +108,13 @@ class AddTransactionViewModelTest {
 
         assertEquals(original.date, viewModel.uiState.value.date)
         viewModel.onDescriptionChange("Corrigida")
+        viewModel.onIconChange("food")
         viewModel.saveTransaction()
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("Corrigida", repository.transactions.single().description)
         assertEquals(TransactionOrigin.IMPORTED, repository.transactions.single().origin)
+        assertEquals("food", repository.transactions.single().iconKey)
         assertTrue(viewModel.uiState.value.isSaveSuccessful)
     }
 

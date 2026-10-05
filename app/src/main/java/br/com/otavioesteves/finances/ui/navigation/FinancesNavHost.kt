@@ -31,6 +31,9 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
                 onHistoryClick = {
                     navController.navigate(FinancesRoute.Transactions.route)
                 },
+                onTransactionClick = { transaction ->
+                    navController.navigate(FinancesRoute.EditTransaction(transaction.id).route)
+                },
                 onImportStatementClick = {
                     navController.navigate(FinancesRoute.ImportStatement.route)
                 },

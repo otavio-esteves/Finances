@@ -12,11 +12,14 @@ import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
+import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.ConfirmStatementImportUseCase
 import br.com.otavioesteves.finances.domain.usecase.ImportStatementUseCase
+import br.com.otavioesteves.finances.domain.usecase.FindPotentialOverlapsUseCase
 import br.com.otavioesteves.finances.domain.usecase.SynthesizeStatementUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -59,7 +62,10 @@ class ImportStatementViewModelTest {
         private val entries: List<RawStatementEntry>,
         private val failure: Exception? = null
     ) : StatementParserRepository {
-        override suspend fun parse(fileName: String, rawContent: ByteArray): List<RawStatementEntry> {
+        var lastKind: StatementKind? = null
+
+        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind): List<RawStatementEntry> {
+            lastKind = kind
             failure?.let { throw it }
             return entries
         }
@@ -89,11 +95,23 @@ class ImportStatementViewModelTest {
         override suspend fun confirmImport(
             statementImport: ImportedStatement,
             transactions: List<Transaction>,
-            fingerprint: String
+            fingerprint: String,
+            legacyFingerprint: String?
         ) {
             imports += statementImport
             this.transactions += transactions
         }
+    }
+
+    private class FakeTransactionsRepository(private val transactions: List<Transaction> = emptyList()) : TransactionsRepository {
+        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
+        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(
+            transactions.filter { it.date.year == period.year && it.date.monthValue == period.month }
+        )
+        override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
+        override suspend fun addTransaction(transaction: Transaction) = Unit
+        override suspend fun removeTransaction(transactionId: Long) = Unit
+        override suspend fun updateTransaction(transaction: Transaction) = Unit
     }
 
     @Before
@@ -113,9 +131,11 @@ class ImportStatementViewModelTest {
         ),
         categories: List<Category> = listOf(mercado, transporte),
         parserFailure: Exception? = null,
-        statementImportRepository: FakeStatementImportRepository = FakeStatementImportRepository()
+        parserRepository: FakeStatementParserRepository = FakeStatementParserRepository(entries, parserFailure),
+        statementImportRepository: FakeStatementImportRepository = FakeStatementImportRepository(),
+        existingTransactions: List<Transaction> = emptyList()
     ): ImportStatementViewModel {
-        val importStatement = ImportStatementUseCase(FakeStatementParserRepository(entries, parserFailure))
+        val importStatement = ImportStatementUseCase(parserRepository)
         val synthesizeStatement = SynthesizeStatementUseCase(
             FakeTransactionCategorizer(suggestions),
             FakeCategoriesRepository(categories)
@@ -129,9 +149,21 @@ class ImportStatementViewModelTest {
             synthesizeStatement,
             confirmStatementImport,
             FakeCategoriesRepository(categories),
+            FindPotentialOverlapsUseCase(FakeTransactionsRepository(existingTransactions)),
             ioDispatcher = testDispatcher,
             cpuDispatcher = testDispatcher
         )
+    }
+
+    @Test
+    fun `onFileSelected passes selected card bill kind to parser`() = runTest {
+        val parser = FakeStatementParserRepository(listOf(entry))
+        val viewModel = createViewModel(parserRepository = parser)
+
+        viewModel.onFileSelected("fatura.csv", ByteArray(0), StatementKind.CARD_BILL)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(StatementKind.CARD_BILL, parser.lastKind)
     }
 
     @Test
@@ -204,6 +236,36 @@ class ImportStatementViewModelTest {
         val state = viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions
         assertEquals(transporte, state.suggestions.first().suggestedCategory)
         assertTrue(state.canConfirm)
+    }
+
+    @Test
+    fun `possible overlap requires explicit acknowledgement`() = runTest {
+        val existing = Transaction(1, entry.description, entry.amount, mercado.id, entry.date, entry.type)
+        val viewModel = createViewModel(existingTransactions = listOf(existing))
+
+        viewModel.onFileSelected("extrato.csv", ByteArray(0))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val before = viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertEquals(1, before.potentialOverlapCount)
+        assertTrue(!before.canConfirm)
+        viewModel.onOverlapAcknowledged(true)
+        assertTrue((viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).canConfirm)
+    }
+
+    @Test
+    fun `payment can be corrected to transfer during review`() = runTest {
+        val transfer = Category(3L, "Transferência", CategoryType.TRANSFER)
+        val viewModel = createViewModel(categories = listOf(mercado, transporte, transfer))
+
+        viewModel.onFileSelected("extrato.csv", ByteArray(0))
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onTypeSelected(0, TransactionType.TRANSFER)
+
+        val suggestion = (viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).suggestions.single()
+        assertEquals(TransactionType.TRANSFER, suggestion.entry.type)
+        assertEquals(TransactionType.EXPENSE, suggestion.originalType)
+        assertEquals(transfer, suggestion.suggestedCategory)
     }
 
     @Test

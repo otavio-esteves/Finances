@@ -25,10 +25,13 @@ class RoomStatementImportRepository(
     override suspend fun confirmImport(
         statementImport: ImportedStatement,
         transactions: List<Transaction>,
-        fingerprint: String
+        fingerprint: String,
+        legacyFingerprint: String?
     ) {
         database.withTransaction {
-            if (statementImportDao.hasFingerprint(fingerprint)) {
+            if (statementImportDao.hasFingerprint(fingerprint) ||
+                (legacyFingerprint != null && statementImportDao.hasFingerprint(legacyFingerprint))
+            ) {
                 throw DuplicateStatementImportException()
             }
             // The unique fingerprint claim and all inserts commit or roll back together.

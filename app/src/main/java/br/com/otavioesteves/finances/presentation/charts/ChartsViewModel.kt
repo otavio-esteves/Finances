@@ -12,15 +12,20 @@ import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
+import br.com.otavioesteves.finances.domain.usecase.EXAMPLE_TRANSACTIONS_NOTE
+import br.com.otavioesteves.finances.domain.usecase.exampleTransactions2026
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class ChartsUiState(
     val monthPeriod: MonthPeriod,
@@ -29,8 +34,11 @@ data class ChartsUiState(
     val selectedCategoryId: Long? = null,
     val annualExpenses: List<Long> = List(12) { 0L },
     val categoryAnnualExpenses: List<Long> = List(12) { 0L },
+    val exampleCount: Int = 0,
     val isLoading: Boolean = true
 )
+
+data class ExampleActionState(val isBusy: Boolean = false, val error: String? = null)
 
 internal fun annualExpenseTotals(transactions: List<Transaction>, year: Int, categoryId: Long? = null): List<Long> {
     val totals = LongArray(12)
@@ -50,10 +58,12 @@ class ChartsViewModel(
     private val getCategorySummaries: GetCategorySummariesUseCase,
     private val transactionsRepository: TransactionsRepository,
     private val categoriesRepository: CategoriesRepository,
-    dateProvider: DateProvider
+    private val dateProvider: DateProvider
 ) : ViewModel() {
     private val selectedMonth = MutableStateFlow(dateProvider.getCurrentMonthPeriod())
     private val selectedCategory = MutableStateFlow<Long?>(null)
+    private val _exampleAction = MutableStateFlow(ExampleActionState())
+    val exampleAction = _exampleAction.asStateFlow()
 
     val uiState: StateFlow<ChartsUiState> = selectedMonth.flatMapLatest { period ->
         combine(
@@ -74,6 +84,7 @@ class ChartsViewModel(
                 categoryAnnualExpenses = effectiveCategoryId?.let {
                     annualExpenseTotals(transactions, period.year, it)
                 } ?: List(12) { 0L },
+                exampleCount = transactions.count { it.notes == EXAMPLE_TRANSACTIONS_NOTE },
                 isLoading = false
             )
         }
@@ -89,5 +100,39 @@ class ChartsViewModel(
 
     fun onCategorySelected(categoryId: Long) {
         selectedCategory.value = categoryId
+    }
+
+    fun addExamples() {
+        if (_exampleAction.value.isBusy) return
+        _exampleAction.value = ExampleActionState(isBusy = true)
+        viewModelScope.launch {
+            try {
+                val categories = categoriesRepository.getCategories().first { it.isNotEmpty() }
+                val samples = exampleTransactions2026(categories, dateProvider.getCurrentDate())
+                val existing = transactionsRepository.getTransactionsForYear(2026).first()
+                    .filter { it.notes == EXAMPLE_TRANSACTIONS_NOTE }
+                    .map { it.date to it.description }.toSet()
+                samples.filterNot { (it.date to it.description) in existing }
+                    .forEach { transactionsRepository.addTransaction(it) }
+                _exampleAction.value = ExampleActionState()
+            } catch (error: Exception) {
+                _exampleAction.value = ExampleActionState(error = error.message ?: "Não foi possível adicionar os exemplos.")
+            }
+        }
+    }
+
+    fun removeExamples() {
+        if (_exampleAction.value.isBusy) return
+        _exampleAction.value = ExampleActionState(isBusy = true)
+        viewModelScope.launch {
+            try {
+                transactionsRepository.getTransactionsForYear(2026).first()
+                    .filter { it.notes == EXAMPLE_TRANSACTIONS_NOTE }
+                    .forEach { transactionsRepository.removeTransaction(it.id) }
+                _exampleAction.value = ExampleActionState()
+            } catch (error: Exception) {
+                _exampleAction.value = ExampleActionState(error = error.message ?: "Não foi possível remover os exemplos.")
+            }
+        }
     }
 }

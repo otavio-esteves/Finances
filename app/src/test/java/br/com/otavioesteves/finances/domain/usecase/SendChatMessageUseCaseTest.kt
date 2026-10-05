@@ -54,22 +54,82 @@ class SendChatMessageUseCaseTest {
             dateProvider
         )
 
-        val result = useCase("Quanto gastei com mercado?")
+        val result = useCase("Faça um resumo do mês.")
 
         assertEquals(expectedReply, result)
         assertEquals(
             FinancialContext(period = period, monthlyBalance = balance, categorySummaries = summaries),
             localAiRepository.lastContext
         )
-        assertEquals("Quanto gastei com mercado?", localAiRepository.lastMessage)
+        assertEquals("Faça um resumo do mês.", localAiRepository.lastMessage)
         assertEquals(2, chatRepository.savedMessages.size)
         assertEquals(ChatRole.USER, chatRepository.savedMessages[0].role)
-        assertEquals("Quanto gastei com mercado?", chatRepository.savedMessages[0].content)
+        assertEquals("Faça um resumo do mês.", chatRepository.savedMessages[0].content)
         assertEquals(expectedReply, chatRepository.savedMessages[1])
     }
 
     @Test
-    fun invoke_refusesAnotherMonthWithoutSendingCurrentMonthFiguresToAi() = runBlocking {
+    fun invoke_usesRequestedMonthInsteadOfCurrentMonth() = runBlocking {
+        val period = MonthPeriod(2026, 1)
+        val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "Fevereiro", LocalDateTime.now()))
+        val chat = FakeChatRepository()
+        val transactions = FakeTransactionsRepository(Money.fromCents(100_000))
+        val categories = FakeCategoriesRepository(emptyList())
+        val useCase = SendChatMessageUseCase(
+            ai, chat,
+            GetMonthlyBalanceUseCase(transactions),
+            GetCategorySummariesUseCase(categories),
+            FakeDateProvider(period)
+        )
+
+        val reply = useCase("Mostre as categorias em fevereiro de 2026.")
+
+        assertEquals("Fevereiro", reply.content)
+        assertEquals(MonthPeriod(2026, 2), ai.lastContext?.period)
+        assertEquals(MonthPeriod(2026, 2), transactions.requestedPeriod)
+        assertEquals(MonthPeriod(2026, 2), categories.requestedPeriod)
+        assertEquals(2, chat.savedMessages.size)
+    }
+
+    @Test
+    fun invoke_refusesMerchantQuestionWithoutTransactionDetails() = runBlocking {
+        val period = MonthPeriod(2026, 2)
+        val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "inventado", LocalDateTime.now()))
+        val summaries = listOf(CategorySummary(Category(1, "Alimentação", CategoryType.EXPENSE), Money.fromCents(25_000)))
+        val useCase = SendChatMessageUseCase(
+            ai, FakeChatRepository(),
+            GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
+            GetCategorySummariesUseCase(FakeCategoriesRepository(summaries)),
+            FakeDateProvider(period)
+        )
+
+        val answer = useCase("Quanto gastei com Mercado em fevereiro de 2026?")
+
+        assertTrue(answer.content.contains("não consigo calcular"))
+        assertEquals(null, ai.lastMessage)
+    }
+
+    @Test
+    fun invoke_calculatesCategoryExpenseWithoutAi() = runBlocking {
+        val period = MonthPeriod(2026, 2)
+        val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "inventado", LocalDateTime.now()))
+        val summaries = listOf(CategorySummary(Category(1, "Alimentação", CategoryType.EXPENSE), Money.fromCents(25_000)))
+        val useCase = SendChatMessageUseCase(
+            ai, FakeChatRepository(),
+            GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
+            GetCategorySummariesUseCase(FakeCategoriesRepository(summaries)),
+            FakeDateProvider(period)
+        )
+
+        val answer = useCase("Quanto gastei com alimentação em fevereiro de 2026?")
+
+        assertTrue(answer.content.contains("250,00"))
+        assertTrue(answer.content.contains("Fevereiro de 2026"))
+        assertEquals(null, ai.lastMessage)
+    }
+
+    @Test
+    fun invoke_refusesUnsupportedPeriodWithoutSendingFiguresToAi() = runBlocking {
         val period = MonthPeriod(2026, 1)
         val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "incorreto", LocalDateTime.now()))
         val chat = FakeChatRepository()
@@ -80,22 +140,29 @@ class SendChatMessageUseCaseTest {
             FakeDateProvider(period)
         )
 
-        val reply = useCase("Quanto gastei em fevereiro de 2026?")
+        val reply = useCase("Quanto gastei em janeiro e fevereiro de 2026?")
 
-        assertTrue(reply.content.contains("só consigo consultar o resumo de Janeiro de 2026"))
+        assertTrue(reply.content.contains("um mês por vez"))
         assertEquals(null, ai.lastMessage)
         assertEquals(2, chat.savedMessages.size)
     }
 
     @Test
-    fun invoke_refusesRelativePeriodAndAcceptsCurrentMonth() = runBlocking {
+    fun resolveChatPeriod_acceptsSingleMonthAndRejectsUnsupportedPeriods() {
         val period = MonthPeriod(2026, 1)
         assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei no mês passado?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei no mês anterior?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastarei no mês seguinte?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto vou gastar no mês que vem?", period))
+        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei hoje?", period))
         assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei na última semana?", period))
         assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em janeiro de 2025?", period))
-        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em fev/2026?", period))
-        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em 02/2026?", period))
-        assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em 2026-02?", period))
+        assertEquals(MonthPeriod(2026, 2), resolveChatPeriod("Quanto gastei em fev/2026?", period))
+        assertEquals(MonthPeriod(2026, 2), resolveChatPeriod("Quanto gastei em 02/2026?", period))
+        assertEquals(MonthPeriod(2026, 2), resolveChatPeriod("Quanto gastei em 2026-02?", period))
+        assertEquals(MonthPeriod(2025, 12), resolveChatPeriod("Quanto gastei em dezembro?", period))
+        assertEquals(null, resolveChatPeriod("Quanto gastei em janeiro e fevereiro de 2026?", period))
+        assertEquals(null, resolveChatPeriod("Quanto gastei em 2025 e 2026?", period))
         assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em 05/01/2026?", period))
         assertEquals(true, canAnswerWithCurrentMonth("Quanto gastei em janeiro de 2026?", period))
     }
@@ -107,9 +174,13 @@ class SendChatMessageUseCaseTest {
     }
 
     private class FakeTransactionsRepository(private val balance: Money) : TransactionsRepository {
+        var requestedPeriod: MonthPeriod? = null
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
-        override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(balance)
+        override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> {
+            requestedPeriod = period
+            return flowOf(balance)
+        }
         override suspend fun addTransaction(transaction: Transaction) = Unit
         override suspend fun removeTransaction(transactionId: Long) = Unit
         override suspend fun updateTransaction(transaction: Transaction) = Unit
@@ -118,8 +189,12 @@ class SendChatMessageUseCaseTest {
     private class FakeCategoriesRepository(
         private val summaries: List<CategorySummary>
     ) : CategoriesRepository {
+        var requestedPeriod: MonthPeriod? = null
         override fun getCategories(): Flow<List<Category>> = flowOf(emptyList())
-        override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> = flowOf(summaries)
+        override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> {
+            requestedPeriod = period
+            return flowOf(summaries)
+        }
     }
 
     private class FakeChatRepository : ChatRepository {

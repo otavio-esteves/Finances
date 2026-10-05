@@ -10,75 +10,69 @@ import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import br.com.otavioesteves.finances.utils.formatMonthPeriod
 import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.SamplerConfig
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 /**
  * [LocalAiRepository] backed by a real LiteRT-LM engine — a scoped-down
  * stand-in for the `FinancialChat`/RAG contract planned in
  * docs/PLANO_MOTOR_IA_LOCAL.md, "Chat que consulta as finanças": free-text,
  * not streamed, and grounded only in the
- * current month's balance + category totals ([FinancialContext]), not a
+ * selected month's balance + category totals ([FinancialContext]), not a
  * per-transaction retrieval. Built to validate the imported engine can hold a
  * conversation at all. Every `com.google.ai.edge.litertlm.*` call is isolated
- * here, same reasoning as [LiteRtTransactionCategorizer] — see its class doc
- * for the unverified-API caveat (the `.toString()` on the reply).
+ * here, same reasoning as [LiteRtTransactionCategorizer]. Runtime behavior
+ * still needs validation with a real bundle on a device.
  *
- * Creates a fresh [Engine] per message (same pattern as
- * [LiteRtTransactionCategorizer], which does it per import batch) — there is
- * no warm/cached engine across turns yet, so every message reloads the whole
- * model. Callers should route through [EngineAwareLocalAiRepository] rather
- * than use this directly — it assumes the engine is [AiEngineState.Ready].
+ * Shares a serialized runtime with categorization. Each question still has its
+ * own conversation and receives only the selected monthly financial context.
  */
 class LiteRtLocalAiRepository(
     private val localAiEngine: LocalAiEngine,
     private val ruleBasedRepository: LocalAiRepository,
-    private val dateProvider: DateProvider
+    private val dateProvider: DateProvider,
+    private val engineSession: LiteRtEngineSession
 ) : LocalAiRepository {
 
     override suspend fun sendMessage(message: String, context: FinancialContext): ChatMessage {
-        val ready = localAiEngine.state.value as? AiEngineState.Ready
-            ?: return ruleBasedRepository.sendMessage(message, context)
+        if (localAiEngine.state.value !is AiEngineState.Ready) {
+            return ruleBasedRepository.sendMessage(message, context)
+        }
+        return try {
+            engineSession.withEngine(localAiEngine) { engine ->
 
-        return withContext(Dispatchers.IO) {
-            runCatching {
-                val engineConfig = EngineConfig(modelPath = ready.model.path)
-                Engine(engineConfig).use { engine ->
-                    engine.initialize()
-
-                    val conversationConfig = ConversationConfig(
-                        systemInstruction = Contents.of(SYSTEM_INSTRUCTION),
-                        samplerConfig = SamplerConfig(temperature = 0.3, topK = 40, topP = 0.9)
-                    )
-                    // NOTA DE INCERTEZA — ver o comentário de classe: assumindo que
-                    // toString() dá o texto da resposta, como o exemplo oficial sugere.
-                    val reply = engine.createConversation(conversationConfig).use { conversation: Conversation ->
-                        conversation.sendMessage(buildPrompt(message, context)).toString()
-                    }
-
-                    ChatMessage(
-                        id = 0,
-                        role = ChatRole.ASSISTANT,
-                        content = reply.trim(),
-                        createdAt = dateProvider.getCurrentDateTime()
-                    )
+                val conversationConfig = ConversationConfig(
+                    systemInstruction = Contents.of(SYSTEM_INSTRUCTION),
+                    samplerConfig = SamplerConfig(temperature = 0.3, topK = 40, topP = 0.9)
+                )
+                val reply = engine.createConversation(conversationConfig).use { conversation: Conversation ->
+                    conversation.sendMessage(buildPrompt(message, context)).contents.contents
+                        .filterIsInstance<Content.Text>()
+                        .joinToString("") { it.text }
                 }
-            }.recoverCatching {
-                // Motor não respondeu (bundle incompatível, erro de inferência etc.) —
-                // cai pro fallback de regras para esta mensagem.
-                ruleBasedRepository.sendMessage(message, context)
-            }.getOrThrow()
+                require(reply.isNotBlank()) { "O modelo não retornou texto." }
+
+                ChatMessage(
+                    id = 0,
+                    role = ChatRole.ASSISTANT,
+                    content = reply.trim(),
+                    createdAt = dateProvider.getCurrentDateTime()
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            engineSession.release()
+            ruleBasedRepository.sendMessage(message, context)
         }
     }
 
     private fun buildPrompt(message: String, context: FinancialContext): String {
         val categoriesText = if (context.categorySummaries.isEmpty()) {
-            "Nenhuma transação registrada neste mês."
+            "Nenhuma transação registrada neste período."
         } else {
             context.categorySummaries.joinToString("\n") { summary ->
                 "- ${summary.category.name}: ${MoneyFormatter.format(summary.totalAmount)}"
@@ -86,7 +80,7 @@ class LiteRtLocalAiRepository(
         }
 
         return """
-            Dados financeiros de ${formatMonthPeriod(context.period)}:
+            Dados financeiros de ${formatMonthPeriod(context.period)} de ${context.period.year}:
             Saldo do mês: ${MoneyFormatter.format(context.monthlyBalance)}
             Gastos e receitas por categoria:
             $categoriesText

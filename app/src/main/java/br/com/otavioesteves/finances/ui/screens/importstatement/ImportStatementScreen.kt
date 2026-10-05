@@ -26,7 +26,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -57,6 +59,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.CategorySuggestion
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.model.StatementKind
+import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.presentation.AppViewModelProvider
 import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementUiState
 import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementViewModel
@@ -80,13 +84,14 @@ fun ImportStatementScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var isAtTop by remember { mutableStateOf(true) }
+    var selectedKind by remember { mutableStateOf(StatementKind.BANK_STATEMENT) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let { selectedUri ->
             val fileName = queryDisplayName(context, selectedUri) ?: "arquivo financeiro"
-            viewModel.onFileSelected(fileName) {
+            viewModel.onFileSelected(fileName, selectedKind) {
                 context.contentResolver.openInputStream(selectedUri)
                     ?: throw IllegalArgumentException("Não foi possível abrir o arquivo selecionado.")
             }
@@ -114,7 +119,10 @@ fun ImportStatementScreen(
         ) {
             when (val state = uiState) {
                 is ImportStatementUiState.Idle -> IdleContent(
-                    onSelectFileClick = { filePickerLauncher.launch("*/*") }
+                    onSelectFileClick = { kind ->
+                        selectedKind = kind
+                        filePickerLauncher.launch("*/*")
+                    }
                 )
 
                 is ImportStatementUiState.Loading -> LoadingContent()
@@ -122,6 +130,8 @@ fun ImportStatementScreen(
                 is ImportStatementUiState.ReviewingSuggestions -> ReviewContent(
                     state = state,
                     onCategorySelected = viewModel::onCategorySelected,
+                    onTypeSelected = viewModel::onTypeSelected,
+                    onOverlapAcknowledged = viewModel::onOverlapAcknowledged,
                     onConfirmClick = viewModel::onConfirmImport,
                     onCancelClick = viewModel::onStartOver,
                     onScrollTopChange = { isAtTop = it }
@@ -145,7 +155,7 @@ fun ImportStatementScreen(
 
 @Composable
 private fun IdleContent(
-    onSelectFileClick: () -> Unit,
+    onSelectFileClick: (StatementKind) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -186,14 +196,18 @@ private fun IdleContent(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Escolha um arquivo CSV ou OFX. A IA local, quando disponível, ou as regras do app sugerem as categorias. Seus dados ficam no aparelho.",
+                    text = "Escolha o tipo de arquivo. Em CSV de fatura, valores positivos são compras e negativos são estornos. Confira todos os lançamentos antes de importar.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
                 PrimaryActionButton(
-                    text = "Escolher arquivo",
-                    onClick = onSelectFileClick
+                    text = "Escolher extrato",
+                    onClick = { onSelectFileClick(StatementKind.BANK_STATEMENT) }
+                )
+                PrimaryActionButton(
+                    text = "Escolher fatura",
+                    onClick = { onSelectFileClick(StatementKind.CARD_BILL) }
                 )
             }
         }
@@ -260,6 +274,8 @@ private fun SuccessContent(
 private fun ReviewContent(
     state: ImportStatementUiState.ReviewingSuggestions,
     onCategorySelected: (Int, Category) -> Unit,
+    onTypeSelected: (Int, TransactionType) -> Unit,
+    onOverlapAcknowledged: (Boolean) -> Unit,
     onConfirmClick: () -> Unit,
     onCancelClick: () -> Unit,
     onScrollTopChange: (Boolean) -> Unit,
@@ -282,6 +298,15 @@ private fun ReviewContent(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            val expenses = state.suggestions.filter { it.entry.type == TransactionType.EXPENSE }
+                .fold(Money.Zero) { total, suggestion -> total + suggestion.entry.amount }
+            val incomes = state.suggestions.filter { it.entry.type == TransactionType.INCOME }
+                .fold(Money.Zero) { total, suggestion -> total + suggestion.entry.amount }
+            Text(
+                text = "${state.suggestions.size} lançamentos · Despesas: ${MoneyFormatter.format(expenses)} · Receitas: ${MoneyFormatter.format(incomes)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         LazyColumn(
@@ -296,7 +321,8 @@ private fun ReviewContent(
                 SuggestionRow(
                     suggestion = suggestion,
                     availableCategories = state.availableCategories,
-                    onCategorySelected = { category -> onCategorySelected(index, category) }
+                    onCategorySelected = { category -> onCategorySelected(index, category) },
+                    onTypeSelected = { type -> onTypeSelected(index, type) }
                 )
             }
         }
@@ -308,6 +334,17 @@ private fun ReviewContent(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (state.potentialOverlapCount > 0) {
+                Text(
+                    "${state.potentialOverlapCount} lançamento(s) parecem já existir no histórico. Confira antes de continuar.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = state.overlapAcknowledged, onCheckedChange = onOverlapAcknowledged)
+                    Text("Revisei os possíveis lançamentos repetidos")
+                }
+            }
             PrimaryActionButton(
                 text = if (state.isConfirming) "Confirmando..." else "Confirmar Importação",
                 onClick = onConfirmClick,
@@ -326,6 +363,7 @@ private fun SuggestionRow(
     suggestion: CategorySuggestion,
     availableCategories: List<Category>,
     onCategorySelected: (Category) -> Unit,
+    onTypeSelected: (TransactionType) -> Unit,
     modifier: Modifier = Modifier
 ) {
     FinanceCard(modifier = modifier.fillMaxWidth()) {
@@ -354,6 +392,32 @@ private fun SuggestionRow(
                     isPositive = suggestion.entry.type == TransactionType.INCOME,
                     style = MaterialTheme.typography.titleMedium
                 )
+            }
+
+            var typeExpanded by remember { mutableStateOf(false) }
+            Box {
+                TextButton(onClick = { typeExpanded = true }) {
+                    Text(
+                        when (suggestion.entry.type) {
+                            TransactionType.EXPENSE -> "Tipo: Despesa"
+                            TransactionType.INCOME -> "Tipo: Receita"
+                            TransactionType.TRANSFER -> "Tipo: Pagamento de fatura / transferência"
+                        }
+                    )
+                }
+                DropdownMenu(expanded = typeExpanded, onDismissRequest = { typeExpanded = false }) {
+                    listOf(
+                        TransactionType.EXPENSE to "Despesa",
+                        TransactionType.INCOME to "Receita",
+                        TransactionType.TRANSFER to "Pagamento de fatura / transferência"
+                    ).filter { (type, _) -> availableCategories.any { it.type.name == type.name } }
+                        .forEach { (type, label) ->
+                            DropdownMenuItem(text = { Text(label) }, onClick = {
+                                onTypeSelected(type)
+                                typeExpanded = false
+                            })
+                        }
+                }
             }
 
             var expanded by remember { mutableStateOf(false) }

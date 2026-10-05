@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
         StatementImportEntity::class,
         ChatMessageEntity::class
     ],
-    version = 5,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -95,6 +95,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "INSERT INTO categories (name, type) " +
+                        "SELECT 'Transferência', 'TRANSFER' WHERE NOT EXISTS " +
+                        "(SELECT 1 FROM categories WHERE type = 'TRANSFER')"
+                )
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN iconKey TEXT")
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -102,7 +118,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "finances_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .addCallback(AppDatabaseCallback(scope))
                     .build()
                 INSTANCE = instance
@@ -134,7 +150,8 @@ abstract class AppDatabase : RoomDatabase() {
                     CategoryEntity(name = "Saúde", type = CategoryType.EXPENSE),
                     CategoryEntity(name = "Salário", type = CategoryType.INCOME),
                     CategoryEntity(name = "Investimentos", type = CategoryType.INCOME),
-                    CategoryEntity(name = "Outros", type = CategoryType.EXPENSE)
+                    CategoryEntity(name = "Outros", type = CategoryType.EXPENSE),
+                    CategoryEntity(name = "Transferência", type = CategoryType.TRANSFER)
                 )
                 categoryDao.insertCategories(defaultCategories)
             }

@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
@@ -37,7 +37,16 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Switch
+import androidx.compose.material3.RadioButton
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import br.com.otavioesteves.finances.domain.model.ThemeMode
+import br.com.otavioesteves.finances.domain.model.ThemePalette
+import br.com.otavioesteves.finances.ui.theme.paletteAccent
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
@@ -53,6 +62,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import br.com.otavioesteves.finances.utils.readBackupDocument
 import br.com.otavioesteves.finances.MainApplication
 import br.com.otavioesteves.finances.presentation.AppViewModelProvider
 import br.com.otavioesteves.finances.presentation.settings.SettingsViewModel
@@ -76,9 +86,48 @@ fun SettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val themePreferences = (context.applicationContext as MainApplication).themePreferences
-    val isDarkTheme by themePreferences.isDark.collectAsStateWithLifecycle()
+    val themeMode by themePreferences.mode.collectAsStateWithLifecycle()
+    val themePalette by themePreferences.palette.collectAsStateWithLifecycle()
+    var showThemePicker by rememberSaveable { mutableStateOf(false) }
+    var showPalettePicker by rememberSaveable { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+
+    if (showThemePicker) {
+        AlertDialog(
+            onDismissRequest = { showThemePicker = false },
+            title = { Text("Tema") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ThemeMode.entries.forEach { option ->
+                        AppearanceOption(option.label, option == themeMode, onClick = {
+                            themePreferences.setMode(option)
+                            showThemePicker = false
+                        })
+                    }
+                    Text("Aparelho acompanha o tema definido no sistema.", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { showThemePicker = false }) { Text("Fechar") } }
+        )
+    }
+    if (showPalettePicker) {
+        AlertDialog(
+            onDismissRequest = { showPalettePicker = false },
+            title = { Text("Paleta de cores") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ThemePalette.entries.forEach { option ->
+                        AppearanceOption(option.label, option == themePalette, paletteAccent(option, true)) {
+                            themePreferences.setPalette(option)
+                            showPalettePicker = false
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showPalettePicker = false }) { Text("Fechar") } }
+        )
+    }
 
     val createBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -101,9 +150,7 @@ fun SettingsScreen(
                     val json = withContext(Dispatchers.IO) {
                         val stream = context.contentResolver.openInputStream(it)
                             ?: throw IllegalStateException("Não foi possível abrir o backup.")
-                        stream.use { input ->
-                            input.bufferedReader().use { reader -> reader.readText() }
-                        }
+                        readBackupDocument(stream)
                     }
                     viewModel.onRestoreRequest(json)
                 } catch (e: CancellationException) {
@@ -180,31 +227,19 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 8.dp)
                         )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .toggleable(
-                                    value = !isDarkTheme,
-                                    role = Role.Switch,
-                                    onValueChange = { themePreferences.setDarkTheme(!it) }
-                                )
-                                .padding(horizontal = 20.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier.size(42.dp).clip(RoundedCornerShape(14.dp))
-                                    .background(FinancesThemeTokens.colors.heroSurface),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.LightMode, contentDescription = null, modifier = Modifier.size(20.dp))
-                            }
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text("Tema claro", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                                Text("Alterne entre claro e escuro", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(checked = !isDarkTheme, onCheckedChange = null)
-                        }
+                        SettingsAction(
+                            title = "Tema",
+                            subtitle = themeMode.label,
+                            icon = Icons.Filled.LightMode,
+                            onClick = { showThemePicker = true }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(start = 76.dp, end = 20.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
+                        SettingsAction(
+                            title = "Paleta de cores",
+                            subtitle = themePalette.label,
+                            icon = Icons.Filled.Palette,
+                            onClick = { showPalettePicker = true }
+                        )
                     }
                 }
                 FinanceCard(modifier = Modifier.fillMaxWidth()) {
@@ -279,5 +314,26 @@ private fun SettingsAction(title: String, subtitle: String, icon: ImageVector, o
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+
+@Composable
+private fun AppearanceOption(
+    label: String,
+    selected: Boolean,
+    swatch: Color? = null,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        if (swatch != null) Box(Modifier.size(24.dp).clip(CircleShape).background(swatch))
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
     }
 }

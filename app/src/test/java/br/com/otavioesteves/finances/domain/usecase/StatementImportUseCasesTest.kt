@@ -10,6 +10,7 @@ import br.com.otavioesteves.finances.domain.model.ImportedStatement
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
+import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionOrigin
 import br.com.otavioesteves.finances.domain.model.TransactionType
@@ -30,6 +31,22 @@ import java.time.LocalDateTime
 class StatementImportUseCasesTest {
 
     @Test
+    fun fingerprintIgnoresOrderButPreservesRepeatedPurchases() = runBlocking {
+        val category = Category(1, "Outros", CategoryType.EXPENSE)
+        val first = CategorySuggestion(
+            RawStatementEntry("Mercado", Money.fromCents(1000), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE), category, 1f
+        )
+        val second = first.copy(entry = first.entry.copy(description = "Farmácia"))
+        val repository = FakeStatementImportRepository()
+        val useCase = ConfirmStatementImportUseCase(repository, FakeDateProvider(LocalDateTime.of(2026, 1, 15, 10, 0)))
+        useCase("a.csv", listOf(first, second, first))
+        useCase("b.csv", listOf(first, first, second))
+        useCase("c.csv", listOf(first, second))
+        assertEquals(repository.fingerprints[0], repository.fingerprints[1])
+        org.junit.Assert.assertNotEquals(repository.fingerprints[0], repository.fingerprints[2])
+    }
+
+    @Test
     fun importStatement_delegatesToParserRepository() = runBlocking {
         val entries = listOf(
             RawStatementEntry(
@@ -42,11 +59,12 @@ class StatementImportUseCasesTest {
         val repository = FakeStatementParserRepository(entries)
         val bytes = "any content".toByteArray()
 
-        val result = ImportStatementUseCase(repository)("extrato.csv", bytes)
+        val result = ImportStatementUseCase(repository)("fatura.csv", bytes, StatementKind.CARD_BILL)
 
         assertEquals(entries, result)
-        assertEquals("extrato.csv", repository.lastFileName)
+        assertEquals("fatura.csv", repository.lastFileName)
         assertSame(bytes, repository.lastRawContent)
+        assertEquals(StatementKind.CARD_BILL, repository.lastKind)
     }
 
     @Test
@@ -66,6 +84,25 @@ class StatementImportUseCasesTest {
 
         assertEquals(listOf(suggestion), result)
         assertEquals(listOf(category), transactionCategorizer.lastCategories)
+    }
+
+    @Test
+    fun synthesizeStatement_suggestsCardPaymentAsTransferForReview() = runBlocking {
+        val entry = RawStatementEntry(
+            "Pagamento da fatura", Money.fromCents(50_000), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE
+        )
+        val expense = Category(1, "Outros", CategoryType.EXPENSE)
+        val transfer = Category(2, "Transferência", CategoryType.TRANSFER)
+        val suggestion = CategorySuggestion(entry, expense, 0.8f)
+
+        val result = SynthesizeStatementUseCase(
+            FakeTransactionCategorizer(listOf(suggestion)),
+            FakeCategoriesRepository(listOf(expense, transfer))
+        )(listOf(entry)).single()
+
+        assertEquals(TransactionType.TRANSFER, result.entry.type)
+        assertEquals(TransactionType.EXPENSE, result.originalType)
+        assertEquals(transfer, result.suggestedCategory)
     }
 
     @Test
@@ -150,15 +187,47 @@ class StatementImportUseCasesTest {
         assertEquals(repository.fingerprints[0], repository.fingerprints[1])
     }
 
+    @Test
+    fun confirmStatementImport_transferCorrectionPreservesOriginalFingerprint() = runBlocking {
+        val entry = RawStatementEntry("Pagamento da fatura", Money.fromCents(40_000), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
+        val repository = FakeStatementImportRepository()
+        val useCase = ConfirmStatementImportUseCase(repository, FakeDateProvider(LocalDateTime.of(2026, 1, 15, 10, 0)))
+        val expense = CategorySuggestion(entry, Category(1, "Outros", CategoryType.EXPENSE), 0.8f)
+        val transfer = expense.copy(
+            entry = entry.copy(type = TransactionType.TRANSFER),
+            suggestedCategory = Category(2, "Transferência", CategoryType.TRANSFER)
+        )
+
+        useCase("original.csv", listOf(expense))
+        useCase("corrigido.csv", listOf(transfer))
+
+        assertEquals(repository.fingerprints[0], repository.fingerprints[1])
+        assertEquals(TransactionType.TRANSFER, repository.addedTransactions.last().type)
+    }
+
+    @Test
+    fun findPotentialOverlaps_detectsPartialOverlapDespiteDescriptionSpacing() = runBlocking {
+        val date = LocalDate.of(2026, 1, 10)
+        val stored = Transaction(1, "Mercado  Central", Money.fromCents(5_000), 1, date, TransactionType.EXPENSE)
+        val entries = listOf(
+            RawStatementEntry(" mercado central ", Money.fromCents(5_000), date, TransactionType.EXPENSE),
+            RawStatementEntry("Farmácia", Money.fromCents(2_000), date, TransactionType.EXPENSE)
+        )
+
+        assertEquals(1, FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(stored)))(entries))
+    }
+
     private class FakeStatementParserRepository(
         private val entries: List<RawStatementEntry>
     ) : StatementParserRepository {
         var lastFileName: String? = null
         var lastRawContent: ByteArray? = null
+        var lastKind: StatementKind? = null
 
-        override suspend fun parse(fileName: String, rawContent: ByteArray): List<RawStatementEntry> {
+        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind): List<RawStatementEntry> {
             lastFileName = fileName
             lastRawContent = rawContent
+            lastKind = kind
             return entries
         }
     }
@@ -186,11 +255,12 @@ class StatementImportUseCasesTest {
         }
     }
 
-    private class FakeTransactionsRepository : TransactionsRepository {
+    private class FakeTransactionsRepository(private val transactions: List<Transaction> = emptyList()) : TransactionsRepository {
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         val addedTransactions = mutableListOf<Transaction>()
 
-        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
+        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> =
+            flowOf(transactions.filter { it.date.year == period.year && it.date.monthValue == period.month })
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {
             addedTransactions += transaction
@@ -208,7 +278,8 @@ class StatementImportUseCasesTest {
         override suspend fun confirmImport(
             statementImport: ImportedStatement,
             transactions: List<Transaction>,
-            fingerprint: String
+            fingerprint: String,
+            legacyFingerprint: String?
         ) {
             addedImports += statementImport
             addedTransactions += transactions

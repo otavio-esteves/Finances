@@ -23,6 +23,26 @@ import java.time.LocalDateTime
 @RunWith(AndroidJUnit4::class)
 class RoomStatementImportRepositoryTest {
     @Test
+    fun confirmImportRecognizesLegacyFingerprintWithoutInserting() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java
+        ).build()
+        try {
+            database.categoryDao().insertCategories(listOf(CategoryEntity(1, "Outros", CategoryType.EXPENSE)))
+            val repository = RoomStatementImportRepository(database)
+            val statement = ImportedStatement(0, "original.csv", LocalDateTime.of(2026, 1, 15, 10, 0), 1)
+            val entry = Transaction(0, "Mercado", Money.fromCents(1000), 1, LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
+            repository.confirmImport(statement, listOf(entry), "legacy-v1")
+            assertTrue(runCatching {
+                repository.confirmImport(statement.copy(fileName = "new.csv"), listOf(entry), "canonical-v2", "legacy-v1")
+            }.exceptionOrNull() is DuplicateStatementImportException)
+            assertEquals(1, database.transactionDao().getAllTransactions().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun confirmImport_isAtomicAndRejectsDuplicateBatch() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(
             InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java

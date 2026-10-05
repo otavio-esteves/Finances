@@ -68,19 +68,23 @@ import br.com.otavioesteves.finances.ui.screens.chat.ChatScreen
 import br.com.otavioesteves.finances.ui.screens.charts.ChartsScreen
 import br.com.otavioesteves.finances.ui.screens.dashboard.DashboardScreen
 import br.com.otavioesteves.finances.ui.screens.settings.SettingsScreen
+import br.com.otavioesteves.finances.ui.screens.transactions.TransactionsScreen
+import br.com.otavioesteves.finances.domain.model.Transaction
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.remember
 import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 
-private enum class Section { MAIN, CHARTS, CATEGORIES, SETTINGS }
+private enum class Section { MAIN, CATEGORIES, SETTINGS }
 
-/** Home and chat share the primary swipeable surface. */
+/** Four primary pages share the swipeable surface. */
 @Composable
 fun MainTabsScreen(
     onAddTransactionClick: () -> Unit,
     onHistoryClick: () -> Unit,
+    onTransactionClick: (Transaction) -> Unit,
     onImportStatementClick: () -> Unit,
     onCategoryClick: (CategorySummary) -> Unit,
     onAiModelClick: () -> Unit,
@@ -91,17 +95,21 @@ fun MainTabsScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var section by rememberSaveable { mutableStateOf(Section.MAIN) }
-
-    BackHandler(enabled = section != Section.MAIN) {
-        section = Section.MAIN
-    }
+    var tabNavigationJob by remember { mutableStateOf<Job?>(null) }
 
     fun showTab(tab: MainTab) {
         section = Section.MAIN
-        scope.launch {
-            drawerState.close()
-            pagerState.animateScrollToPage(tab.ordinal)
+        if (drawerState.isOpen) scope.launch { drawerState.close() }
+        tabNavigationJob?.cancel()
+        tabNavigationJob = scope.launch {
+            val distance = kotlin.math.abs(pagerState.currentPage - tab.ordinal)
+            if (distance == 1) pagerState.animateScrollToPage(tab.ordinal, animationSpec = tween(220))
+            else pagerState.scrollToPage(tab.ordinal)
         }
+    }
+
+    BackHandler(enabled = section != Section.MAIN || pagerState.currentPage != MainTab.HOME.ordinal) {
+        if (section != Section.MAIN) section = Section.MAIN else showTab(MainTab.HOME)
     }
 
     fun showSection(value: Section) {
@@ -120,7 +128,7 @@ fun MainTabsScreen(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = false,
+        gesturesEnabled = drawerState.isOpen,
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.width(304.dp),
@@ -153,9 +161,10 @@ fun MainTabsScreen(
                         DrawerLabel("VISÃO GERAL")
                         DrawerMenuItem("Início", Icons.Filled.Home,
                             section == Section.MAIN && pagerState.currentPage == MainTab.HOME.ordinal) { showTab(MainTab.HOME) }
-                        DrawerMenuItem("Gráficos", Icons.Filled.BarChart, section == Section.CHARTS) {
-                            showSection(Section.CHARTS)
-                        }
+                        DrawerMenuItem("Gráficos", Icons.Filled.BarChart,
+                            section == Section.MAIN && pagerState.currentPage == MainTab.CHARTS.ordinal) { showTab(MainTab.CHARTS) }
+                        DrawerMenuItem("Transações", Icons.AutoMirrored.Outlined.ReceiptLong,
+                            section == Section.MAIN && pagerState.currentPage == MainTab.TRANSACTIONS.ordinal) { showTab(MainTab.TRANSACTIONS) }
                         DrawerMenuItem("Chat", Icons.AutoMirrored.Filled.Chat,
                             section == Section.MAIN && pagerState.currentPage == MainTab.CHAT.ordinal) { showTab(MainTab.CHAT) }
                         DrawerMenuItem("Categorias", Icons.Filled.PieChart, section == Section.CATEGORIES) {
@@ -210,12 +219,17 @@ fun MainTabsScreen(
                                 onHistoryClick = onHistoryClick,
                                 hazeState = hazeState
                             )
+                            MainTab.CHARTS -> ChartsScreen(
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            MainTab.TRANSACTIONS -> TransactionsScreen(
+                                onBackClick = { showTab(MainTab.HOME) },
+                                onTransactionClick = onTransactionClick,
+                                embeddedInTabs = true
+                            )
                             MainTab.CHAT -> ChatScreen()
                         }
                     }
-                    Section.CHARTS -> ChartsScreen(
-                        modifier = Modifier.fillMaxSize().hazeSource(hazeState)
-                    )
                     Section.CATEGORIES -> CategoriesScreen(
                         onCategoryClick = onCategoryClick,
                         modifier = Modifier.fillMaxSize().hazeSource(hazeState)

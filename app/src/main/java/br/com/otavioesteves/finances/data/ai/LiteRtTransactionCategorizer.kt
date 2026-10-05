@@ -9,32 +9,22 @@ import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.SuggestionSource
 import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.SamplerConfig
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
  * [TransactionCategorizer] backed by a real LiteRT-LM engine
  * (docs/PLANO_MOTOR_IA_LOCAL.md, Fase 3). Categorization calls to the
- * `com.google.ai.edge.litertlm.*` API are isolated here, so that any
- * mismatch between what's written here and the real API (this was written
- * against the library's public docs, not against a compiler — see the
- * inline notes below) is easy to find and fix in one place.
- *
- * IMPORTANT — unverified: this class has never been compiled. The single
- * riskiest line is the `.toString()` call in [askAndParse]: the official
- * getting-started guide shows `println(conversation.sendMessage(...))`
- * directly, which strongly implies `sendMessage` returns something whose
- * `toString()` is the answer text, but this was not confirmed against the
- * actual `Message` class. If parsing silently gets empty/garbage text back,
- * check that first (e.g. a `.text` or `.content` property on `Message` may
- * be the correct accessor instead).
+ * `com.google.ai.edge.litertlm.*` API are isolated here. Text is read from
+ * the response's `Content.Text` items. Runtime loading and one categorization
+ * are covered by the isolated device smoke test.
  *
  * Falls back to [ruleBasedCategorizer] whenever the engine fails to load or
  * a chunk's JSON can't be parsed even after one retry (see the plan's fallback decision).
@@ -44,7 +34,8 @@ import kotlinx.serialization.json.Json
 class LiteRtTransactionCategorizer(
     private val localAiEngine: LocalAiEngine,
     private val ruleBasedCategorizer: TransactionCategorizer,
-    private val confidenceThreshold: Float = 0.5f
+    private val confidenceThreshold: Float = 0.5f,
+    private val engineSession: LiteRtEngineSession
 ) : TransactionCategorizer {
 
     override suspend fun categorize(
@@ -54,27 +45,24 @@ class LiteRtTransactionCategorizer(
     ): Result<List<CategorySuggestion>> {
         if (entries.isEmpty()) return Result.success(emptyList())
 
-        val ready = localAiEngine.state.value as? AiEngineState.Ready
-            ?: return ruleBasedCategorizer.categorize(entries, categories, onProgress)
+        if (localAiEngine.state.value !is AiEngineState.Ready) {
+            return ruleBasedCategorizer.categorize(entries, categories, onProgress)
+        }
+        return try {
+            Result.success(engineSession.withEngine(localAiEngine) { engine ->
 
-        return withContext(Dispatchers.IO) {
-            runCatching {
-                val engineConfig = EngineConfig(modelPath = ready.model.path)
-                Engine(engineConfig).use { engine ->
-                    engine.initialize()
-
-                    val suggestions = mutableListOf<CategorySuggestion>()
-                    for (chunk in entries.chunked(CHUNK_SIZE)) {
-                        suggestions += categorizeChunk(engine, chunk, categories)
-                        onProgress(suggestions.size, entries.size)
-                    }
-                    suggestions
+                val suggestions = mutableListOf<CategorySuggestion>()
+                for (chunk in entries.chunked(CHUNK_SIZE)) {
+                    suggestions += categorizeChunk(engine, chunk, categories)
+                    onProgress(suggestions.size, entries.size)
                 }
-            }.recoverCatching {
-                // Motor não carregou de forma alguma (bundle corrompido, formato
-                // incompatível, etc.) — cai pro fallback para o lote inteiro.
-                ruleBasedCategorizer.categorize(entries, categories, onProgress).getOrThrow()
-            }
+                suggestions
+            })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            engineSession.release()
+            ruleBasedCategorizer.categorize(entries, categories, onProgress)
         }
     }
 
@@ -85,10 +73,10 @@ class LiteRtTransactionCategorizer(
     ): List<CategorySuggestion> {
         val prompt = buildPrompt(chunk, categories)
 
-        var parsed = runCatching { askAndParse(engine, prompt) }.getOrNull()
+        var parsed = askSafely(engine, prompt)
         if (parsed == null) {
             val retryPrompt = "$prompt\n\n$STRICT_JSON_REMINDER"
-            parsed = runCatching { askAndParse(engine, retryPrompt) }.getOrNull()
+            parsed = askSafely(engine, retryPrompt)
         }
 
         if (parsed == null) {
@@ -127,6 +115,14 @@ class LiteRtTransactionCategorizer(
         )
     }
 
+    private suspend fun askSafely(engine: Engine, prompt: String): List<CategorizationResponseItem>? = try {
+        askAndParse(engine, prompt)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
     private suspend fun askAndParse(engine: Engine, prompt: String): List<CategorizationResponseItem>? {
         val conversationConfig = ConversationConfig(
             systemInstruction = Contents.of(SYSTEM_INSTRUCTION),
@@ -134,9 +130,9 @@ class LiteRtTransactionCategorizer(
         )
 
         val rawResponse: String = engine.createConversation(conversationConfig).use { conversation: Conversation ->
-            // NOTA DE INCERTEZA — ver o comentário de classe: assumindo que
-            // toString() dá o texto da resposta, como o exemplo oficial sugere.
-            conversation.sendMessage(prompt).toString()
+            conversation.sendMessage(prompt).contents.contents
+                .filterIsInstance<Content.Text>()
+                .joinToString("") { it.text }
         }
 
         val jsonText = extractJsonArray(rawResponse) ?: return null
@@ -146,9 +142,9 @@ class LiteRtTransactionCategorizer(
     private fun buildPrompt(chunk: List<RawStatementEntry>, categories: List<Category>): String {
         // Só descrição, valor e data — nunca dados de titular/conta/agência,
         // que não existem em RawStatementEntry (ver docs/PLANO_MOTOR_IA_LOCAL.md, "Verificação e privacidade").
-        val entriesJson = chunk.mapIndexed { index, entry ->
-            """{"index":$index,"description":"${entry.description.replace("\"", "'")}","amount":${entry.amount.cents},"date":"${entry.date}","type":"${entry.type.name}"}"""
-        }.joinToString(prefix = "[", postfix = "]", separator = ",")
+        val entriesJson = responseJson.encodeToString(chunk.mapIndexed { index, entry ->
+            CategorizationPromptEntry(index, entry.description, entry.amount.cents, entry.date.toString(), entry.type.name)
+        })
 
         val categoryNames = categories.joinToString(", ") { it.name }
 
@@ -172,6 +168,15 @@ class LiteRtTransactionCategorizer(
         if (start == -1 || end == -1 || end < start) return null
         return raw.substring(start, end + 1)
     }
+
+    @Serializable
+    private data class CategorizationPromptEntry(
+        val index: Int,
+        val description: String,
+        val amount: Long,
+        val date: String,
+        val type: String
+    )
 
     @Serializable
     private data class CategorizationResponseItem(

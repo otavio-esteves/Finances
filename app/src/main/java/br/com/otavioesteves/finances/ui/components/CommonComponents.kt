@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -38,9 +39,10 @@ import dev.chrisbanes.haze.HazeState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun financeTopAppBarColors(isAtTop: Boolean = true) = TopAppBarDefaults.topAppBarColors(
-    containerColor = if (isAtTop) MaterialTheme.colorScheme.background else Color.Transparent,
-    scrolledContainerColor = Color.Transparent,
+    containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.Black else Color.White,
+    scrolledContainerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.Black else Color.White,
     navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
     titleContentColor = MaterialTheme.colorScheme.onBackground,
     actionIconContentColor = MaterialTheme.colorScheme.onBackground

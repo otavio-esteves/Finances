@@ -6,13 +6,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,7 +32,7 @@ import br.com.otavioesteves.finances.ui.components.liquidGlass
 import br.com.otavioesteves.finances.ui.components.glassBackdrop
 import dev.chrisbanes.haze.HazeState
 
-/** Three independent floating controls: menu, page switcher, and import. */
+/** Menu, four primary pages, and import remain reachable on narrow screens. */
 @Composable
 fun FinancesBottomBar(
     selectedTab: MainTab?,
@@ -40,7 +43,7 @@ fun FinancesBottomBar(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 18.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -50,14 +53,28 @@ fun FinancesBottomBar(
             modifier = Modifier
                 .glassBackdrop(hazeState)
                 .liquidGlass()
-                .padding(5.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             PageButton(
                 tab = MainTab.HOME,
                 icon = Icons.Filled.Home,
                 label = "Início",
                 selected = selectedTab == MainTab.HOME,
+                onClick = onTabSelected
+            )
+            PageButton(
+                tab = MainTab.CHARTS,
+                icon = Icons.Filled.BarChart,
+                label = "Gráficos",
+                selected = selectedTab == MainTab.CHARTS,
+                onClick = onTabSelected
+            )
+            PageButton(
+                tab = MainTab.TRANSACTIONS,
+                icon = Icons.AutoMirrored.Filled.ReceiptLong,
+                label = "Transações",
+                selected = selectedTab == MainTab.TRANSACTIONS,
                 onClick = onTabSelected
             )
             PageButton(
@@ -78,7 +95,7 @@ private fun GlassActionButton(icon: ImageVector, label: String, hazeState: HazeS
     IconButton(
         onClick = onClick,
         modifier = Modifier
-            .size(54.dp)
+            .size(50.dp)
             .glassBackdrop(hazeState)
             .liquidGlass()
     ) {
@@ -100,8 +117,9 @@ private fun PageButton(
     )
     Box(
         modifier = Modifier
-            .size(52.dp)
+            .size(46.dp)
             .clip(CircleShape)
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else androidx.compose.ui.graphics.Color.Transparent)
             .selectable(selected = selected, role = Role.Tab, onClick = { onClick(tab) }),
         contentAlignment = Alignment.Center
     ) {

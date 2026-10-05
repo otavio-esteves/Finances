@@ -7,7 +7,6 @@ import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.repository.ChatRepository
 import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
 import kotlinx.coroutines.flow.first
-import br.com.otavioesteves.finances.utils.formatMonthPeriod
 
 class SendChatMessageUseCase(
     private val localAiRepository: LocalAiRepository,
@@ -17,9 +16,8 @@ class SendChatMessageUseCase(
     private val dateProvider: DateProvider
 ) {
     suspend operator fun invoke(message: String): ChatMessage {
-        val period = dateProvider.getCurrentMonthPeriod()
-        val currentMonthQuestion = canAnswerWithCurrentMonth(message, period)
-        val context = if (currentMonthQuestion) FinancialContext(
+        val period = resolveChatPeriod(message, dateProvider.getCurrentMonthPeriod())
+        val context = if (period != null) FinancialContext(
             period = period,
             monthlyBalance = getMonthlyBalanceUseCase(period).first(),
             categorySummaries = getCategorySummariesUseCase(period).first()
@@ -37,10 +35,18 @@ class SendChatMessageUseCase(
         val reply = if (context == null) ChatMessage(
             id = 0,
             role = ChatRole.ASSISTANT,
-            content = "No momento, só consigo consultar o resumo de ${formatMonthPeriod(period)} de ${period.year}. " +
-                "Ainda não consigo responder perguntas sobre outros períodos ou dias específicos.",
+            content = "Consigo consultar um mês por vez. Informe o mês e o ano, por exemplo, " +
+                "'fevereiro de ${dateProvider.getCurrentMonthPeriod().year}'. " +
+                "Ainda não consigo responder sobre dias, intervalos ou períodos ambíguos.",
             createdAt = dateProvider.getCurrentDateTime()
-        ) else localAiRepository.sendMessage(message, context)
+        ) else answerFinancialQuestion(message, context)?.let { answer ->
+            ChatMessage(
+                id = 0,
+                role = ChatRole.ASSISTANT,
+                content = answer,
+                createdAt = dateProvider.getCurrentDateTime()
+            )
+        } ?: localAiRepository.sendMessage(message, context)
         chatRepository.addMessage(reply)
         return reply
     }

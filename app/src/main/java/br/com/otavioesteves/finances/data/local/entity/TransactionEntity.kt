@@ -29,5 +29,6 @@ data class TransactionEntity(
     val date: LocalDate,
     val type: TransactionType,
     val notes: String?,
-    val origin: TransactionOrigin = TransactionOrigin.MANUAL
+    val origin: TransactionOrigin = TransactionOrigin.MANUAL,
+    val iconKey: String? = null
 )

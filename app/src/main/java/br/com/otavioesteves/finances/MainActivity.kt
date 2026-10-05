@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
+import androidx.compose.foundation.isSystemInDarkTheme
+import br.com.otavioesteves.finances.domain.model.ThemeMode
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,14 +35,21 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
         setContent {
-            val isDark by (application as MainApplication).themePreferences.isDark.collectAsStateWithLifecycle()
+            val preferences = (application as MainApplication).themePreferences
+            val mode by preferences.mode.collectAsStateWithLifecycle()
+            val palette by preferences.palette.collectAsStateWithLifecycle()
+            val isDark = when (mode) {
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
             SideEffect {
                 WindowCompat.getInsetsController(window, window.decorView).apply {
                     isAppearanceLightStatusBars = !isDark
                     isAppearanceLightNavigationBars = !isDark
                 }
             }
-            FinancesTheme(darkTheme = isDark) {
+            FinancesTheme(darkTheme = isDark, palette = palette) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

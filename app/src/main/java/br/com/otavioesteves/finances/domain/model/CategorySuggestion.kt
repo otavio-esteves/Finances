@@ -4,7 +4,8 @@ data class CategorySuggestion(
     val entry: RawStatementEntry,
     val suggestedCategory: Category?,
     val confidence: Float,
-    val source: SuggestionSource = SuggestionSource.RULE
+    val source: SuggestionSource = SuggestionSource.RULE,
+    val originalType: TransactionType = entry.type
 ) {
     init {
         require(confidence in 0f..1f) { "confidence must be between 0 and 1" }

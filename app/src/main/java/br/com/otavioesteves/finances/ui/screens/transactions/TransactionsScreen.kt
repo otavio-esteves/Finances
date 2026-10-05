@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -79,6 +80,7 @@ import kotlinx.coroutines.withContext
 fun TransactionsScreen(
     onBackClick: () -> Unit,
     onTransactionClick: (Transaction) -> Unit,
+    embeddedInTabs: Boolean = false,
     modifier: Modifier = Modifier,
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
@@ -149,13 +151,15 @@ fun TransactionsScreen(
         topBar = {
             CenterAlignedTopAppBar(
                 colors = financeTopAppBarColors(isAtTop),
-                title = { Text("Histórico") },
+                title = { Text("Histórico", modifier = Modifier.testTag("transactions_title")) },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Voltar"
-                        )
+                    if (!embeddedInTabs) {
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Voltar"
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -195,6 +199,7 @@ fun TransactionsScreen(
             onTransactionClick = onTransactionClick,
             listState = listState,
             scaffoldPadding = paddingValues,
+            embeddedInTabs = embeddedInTabs,
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -209,9 +214,11 @@ private fun TransactionsContent(
     onTransactionClick: (Transaction) -> Unit,
     listState: androidx.compose.foundation.lazy.LazyListState,
     scaffoldPadding: PaddingValues,
+    embeddedInTabs: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
+    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+        if (embeddedInTabs) 112.dp else 24.dp
     val layoutDirection = LocalLayoutDirection.current
     LazyColumn(
         state = listState,

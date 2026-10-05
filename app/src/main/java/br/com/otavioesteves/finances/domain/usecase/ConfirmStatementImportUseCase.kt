@@ -44,20 +44,22 @@ class ConfirmStatementImportUseCase(
             importedAt = dateProvider.getCurrentDateTime(),
             transactionCount = confirmedSuggestions.size
         )
-        statementImportRepository.confirmImport(
-            statementImport,
-            transactions,
-            fingerprint(confirmedSuggestions)
-        )
+        val canonicalFingerprint = fingerprint(confirmedSuggestions, canonical = true)
+        val legacyFingerprint = fingerprint(confirmedSuggestions, canonical = false)
+        statementImportRepository.confirmImport(statementImport, transactions, canonicalFingerprint, legacyFingerprint)
         return statementImport
     }
 
-    private fun fingerprint(suggestions: List<CategorySuggestion>): String {
+    private fun fingerprint(suggestions: List<CategorySuggestion>, canonical: Boolean): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        digest.update("finances-statement-v1".toByteArray(Charsets.UTF_8))
-        suggestions.forEach { suggestion ->
+        digest.update((if (canonical) "finances-statement-v2" else "finances-statement-v1").toByteArray(Charsets.UTF_8))
+        // Sort without distinct(): two identical purchases must remain two entries.
+        val ordered = if (canonical) suggestions.sortedWith(
+            compareBy({ it.entry.date }, { it.originalType.name }, { it.entry.amount.cents }, { it.entry.description })
+        ) else suggestions
+        ordered.forEach { suggestion ->
             val entry = suggestion.entry
-            listOf(entry.date.toString(), entry.type.name, entry.amount.cents.toString(), entry.description)
+            listOf(entry.date.toString(), suggestion.originalType.name, entry.amount.cents.toString(), entry.description)
                 .forEach { field ->
                     val bytes = field.toByteArray(Charsets.UTF_8)
                     digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())

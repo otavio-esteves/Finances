@@ -81,7 +81,10 @@ object AppViewModelProvider {
                 importStatement = financesApplication().container.importStatementUseCase,
                 synthesizeStatement = financesApplication().container.synthesizeStatementUseCase,
                 confirmStatementImport = financesApplication().container.confirmStatementImportUseCase,
-                categoriesRepository = financesApplication().container.categoriesRepository
+                categoriesRepository = financesApplication().container.categoriesRepository,
+                findPotentialOverlaps = br.com.otavioesteves.finances.domain.usecase.FindPotentialOverlapsUseCase(
+                    financesApplication().container.transactionsRepository
+                )
             )
         }
         initializer {

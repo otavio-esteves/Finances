@@ -3,26 +3,31 @@ package br.com.otavioesteves.finances.domain.usecase
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import java.text.Normalizer
 
-/** Prevents a current-month summary from being presented as an answer for another period. */
-internal fun canAnswerWithCurrentMonth(message: String, period: MonthPeriod): Boolean {
+/** Resolves one calendar month; ambiguous ranges and day-level questions need a different query. */
+internal fun resolveChatPeriod(message: String, current: MonthPeriod): MonthPeriod? {
     val text = Normalizer.normalize(message.lowercase(), Normalizer.Form.NFD)
         .replace(Regex("\\p{M}+"), "")
 
-    if (OTHER_PERIOD.containsMatchIn(text)) return false
-    if (FULL_DATE.containsMatchIn(text)) return false
+    if (UNSUPPORTED_PERIOD.containsMatchIn(text) || FULL_DATE.containsMatchIn(text)) return null
 
-    val mentionedMonths = MONTH_NAMES.mapIndexedNotNull { index, names ->
-        if (names.any { Regex("\\b$it\\b").containsMatchIn(text) }) index + 1 else null
-    } + MONTH_YEAR.findAll(text).map { it.groupValues[1].toInt() }.toList() +
+    val namedMonths = MONTH_NAMES.mapIndexedNotNull { index, names ->
+        (index + 1).takeIf { names.any { Regex("\\b$it\\b").containsMatchIn(text) } }
+    }
+    val numericMonths = MONTH_YEAR.findAll(text).map { it.groupValues[1].toInt() }.toList() +
         YEAR_MONTH.findAll(text).map { it.groupValues[1].toInt() }.toList()
-    if (mentionedMonths.any { it != period.month }) return false
+    val months = (namedMonths + numericMonths).distinct()
+    val years = YEAR.findAll(text).map { it.value.toInt() }.distinct().toList()
+    if (months.size > 1 || years.size > 1) return null
+    if (years.isNotEmpty() && months.isEmpty()) return null
 
-    val mentionedYears = YEAR.findAll(text).map { it.value.toInt() }.toList()
-    if (mentionedYears.any { it != period.year }) return false
-    if (mentionedYears.isNotEmpty() && mentionedMonths.isEmpty()) return false
-
-    return true
+    if (months.isEmpty()) return current
+    val month = months.single()
+    val year = years.singleOrNull() ?: if (month > current.month) current.year - 1 else current.year
+    return year.takeIf { it >= 1 }?.let { MonthPeriod(it, month) }
 }
+
+internal fun canAnswerWithCurrentMonth(message: String, period: MonthPeriod): Boolean =
+    resolveChatPeriod(message, period) == period
 
 private val MONTH_NAMES = listOf(
     listOf("janeiro", "jan"), listOf("fevereiro", "fev"), listOf("marco", "mar"),
@@ -34,7 +39,8 @@ private val YEAR = Regex("\\b(?:19|20)\\d{2}\\b")
 private val MONTH_YEAR = Regex("\\b(0?[1-9]|1[0-2])/(?:19|20)\\d{2}\\b")
 private val YEAR_MONTH = Regex("\\b(?:19|20)\\d{2}-(0?[1-9]|1[0-2])\\b")
 private val FULL_DATE = Regex("\\b(?:\\d{1,2}/\\d{1,2}/(?:19|20)\\d{2}|(?:19|20)\\d{2}-\\d{1,2}-\\d{1,2})\\b")
-private val OTHER_PERIOD = Regex(
+private val UNSUPPORTED_PERIOD = Regex(
     "\\b(?:ontem|anteontem|semana|trimestre|semestre|ano|anos|dia|dias|" +
-        "ultim[oa]s?|passad[oa]s?|retrasad[oa]s?|anteriores?|proxim[oa]s?)\\b"
+        "ultim[oa]s?|passad[oa]s?|retrasad[oa]s?|anterior(?:es)?|proxim[oa]s?|" +
+        "seguinte(?:s)?|futur[oa]s?|amanha|hoje|atras|vem)\\b"
 )

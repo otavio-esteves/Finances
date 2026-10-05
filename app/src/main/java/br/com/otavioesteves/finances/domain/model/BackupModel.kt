@@ -18,7 +18,8 @@ data class TransactionExportModel(
     val date: String,
     val type: TransactionType,
     val notes: String?,
-    val origin: TransactionOrigin = TransactionOrigin.MANUAL
+    val origin: TransactionOrigin = TransactionOrigin.MANUAL,
+    val iconKey: String? = null
 )
 
 @Serializable
@@ -40,7 +41,7 @@ data class ChatMessageExportModel(
 
 @Serializable
 data class BackupModel(
-    val version: Int = 2,
+    val version: Int = 3,
     val categories: List<CategoryExportModel>,
     val transactions: List<TransactionExportModel>,
     val statementImports: List<StatementImportExportModel> = emptyList(),

@@ -17,6 +17,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
@@ -47,18 +49,18 @@ fun TransactionListRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        val iconColor = categoryColor(transaction.categoryId)
+        val iconColor = transactionIconOption(transaction.iconKey)?.color ?: categoryColor(transaction.categoryId)
         Icon(
-            imageVector = remember(categoryName, transaction.type) {
-                transactionIcon(categoryName, transaction.type)
+            imageVector = remember(categoryName, transaction.type, transaction.description, transaction.iconKey) {
+                transactionIcon(categoryName, transaction.type, transaction.description, transaction.iconKey)
             },
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
+            contentDescription = transactionIconOption(transaction.iconKey)?.label ?: categoryName,
+            tint = if (iconColor.luminance() > 0.179f) Color.Black else Color.White,
             modifier = Modifier
-                .size(44.dp)
+                .size(50.dp)
                 .clip(CircleShape)
-                .background(iconColor.copy(alpha = 0.22f))
-                .padding(10.dp)
+                .background(iconColor)
+                .padding(11.dp)
         )
 
         Column(modifier = Modifier.weight(1f)) {

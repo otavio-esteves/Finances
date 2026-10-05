@@ -3,6 +3,10 @@ package br.com.otavioesteves.finances.ui.screens.addtransaction
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -48,8 +52,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.otavioesteves.finances.domain.model.TransactionType
@@ -59,6 +66,9 @@ import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
 import br.com.otavioesteves.finances.ui.components.FinanceCard
 import br.com.otavioesteves.finances.ui.components.SectionTitle
 import br.com.otavioesteves.finances.ui.components.financeTopAppBarColors
+import br.com.otavioesteves.finances.ui.components.TransactionIconOption
+import br.com.otavioesteves.finances.ui.components.transactionIcon
+import br.com.otavioesteves.finances.ui.components.transactionIconOptions
 import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,6 +156,7 @@ fun AddTransactionScreen(
             Column(
                 modifier = modifier
                     .fillMaxSize()
+                    .imePadding()
                     .verticalScroll(scrollState)
                     .navigationBarsPadding()
                     .padding(
@@ -188,15 +199,16 @@ fun AddTransactionScreen(
                     // Type
                     Column {
                         SectionTitle(title = "Tipo")
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             TypeChoice("Despesa", TransactionType.EXPENSE, uiState.type == TransactionType.EXPENSE,
-                                { viewModel.onTypeChange(TransactionType.EXPENSE) }, Modifier.weight(1f))
+                                { viewModel.onTypeChange(TransactionType.EXPENSE) }, Modifier.fillMaxWidth())
                             TypeChoice("Receita", TransactionType.INCOME, uiState.type == TransactionType.INCOME,
-                                { viewModel.onTypeChange(TransactionType.INCOME) }, Modifier.weight(1f))
+                                { viewModel.onTypeChange(TransactionType.INCOME) }, Modifier.fillMaxWidth())
+                            TypeChoice("Transferência", TransactionType.TRANSFER, uiState.type == TransactionType.TRANSFER,
+                                { viewModel.onTypeChange(TransactionType.TRANSFER) }, Modifier.fillMaxWidth())
                         }
                     }
 
@@ -236,6 +248,43 @@ fun AddTransactionScreen(
                         }
                     }
 
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SectionTitle(title = "Ícone da transação")
+                        Text(
+                            "Escolha um ícone ou deixe o app identificar pelo lançamento.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        IconChoice(
+                            option = null,
+                            selected = uiState.iconKey == null,
+                            categoryName = uiState.selectedCategory?.name,
+                            description = uiState.description,
+                            type = uiState.type,
+                            onClick = { viewModel.onIconChange(null) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        transactionIconOptions.chunked(3).forEach { options ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                options.forEach { option ->
+                                    IconChoice(
+                                        option = option,
+                                        selected = uiState.iconKey == option.key,
+                                        categoryName = uiState.selectedCategory?.name,
+                                        description = uiState.description,
+                                        type = uiState.type,
+                                        onClick = { viewModel.onIconChange(option.key) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                repeat(3 - options.size) { Box(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+
                     // Notes
                     OutlinedTextField(
                         value = uiState.notes,
@@ -262,6 +311,45 @@ fun AddTransactionScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun IconChoice(
+    option: TransactionIconOption?,
+    selected: Boolean,
+    categoryName: String?,
+    description: String,
+    type: TransactionType,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val background = option?.color ?: MaterialTheme.colorScheme.surfaceVariant
+    val label = option?.label ?: "Automático"
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 5.dp, vertical = 9.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Icon(
+            imageVector = option?.image ?: transactionIcon(categoryName, type, description),
+            contentDescription = label,
+            tint = if (background.luminance() > 0.179f) Color.Black else Color.White,
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(background)
+                .padding(9.dp)
+        )
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

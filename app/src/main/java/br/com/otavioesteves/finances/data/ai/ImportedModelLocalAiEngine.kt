@@ -7,10 +7,11 @@ import br.com.otavioesteves.finances.domain.ai.InstalledModel
 import br.com.otavioesteves.finances.domain.ai.LocalAiEngine
 import br.com.otavioesteves.finances.domain.ai.ModelImporter
 import br.com.otavioesteves.finances.domain.ai.ModelSource
-import kotlinx.coroutines.Dispatchers
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
 import java.security.DigestInputStream
@@ -19,15 +20,15 @@ import java.util.Locale
 
 /**
  * [LocalAiEngine] backed by a model the user imported manually via SAF
- * (Fase 2a — docs/PLANO_MOTOR_IA_LOCAL.md, "Importação do modelo"). [warmUp] itself is
- * still only a format/size sanity check on the bundle, not a load of the
- * LiteRT-LM runtime — the real engine lives in [LiteRtTransactionCategorizer]
- * and [LiteRtLocalAiRepository] (Fase 3/5), which read [state]/[InstalledModel.path]
- * from here and do their own loading per call.
+ * (Fase 2a — docs/PLANO_MOTOR_IA_LOCAL.md, "Importação do modelo").
+ * Import and [warmUp] initialize the LiteRT-LM runtime to detect incompatible
+ * bundles. Inference still runs in [LiteRtTransactionCategorizer] and
+ * [LiteRtLocalAiRepository].
  */
 class ImportedModelLocalAiEngine(
     private val context: Context,
-    private val capabilityGate: AndroidDeviceCapabilityGate = AndroidDeviceCapabilityGate(context)
+    private val capabilityGate: AndroidDeviceCapabilityGate = AndroidDeviceCapabilityGate(context),
+    private val engineSession: LiteRtEngineSession
 ) : LocalAiEngine, ModelImporter {
 
     private val modelsDir = File(context.filesDir, MODELS_DIR_NAME)
@@ -56,8 +57,8 @@ class ImportedModelLocalAiEngine(
         if (_state.value is AiEngineState.Unsupported) {
             return Result.failure(IllegalStateException("Aparelho não suporta o motor de IA local"))
         }
-        return withContext(Dispatchers.IO) {
-            val tempFile = File(modelsDir, "$MODEL_FILE_NAME.tmp")
+        return engineSession.invalidate {
+            val tempFile = File(modelsDir, "candidate.litertlm")
             val previousState = _state.value
             try {
                 modelsDir.mkdirs()
@@ -73,10 +74,12 @@ class ImportedModelLocalAiEngine(
                     if (previousState !is AiEngineState.Ready) {
                         _state.value = AiEngineState.Failed(AiError.ModelNotLoaded)
                     }
-                    return@withContext Result.failure(
+                    return@invalidate Result.failure(
                         IllegalArgumentException("Arquivo selecionado não parece ser um modelo válido")
                     )
                 }
+
+                validateBundle(tempFile)
 
                 if (!tempFile.renameTo(modelFile)) {
                     throw IllegalStateException("Não foi possível substituir o modelo instalado")
@@ -100,6 +103,9 @@ class ImportedModelLocalAiEngine(
                 )
                 _state.value = AiEngineState.Ready(installedModel)
                 Result.success(installedModel)
+            } catch (e: CancellationException) {
+                tempFile.delete()
+                throw e
             } catch (e: Exception) {
                 tempFile.delete()
                 if (previousState !is AiEngineState.Ready) {
@@ -110,26 +116,32 @@ class ImportedModelLocalAiEngine(
         }
     }
 
-    override suspend fun removeImportedModel(): Result<Unit> = withContext(Dispatchers.IO) {
-        modelFile.delete()
+    override suspend fun removeImportedModel(): Result<Unit> = engineSession.invalidate {
+        if (modelFile.exists() && !modelFile.delete()) {
+            return@invalidate Result.failure(IllegalStateException("Não foi possível remover o modelo instalado"))
+        }
         prefs.edit().clear().apply()
         _state.value = capabilityGate.check()?.let { AiEngineState.Unsupported(it) } ?: AiEngineState.NotProvisioned
         Result.success(Unit)
     }
 
-    override suspend fun warmUp(): Result<Unit> = withContext(Dispatchers.IO) {
-        if (_state.value !is AiEngineState.Ready) return@withContext Result.success(Unit)
-        if (!isPlausibleBundle(modelFile)) {
-            _state.value = AiEngineState.Failed(AiError.ModelNotLoaded)
-            return@withContext Result.failure(IllegalStateException("Bundle do modelo ausente ou corrompido"))
-        }
+    override suspend fun warmUp(): Result<Unit> = try {
+        if (_state.value is AiEngineState.Ready) engineSession.withEngine(this) { }
         Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
-    override suspend fun release() = Unit
+    override suspend fun release() = engineSession.release()
 
     private fun isPlausibleBundle(file: File): Boolean =
         file.exists() && file.length() >= MIN_BUNDLE_SIZE_BYTES
+
+    private fun validateBundle(file: File) {
+        Engine(EngineConfig(modelPath = file.absolutePath)).use { it.initialize() }
+    }
 
     private companion object {
         const val PREFS_NAME = "local_ai_model"

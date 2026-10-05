@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.data.statement
 
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.model.StatementKind
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -10,6 +11,25 @@ import java.time.LocalDate
 class CsvOfxStatementParserTest {
 
     private val parser = CsvOfxStatementParser()
+
+    @Test
+    fun parse_csv_rejectsInvalidCalendarDatesAndAcceptsLeapDay() = runBlocking {
+        for (date in listOf("31/02/2026", "29/02/2025", "31/04/2026")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("extrato.csv", "Data;Descrição;Valor\n$date;Mercado;-10,00".toByteArray()) }
+            }
+        }
+        val entries = parser.parse("extrato.csv", "Data;Descrição;Valor\n29/02/2024;Mercado;-10,00".toByteArray())
+        assertEquals(LocalDate.of(2024, 2, 29), entries.single().date)
+    }
+
+    @Test
+    fun parse_csvAndOfx_preserveZeroAmounts() = runBlocking {
+        val csv = parser.parse("extrato.csv", "Data;Descrição;Valor\n10/01/2026;Sem movimento;0,00".toByteArray())
+        val ofx = parser.parse("extrato.ofx", "<STMTTRN><DTPOSTED>20260110<TRNAMT>0.00<MEMO>Sem movimento</BANKTRANLIST>".toByteArray())
+        assertEquals(0L, csv.single().amount.cents)
+        assertEquals(0L, ofx.single().amount.cents)
+    }
 
     @Test
     fun parse_csv_readsIncomeAndExpenseEntries() = runBlocking {
@@ -30,6 +50,18 @@ class CsvOfxStatementParserTest {
         assertEquals("Salário", entries[1].description)
         assertEquals(300_000L, entries[1].amount.cents)
         assertEquals(TransactionType.INCOME, entries[1].type)
+    }
+
+    @Test
+    fun parse_cardBillCsv_treatsPositivePurchasesAsExpensesAndNegativeRefundsAsIncome() = runBlocking {
+        val csv = "Data;Descrição;Valor\n10/01/2026;Mercado;150,75\n11/01/2026;Estorno;-20,00"
+
+        val entries = parser.parse("fatura.csv", csv.toByteArray(), StatementKind.CARD_BILL)
+
+        assertEquals(TransactionType.EXPENSE, entries[0].type)
+        assertEquals(15_075L, entries[0].amount.cents)
+        assertEquals(TransactionType.INCOME, entries[1].type)
+        assertEquals(2_000L, entries[1].amount.cents)
     }
 
     @Test
