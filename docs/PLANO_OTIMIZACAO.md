@@ -2,12 +2,12 @@
 
 ## Objetivo
 
-Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Histórico de transações e alternar Início ↔ Chat, preservando cores, tipografia, dimensões, transparências, desfoque e animações da interface atual. Os pontos abaixo são hipóteses extraídas do código; a ordem final depende de medições no aparelho em que o problema ocorre.
+Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Histórico de transações e alternar entre Início, Gráficos, Transações e Chat, preservando cores, tipografia, dimensões, transparências, desfoque e animações da interface atual. Os pontos abaixo são hipóteses extraídas do código; a ordem final depende de medições no aparelho em que o problema ocorre.
 
 ## 0. Estabelecer uma linha de base no aparelho
 
-- Registrar variante do Galaxy S21, versão do Android, memória e taxa de atualização da tela. Reproduzir os travamentos com uma base fixa: mês vazio, mês com centenas de transações, Chat com histórico longo e CSV/OFX pequeno e grande.
-- Medir abertura a frio e a quente, troca Início ↔ Chat, rolagem da Início e do Histórico, seleção de mês, importação e envio de mensagem. Capturar tempo até a primeira resposta visual, quadros lentos, pausas da thread principal, uso de memória e tempo de inferência.
+- Registrar variante do Galaxy S21, versão do Android, memória e taxa de atualização da tela. Reproduzir os travamentos com uma base fixa: mês vazio, mês com centenas de transações, Chat com histórico longo e CSV/OFX/PDF pequeno e grande.
+- Medir abertura a frio e a quente, troca entre Início, Gráficos, Transações e Chat, rolagem da Início e do Histórico, seleção de mês, importação e envio de mensagem. Capturar tempo até a primeira resposta visual, quadros lentos, pausas da thread principal, uso de memória e tempo de inferência.
 - Usar System Trace/Perfetto e o profiler do Android Studio no aparelho; automatizar os cenários repetíveis com Macrobenchmark se o gargalo persistir. Comparar uma build de produção ou equivalente, evitando tirar conclusões apenas da build debug.
 - Registrar capturas de tela e vídeos curtos dos mesmos estados antes das alterações. Não registrar dados financeiros reais nos artefatos de medição.
 
@@ -17,13 +17,11 @@ Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Hi
 
 ## 1. Remover trabalho pesado da thread principal
 
-**Importação:** `ImportStatementScreen` usa `readBytes()` no callback do seletor. `ImportStatementViewModel` chama o parser CSV/OFX em uma coroutine que começa na thread principal. Mover leitura para `Dispatchers.IO` e parsing para trabalho de fundo, com limite de tamanho, cancelamento e erro claro. Preferir leitura incremental para arquivos grandes, evitando manter bytes, texto e linhas duplicados em memória. A tela de carregamento atual permanece.
+**Importação:** a leitura limitada já roda em `Dispatchers.IO`; parsing e categorização também saíram da thread principal. CSV/OFX/PDF têm limite de 10 MB, e escolher outro arquivo cancela a seleção anterior. O parser ainda recebe um `ByteArray` completo. Medir o custo de manter os bytes, texto e linhas em memória; preferir leitura incremental se arquivos maiores forem suportados.
 
-**Exportação:** `TransactionsScreen` gera CSV/JSON e escreve no provedor de documentos dentro do callback da interface. Preparar e gravar o arquivo fora da thread principal, mantendo o mesmo formato e a mesma interação.
+**Exportação:** CSV/JSON e backup/restauração já usam despachantes de fundo para leitura, serialização e escrita. Medir esses fluxos com arquivos grandes antes de outros ajustes.
 
 **Aceite:** importação e exportação deixam a navegação e o indicador de carregamento responsivos; valores, datas e descrições permanecem idênticos nos testes de regressão.
-
-**Implementado:** leitura do arquivo, parsing e categorização saíram da thread principal; CSV/OFX tem limite de 10 MB e a seleção anterior é cancelada ao escolher outro arquivo. Exportações CSV/JSON e backup/restauração fazem leitura, serialização ou escrita em despachantes de fundo. O parser ainda recebe um `ByteArray` completo após a leitura limitada; streaming de ponta a ponta permanece como melhoria futura se arquivos maiores forem suportados.
 
 ## 2. Medir e reduzir custo de desenho sem alterar a aparência
 
@@ -31,7 +29,7 @@ Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Hi
 - Verificar recomposições da Início e do Chat. O rascunho do Chat participa de um `uiState` que também contém todo o histórico; isolar o estado do campo de texto se cada tecla estiver recompondo a lista. Manter `LazyColumn`, chaves estáveis e posição de rolagem.
 - Comparar capturas antes/depois nos estados claro/escuro e durante rolagem: mesma forma, cor, opacidade, nitidez percebida e movimento. Não remover o efeito de vidro como atalho; qualquer substituição visual exige equivalência verificada no aparelho.
 
-**Primeiro ajuste aplicado:** manter as duas páginas principais compostas no `HorizontalPager` para evitar recriação a cada alternância. Medir no S21 se a troca ficou mais fluida e se o custo de memória permanece aceitável; reverter este ajuste caso piore o resultado.
+**Ajuste aplicado:** o `HorizontalPager` tem quatro páginas (Início, Gráficos, Transações e Chat) e mantém uma página adjacente composta em cada direção. A barra inferior anima trocas adjacentes em 220 ms e salta diretamente entre páginas distantes. Medir no S21 a fluidez e o custo de memória antes de novos ajustes.
 
 **Também implementado:** a coleta do rascunho ficou dentro do compositor do Chat, separada da lista de mensagens. O posicionamento inicial no fim do histórico passou a ser imediato; mensagens novas ainda animam a rolagem. O raio, cores, transparências e formas do efeito de vidro continuam iguais; qualquer mudança no `hazeSource` depende de trace e comparação visual no S21.
 
@@ -58,9 +56,9 @@ Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Hi
 
 ## Ordem e critérios de conclusão
 
-1. Medir no Galaxy S21 a abertura do Histórico e a troca Início ↔ Chat, validando os primeiros ajustes de consulta e pager.
+1. Medir no Galaxy S21 a abertura do Histórico e a troca entre Início, Gráficos, Transações e Chat, validando os primeiros ajustes de consulta e pager.
 2. Atacar o gargalo confirmado de desenho ou recomposição, preservando a estética por comparação visual.
-3. Corrigir importação/exportação na thread principal, pois há trabalho bloqueante explícito no código.
-4. Paginar o Chat se o histórico longo aparecer nos traces; otimizar a vida útil do modelo após medir seu custo real.
+3. Medir o uso de memória da importação e o tempo de exportação com arquivos grandes; a leitura e a escrita já foram movidas para despachantes de fundo.
+4. Medir o Chat com histórico longo para avaliar os blocos de 100 mensagens; otimizar a vida útil do modelo após medir seu custo real.
 
 Comparar cada etapa com a mesma base de dados e o mesmo aparelho. Como meta inicial para uma tela de 60 Hz: reduzir em pelo menos 30% o número de quadros acima de 16,7 ms nos fluxos afetados e eliminar pausas da thread principal acima de 100 ms causadas por leitura, parsing ou exportação. Registrar antes/depois e ajustar a meta à taxa de atualização do aparelho. Testes JVM, build, Lint e testes instrumentados de migração continuam como verificações de regressão; eles não substituem a medição visual e de fluidez no celular.
