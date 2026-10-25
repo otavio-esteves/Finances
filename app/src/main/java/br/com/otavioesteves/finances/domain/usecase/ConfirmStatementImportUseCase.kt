@@ -55,10 +55,10 @@ class ConfirmStatementImportUseCase(
         digest.update((if (canonical) "finances-statement-v2" else "finances-statement-v1").toByteArray(Charsets.UTF_8))
         // Sort without distinct(): two identical purchases must remain two entries.
         val ordered = if (canonical) suggestions.sortedWith(
-            compareBy({ it.entry.date }, { it.originalType.name }, { it.entry.amount.cents }, { it.entry.description })
+            compareBy({ it.originalEntry.date }, { it.originalType.name }, { it.originalEntry.amount.cents }, { it.originalEntry.description })
         ) else suggestions
         ordered.forEach { suggestion ->
-            val entry = suggestion.entry
+            val entry = suggestion.originalEntry
             listOf(entry.date.toString(), suggestion.originalType.name, entry.amount.cents.toString(), entry.description)
                 .forEach { field ->
                     val bytes = field.toByteArray(Charsets.UTF_8)

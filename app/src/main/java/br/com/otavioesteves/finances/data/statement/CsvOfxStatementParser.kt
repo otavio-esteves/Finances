@@ -16,7 +16,7 @@ import java.time.format.ResolverStyle
  */
 class CsvOfxStatementParser : StatementParserRepository {
 
-    override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind): List<RawStatementEntry> {
+    override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
         val text = rawContent.toString(Charsets.UTF_8)
         return if (fileName.substringAfterLast('.', "").lowercase() in OFX_EXTENSIONS) {
             parseOfx(text)

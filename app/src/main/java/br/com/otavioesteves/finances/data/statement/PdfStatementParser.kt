@@ -6,121 +6,167 @@ import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.utils.MoneyFormatter
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.ResolverStyle
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
-/**
- * Supported PDF layout: a full date, description and BRL amount, possibly
- * wrapped across up to three consecutive lines. Bank statements need a sign or C/D marker;
- * unsigned amounts are expenses only when the document identifies a card bill.
- */
+/** Parses dated BRL rows, including explicit-reference short dates and labelled running-balance tables. */
 class PdfStatementParser(private val textExtractor: PdfTextExtractor) : StatementParserRepository {
-    override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind): List<RawStatementEntry> {
+    private val mutex = Mutex()
+    override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> = mutex.withLock {
         require(rawContent.size >= 5 && rawContent.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray())) {
             "O arquivo selecionado não é um PDF válido."
         }
-        return parseText(textExtractor.extract(rawContent), kind)
+        currentCoroutineContext().ensureActive()
+        val context = currentCoroutineContext()
+        val extracted = textExtractor.extractWithMetadata(rawContent, password) { context.ensureActive() }
+        currentCoroutineContext().ensureActive()
+        parseText(extracted.text, kind, extracted.usedOcr).map { it.copy(extractedByOcr = extracted.usedOcr) }
     }
 
-    internal fun parseText(text: String, kind: StatementKind = StatementKind.BANK_STATEMENT): List<RawStatementEntry> {
+    internal fun parseText(text: String, kind: StatementKind = StatementKind.BANK_STATEMENT, strictUnmatchedMoney: Boolean = false): List<RawStatementEntry> {
         require(text.isNotBlank()) {
-            "Este PDF não contém texto selecionável. PDFs digitalizados ainda não são aceitos."
+            "Não foi possível reconhecer texto neste PDF. Use uma digitalização mais nítida."
         }
+        require(text.length <= MAX_TEXT_CHARS) { "O texto do PDF excede o limite de análise local." }
+        fun lines() = text.lineSequence().map { raw ->
+            raw.replace('\u00a0', ' ').split('\t').joinToString("\t") { it.replace(WHITESPACE, " ").trim() }
+        }.filter { it.isNotBlank() }
+        val dates = PdfDateResolver(lines().filterNot { PdfDateResolver.DATE_PREFIX.containsMatchIn(normalizePdfText(it)) })
         val isCardBill = kind == StatementKind.CARD_BILL || CARD_BILL_HEADER.containsMatchIn(text)
+        val table = PdfTableParser(dates, ::parseAmount, isCardBill)
         val entries = mutableListOf<RawStatementEntry>()
-        val unsupportedRows = mutableListOf<String>()
-
         var pendingRow: String? = null
         var pendingLines = 0
-        text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
-            if (DATE_PREFIX.containsMatchIn(line)) {
-                pendingRow?.let { unsupportedRows += it }
+        var runningBalanceColumn = false
+
+        fun invalidRow(): Nothing = throw IllegalArgumentException(
+            "Algumas linhas com data e valor não foram reconhecidas no PDF. Nenhum lançamento foi importado."
+        )
+
+        lines().forEach { line ->
+            val normalized = normalizePdfText(line)
+            if (PAGE_FOOTER.matches(normalized)) return@forEach
+            if (TABLE_HEADER.containsMatchIn(normalized) && !line.contains('\t')) {
+                runningBalanceColumn = VALUE_BALANCE_COLUMNS.containsMatchIn(normalized)
+                return@forEach
+            }
+            if (line.contains('\t') || table.hasPending) {
+                val (handled, entry) = table.process(line)
+                if (handled) {
+                    if (pendingRow != null) invalidRow()
+                    entry?.let { entries += it }
+                    return@forEach
+                }
+            }
+            val datePrefix = PdfDateResolver.DATE_PREFIX.find(normalized)
+            if (datePrefix != null) {
+                if (pendingRow != null) invalidRow()
                 pendingRow = line
                 pendingLines = 1
-            } else if (SHORT_DATE_PREFIX.containsMatchIn(line)) {
-                pendingRow?.let { unsupportedRows += it }
-                pendingRow = null
-                if (AMOUNT_IN_DESCRIPTION.containsMatchIn(line)) unsupportedRows += line
-                return@forEach
+            } else if (PdfDateResolver.DATE_LIKE_PREFIX.containsMatchIn(normalized)) {
+                invalidRow()
             } else if (pendingRow != null) {
                 pendingRow += " $line"
                 pendingLines++
             } else {
+                if (ANY_MONEY.containsMatchIn(line) && !SAFE_METADATA.containsMatchIn(normalized) &&
+                    (strictUnmatchedMoney || DATE_INSIDE.containsMatchIn(normalized))) invalidRow()
                 return@forEach
             }
 
-            val candidate = pendingRow ?: return@forEach
-            val match = TRANSACTION_ROW.matchEntire(candidate)
-            if (match == null) {
-                if (pendingLines >= MAX_WRAPPED_ROW_LINES || AMOUNT_IN_DESCRIPTION.containsMatchIn(candidate)) {
-                    unsupportedRows += candidate
-                    pendingRow = null
-                }
+            val candidate = requireNotNull(pendingRow)
+            val dateMatch = PdfDateResolver.DATE_PREFIX.find(normalizePdfText(candidate)) ?: invalidRow()
+            // Count date words instead of normalized characters (decomposed accents can change length).
+            var dateEnd = 0
+            val dateWords = dateMatch.value.count { it == ' ' } + 1
+            repeat(dateWords) { index ->
+                dateEnd = candidate.indexOf(' ', dateEnd).takeIf { it >= 0 } ?: candidate.length
+                if (index < dateWords - 1 && dateEnd < candidate.length) dateEnd++
+            }
+            val body = candidate.substring(dateEnd).trim()
+            val amounts = AMOUNT_TOKEN.findAll(body).toList()
+            if (amounts.isEmpty()) {
+                if (pendingLines >= MAX_WRAPPED_ROW_LINES) invalidRow()
                 return@forEach
             }
+            val description = body.substring(0, amounts.first().range.first).trim()
+            if (SUMMARY_LABEL.matches(normalizePdfText(description))) {
+                pendingRow = null
+                return@forEach
+            }
+            if (FULL_DATE_IN_DESCRIPTION.containsMatchIn(description)) invalidRow()
+            val expectedAmounts = if (runningBalanceColumn) 2 else 1
+            if (amounts.size < expectedAmounts && pendingLines < MAX_WRAPPED_ROW_LINES) return@forEach
+            if (description.isBlank() || amounts.size != expectedAmounts ||
+                body.substring(amounts.last().range.last + 1).isNotBlank() ||
+                amounts.zipWithNext().any { (first, second) -> body.substring(first.range.last + 1, second.range.first).isNotBlank() }
+            ) invalidRow()
+            val amount = parseAmount(amounts.first().value, isCardBill, requireDirection = true)
+            // Validate the balance column but never import it as a purchase or infer a transaction sign from it.
+            if (runningBalanceColumn) parseAmount(amounts.last().value, isCardBill = false, requireDirection = false)
+            val date = dates.resolve(dateMatch.value)
+            entries += RawStatementEntry(description, Money.fromCents(amount.first), date, amount.second)
             pendingRow = null
-            val description = match.groupValues[2].trim()
-            if (SUMMARY_LABEL.matches(description)) return@forEach
-            if (AMOUNT_IN_DESCRIPTION.containsMatchIn(description)) {
-                unsupportedRows += candidate
-                return@forEach
-            }
-
-            val rawAmount = match.groupValues[3].replace('\u00a0', ' ').trim()
-            val marker = match.groupValues[4].uppercase()
-            val normalizedAmount = rawAmount.replace(AMOUNT_SIGN_AFTER_CURRENCY, "$2$1").removePrefix("+")
-            val amount = MoneyFormatter.parse(normalizedAmount)
-                ?: throw IllegalArgumentException("Valor inválido no PDF: $rawAmount")
-            val type = when {
-                marker == "D" || marker == "DR" -> TransactionType.EXPENSE
-                marker == "C" || marker == "CR" -> TransactionType.INCOME
-                normalizedAmount.startsWith("-") -> if (isCardBill) TransactionType.INCOME else TransactionType.EXPENSE
-                rawAmount.contains('+') -> TransactionType.INCOME
-                isCardBill -> TransactionType.EXPENSE
-                else -> throw IllegalArgumentException(
-                    "PDF com valor sem sinal ou indicação de débito/crédito: $description. Use CSV/OFX ou uma fatura identificada."
-                )
-            }
-            val date = parseDate(match.groupValues[1])
-            entries += RawStatementEntry(
-                description = description,
-                amount = Money.fromCents(if (amount.cents < 0) Math.negateExact(amount.cents) else amount.cents),
-                date = date,
-                type = type
-            )
         }
-
-        pendingRow?.let { unsupportedRows += it }
-        require(unsupportedRows.isEmpty()) {
-            "Algumas linhas com data e valor não foram reconhecidas no PDF. Nenhum lançamento foi importado."
-        }
+        if (pendingRow != null) invalidRow()
+        table.finish()
         require(entries.isNotEmpty()) {
             "Nenhum lançamento reconhecido no PDF. Use um PDF com texto e linhas no formato data, descrição e valor."
         }
         return entries
     }
 
-    private fun parseDate(value: String): LocalDate = runCatching {
-        LocalDate.parse(value, DateTimeFormatter.ISO_LOCAL_DATE)
-    }.recoverCatching {
-        LocalDate.parse(value.replace('-', '/'), BR_DATE)
-    }.getOrElse { throw IllegalArgumentException("Data inválida no PDF: $value") }
+    /** Explicit signs and debit/credit markers must agree; conflicting notation is never silently overridden. */
+    private fun parseAmount(raw: String, isCardBill: Boolean, requireDirection: Boolean): Pair<Long, TransactionType> {
+        var value = normalizePdfText(raw).replace(" ", "").replace("r$", "")
+        val marker = MARKER_SUFFIX.find(value)?.value
+        if (marker != null) value = value.dropLast(marker.length)
+        val parentheses = value.startsWith('(') && value.endsWith(')')
+        if (parentheses) value = value.substring(1, value.length - 1)
+        val signs = value.filter { it == '+' || it == '-' }
+        require(signs.length <= 1 && !(parentheses && signs.isNotEmpty())) { "Sinais conflitantes no valor do PDF: $raw" }
+        val sign = signs.singleOrNull()
+        require(sign == null || value.first() == sign || value.last() == sign) { "Valor inválido no PDF: $raw" }
+        value = value.trim('+', '-')
+        val cents = MoneyFormatter.parse(value)?.cents ?: throw IllegalArgumentException("Valor inválido no PDF: $raw")
+        val signedType = when {
+            parentheses || sign == '-' -> if (isCardBill) TransactionType.INCOME else TransactionType.EXPENSE
+            sign == '+' -> TransactionType.INCOME
+            else -> null
+        }
+        val markedType = when (marker) {
+            "d", "dr", "debito" -> TransactionType.EXPENSE
+            "c", "cr", "credito" -> TransactionType.INCOME
+            else -> null
+        }
+        require(signedType == null || markedType == null || signedType == markedType) { "Débito/crédito conflitante no PDF: $raw" }
+        val type = markedType ?: signedType ?: when {
+            isCardBill -> TransactionType.EXPENSE
+            !requireDirection -> TransactionType.INCOME
+            else -> throw IllegalArgumentException("PDF com valor sem sinal ou indicação de débito/crédito. Use CSV/OFX ou uma fatura identificada.")
+        }
+        return cents to type
+    }
 
-    private companion object {
-        const val MAX_WRAPPED_ROW_LINES = 3
-        val BR_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT)
-        val CARD_BILL_HEADER = Regex("(?im)^\\s*(?:fatura|cart[aã]o de cr[eé]dito)\\b")
-        val DATE_PREFIX = Regex("^\\d{2}[/-]\\d{2}[/-]\\d{4}\\b|^\\d{4}-\\d{2}-\\d{2}\\b")
-        val SHORT_DATE_PREFIX = Regex("^\\d{1,2}[/-]\\d{1,2}\\b")
-        val TRANSACTION_ROW = Regex(
-            "^(\\d{2}[/-]\\d{2}[/-]\\d{4}|\\d{4}-\\d{2}-\\d{2})\\s+(.+?)\\s+((?:[+-]?\\s*R\\$\\s*)?[+-]?\\d[\\d.]*,\\d{2})\\s*(C|D|CR|DR)?$",
+    companion object {
+        const val MAX_TEXT_CHARS = 4 * 1024 * 1024
+        private const val MAX_WRAPPED_ROW_LINES = 6
+        private val WHITESPACE = Regex("\\s+")
+        private val ANY_MONEY = Regex("\\d[\\d.,]*[.,]\\d{2}(?:\\D|$)")
+        private val DATE_INSIDE = Regex("\\b\\d{1,2}[./-]\\d{1,2}\\b")
+        private val FULL_DATE_IN_DESCRIPTION = Regex("\\b(?:\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}|\\d{4}-\\d{2}-\\d{2})\\b")
+        private val SAFE_METADATA = Regex("^(?:fatura|periodo|referencia|emissao|vencimento|saldo|total|valor total|pagamento minimo|limite|juros|encargos)\\b")
+        private val CARD_BILL_HEADER = Regex("(?im)^\\s*(?:fatura|cart[aã]o de cr[eé]dito)\\b")
+        private val TABLE_HEADER = Regex("^data\\s+.*(?:descricao|historico|lancamento|estabelecimento).*(?:valor|debito|credito)\\b")
+        private val VALUE_BALANCE_COLUMNS = Regex("\\bvalor\\b.*\\bsaldo\\b(?:\\s*\\(?r\\$\\)?)?\\s*$")
+        private val PAGE_FOOTER = Regex("(?:pagina\\s+\\d+\\s*(?:de|/)\\s*\\d+|\\d+\\s+de\\s+\\d+)")
+        private val SUMMARY_LABEL = Regex("(?:total(?: da fatura| de compras)?|saldo(?: anterior| atual| final| do dia)?|pagamento minimo|valor total|vencimento)")
+        private val MARKER_SUFFIX = Regex("(?:credito|debito|cr|dr|c|d)$")
+        private val AMOUNT_TOKEN = Regex(
+            "(?<!\\S)(?:[+-]\\s*)?(?:R\\$\\s*)?(?:[+-]\\s*)?(?:\\(\\s*)?\\d[\\d.]*,\\d{2}(?:\\s*\\))?(?:\\s*[+-])?(?:\\s*(?:credito|crédito|debito|débito|CR|DR|C|D))?(?=\\s|$)",
             RegexOption.IGNORE_CASE
         )
-        val SUMMARY_LABEL = Regex(
-            "(?i)(?:total(?: da fatura| de compras)?|saldo(?: anterior| atual| final)?|pagamento m[ií]nimo|valor total|vencimento)"
-        )
-        val AMOUNT_IN_DESCRIPTION = Regex("(?:R\\$\\s*)?[+-]?\\d[\\d.]*,\\d{2}(?:\\s|$)")
-        val AMOUNT_SIGN_AFTER_CURRENCY = Regex("^(R\\$\\s*)([+-])")
     }
 }

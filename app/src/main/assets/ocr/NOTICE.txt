@@ -1,0 +1,9 @@
+Portuguese OCR model: tesseract-ocr/tessdata_fast, Apache License 2.0.
+See LICENSE and SOURCE.txt. Model SHA-256:
+c4932b937207a9514b7514d518b931a99938c02a28a5a5a553f8599ed58b7deb
+
+Android OCR wrapper: Tesseract4Android 4.9.0, Adaptech s.r.o., Robert Posel.
+https://github.com/adaptech-cz/Tesseract4Android/tree/4.9.0
+Apache License 2.0. This wrapper incorporates Tesseract, Leptonica,
+libjpeg and libpng; upstream sources and license notices are listed at:
+https://github.com/adaptech-cz/Tesseract4Android/blob/4.9.0/README.md

@@ -39,6 +39,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import java.math.BigDecimal
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +51,10 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,8 +92,9 @@ fun ImportStatementScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val contentResolver = context.applicationContext.contentResolver
     var isAtTop by remember { mutableStateOf(true) }
-    var selectedKind by remember { mutableStateOf(StatementKind.BANK_STATEMENT) }
+    var selectedKind by rememberSaveable { mutableStateOf(StatementKind.BANK_STATEMENT) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -92,7 +102,7 @@ fun ImportStatementScreen(
         uri?.let { selectedUri ->
             val fileName = queryDisplayName(context, selectedUri) ?: "arquivo financeiro"
             viewModel.onFileSelected(fileName, selectedKind) {
-                context.contentResolver.openInputStream(selectedUri)
+                contentResolver.openInputStream(selectedUri)
                     ?: throw IllegalArgumentException("Não foi possível abrir o arquivo selecionado.")
             }
         }
@@ -126,12 +136,15 @@ fun ImportStatementScreen(
                 )
 
                 is ImportStatementUiState.Loading -> LoadingContent()
+                is ImportStatementUiState.NeedsPassword -> PasswordContent(state, viewModel::onPasswordSubmitted, viewModel::onStartOver)
 
                 is ImportStatementUiState.ReviewingSuggestions -> ReviewContent(
                     state = state,
                     onCategorySelected = viewModel::onCategorySelected,
                     onTypeSelected = viewModel::onTypeSelected,
                     onOverlapAcknowledged = viewModel::onOverlapAcknowledged,
+                    onOcrAcknowledged = viewModel::onOcrAcknowledged,
+                    onEntryEdited = viewModel::onEntryEdited,
                     onConfirmClick = viewModel::onConfirmImport,
                     onCancelClick = viewModel::onStartOver,
                     onScrollTopChange = { isAtTop = it }
@@ -276,6 +289,8 @@ private fun ReviewContent(
     onCategorySelected: (Int, Category) -> Unit,
     onTypeSelected: (Int, TransactionType) -> Unit,
     onOverlapAcknowledged: (Boolean) -> Unit,
+    onOcrAcknowledged: (Boolean) -> Unit,
+    onEntryEdited: (Int, String, String, String) -> String?,
     onConfirmClick: () -> Unit,
     onCancelClick: () -> Unit,
     onScrollTopChange: (Boolean) -> Unit,
@@ -322,6 +337,7 @@ private fun ReviewContent(
                     suggestion = suggestion,
                     availableCategories = state.availableCategories,
                     onCategorySelected = { category -> onCategorySelected(index, category) },
+                    onEntryEdited = { description, amount, date -> onEntryEdited(index, description, amount, date) },
                     onTypeSelected = { type -> onTypeSelected(index, type) }
                 )
             }
@@ -334,6 +350,14 @@ private fun ReviewContent(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (state.requiresOcrReview) {
+                Text("Este PDF passou por reconhecimento de imagem. Confira datas, valores e descrições; use Corrigir dados em qualquer lançamento.", style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = state.ocrAcknowledged, onCheckedChange = onOcrAcknowledged, enabled = !state.isConfirming)
+                    Text("Conferi os dados reconhecidos", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            state.validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (state.potentialOverlapCount > 0) {
                 Text(
                     "${state.potentialOverlapCount} lançamento(s) parecem já existir no histórico. Confira antes de continuar.",
@@ -350,7 +374,7 @@ private fun ReviewContent(
                 onClick = onConfirmClick,
                 enabled = state.canConfirm
             )
-            TextButton(onClick = onCancelClick) {
+            TextButton(onClick = onCancelClick, enabled = !state.isConfirming) {
                 Text("Cancelar")
             }
         }
@@ -364,13 +388,17 @@ private fun SuggestionRow(
     availableCategories: List<Category>,
     onCategorySelected: (Category) -> Unit,
     onTypeSelected: (TransactionType) -> Unit,
+    onEntryEdited: (String, String, String) -> String?,
     modifier: Modifier = Modifier
 ) {
+    var showEditor by remember { mutableStateOf(false) }
+    if (showEditor) EntryEditor(suggestion, onEntryEdited, onDismiss = { showEditor = false })
     FinanceCard(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            TextButton(onClick = { showEditor = true }) { Text("Corrigir dados") }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -457,4 +485,46 @@ private fun SuggestionRow(
             }
         }
     }
+}
+
+@Composable
+private fun PasswordContent(state: ImportStatementUiState.NeedsPassword, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
+    var password by remember(state) { mutableStateOf("") }
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("PDF protegido", style = MaterialTheme.typography.titleLarge)
+        Text(state.fileName, style = MaterialTheme.typography.bodySmall)
+        Text("Informe a senha fornecida pelo banco. Ela é usada apenas nesta leitura e não fica salva.")
+        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Senha do PDF") },
+            visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            singleLine = true, isError = state.error != null, modifier = Modifier.fillMaxWidth())
+        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        PrimaryActionButton(text = "Abrir PDF", enabled = password.isNotEmpty(), onClick = {
+            val entered = password
+            password = ""
+            onSubmit(entered)
+        })
+        TextButton(onClick = onCancel) { Text("Cancelar") }
+    }
+}
+
+@Composable
+private fun EntryEditor(suggestion: CategorySuggestion, onSave: (String, String, String) -> String?, onDismiss: () -> Unit) {
+    var description by remember { mutableStateOf(suggestion.entry.description) }
+    var amount by remember { mutableStateOf(BigDecimal.valueOf(suggestion.entry.amount.cents, 2).toPlainString().replace('.', ',')) }
+    var date by remember { mutableStateOf(DateFormatter.format(suggestion.entry.date)) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Corrigir lançamento") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Descrição") })
+            OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Valor sem sinal") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Data (dd/MM/aaaa)") }, singleLine = true)
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }, confirmButton = {
+        TextButton(onClick = {
+            error = onSave(description, amount, date)
+            if (error == null) onDismiss()
+        }) { Text("Aplicar") }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }

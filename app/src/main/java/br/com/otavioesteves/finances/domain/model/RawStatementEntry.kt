@@ -6,7 +6,8 @@ data class RawStatementEntry(
     val description: String,
     val amount: Money,
     val date: LocalDate,
-    val type: TransactionType
+    val type: TransactionType,
+    val extractedByOcr: Boolean = false
 ) {
     init {
         require(description.isNotBlank()) { "description must not be blank" }

@@ -12,6 +12,7 @@ import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.model.StatementPasswordRequiredException
 import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
@@ -21,6 +22,7 @@ import br.com.otavioesteves.finances.domain.usecase.ConfirmStatementImportUseCas
 import br.com.otavioesteves.finances.domain.usecase.ImportStatementUseCase
 import br.com.otavioesteves.finances.domain.usecase.FindPotentialOverlapsUseCase
 import br.com.otavioesteves.finances.domain.usecase.SynthesizeStatementUseCase
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -63,9 +65,13 @@ class ImportStatementViewModelTest {
         private val failure: Exception? = null
     ) : StatementParserRepository {
         var lastKind: StatementKind? = null
+        var expectedPassword: String? = null
+        val passwords = mutableListOf<String?>()
 
-        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind): List<RawStatementEntry> {
+        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
             lastKind = kind
+            passwords += password
+            if (expectedPassword != null && password != expectedPassword) throw StatementPasswordRequiredException(password != null)
             failure?.let { throw it }
             return entries
         }
@@ -89,6 +95,7 @@ class ImportStatementViewModelTest {
     }
 
     private class FakeStatementImportRepository : StatementImportRepository {
+        var confirmGate: CompletableDeferred<Unit>? = null
         val imports = mutableListOf<ImportedStatement>()
         val transactions = mutableListOf<Transaction>()
         override fun getImports(): Flow<List<ImportedStatement>> = flowOf(imports)
@@ -98,6 +105,7 @@ class ImportStatementViewModelTest {
             fingerprint: String,
             legacyFingerprint: String?
         ) {
+            confirmGate?.await()
             imports += statementImport
             this.transactions += transactions
         }
@@ -153,6 +161,89 @@ class ImportStatementViewModelTest {
             ioDispatcher = testDispatcher,
             cpuDispatcher = testDispatcher
         )
+    }
+
+    @Test
+    fun `protected PDF asks for a password retries and never saves before review`() = runTest {
+        val parser = FakeStatementParserRepository(listOf(entry)).apply { expectedPassword = "123456" }
+        val repository = FakeStatementImportRepository()
+        val viewModel = createViewModel(parserRepository = parser, statementImportRepository = repository)
+        viewModel.onFileSelected("protegido.pdf", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is ImportStatementUiState.NeedsPassword)
+        viewModel.onPasswordSubmitted("errada")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue((viewModel.uiState.value as ImportStatementUiState.NeedsPassword).error != null)
+        viewModel.onPasswordSubmitted("123456")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is ImportStatementUiState.ReviewingSuggestions)
+        assertTrue(repository.imports.isEmpty())
+        assertEquals(listOf(null, "errada", "123456"), parser.passwords)
+    }
+
+    @Test
+    fun `OCR requires explicit review and editing data resets it`() = runTest {
+        val scanned = entry.copy(extractedByOcr = true)
+        val viewModel = createViewModel(entries = listOf(scanned), suggestions = listOf(CategorySuggestion(scanned, mercado, 0.8f)))
+        viewModel.onFileSelected("scan.pdf", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(!(viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).canConfirm)
+        viewModel.onOcrAcknowledged(true)
+        assertTrue((viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).canConfirm)
+        assertEquals(null, viewModel.onEntryEdited(0, "Compra corrigida", "25,90", "11/01/2026"))
+        testDispatcher.scheduler.advanceUntilIdle()
+        val state = viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertTrue(!state.canConfirm)
+        assertEquals(2590L, state.suggestions.single().entry.amount.cents)
+        assertEquals(scanned, state.suggestions.single().originalEntry)
+        viewModel.onOcrAcknowledged(true)
+        assertTrue((viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).canConfirm)
+    }
+
+    @Test
+    fun `editing date value and description recomputes historical overlaps`() = runTest {
+        val duplicate = Transaction(9, "Compra corrigida", Money(2590), mercado.id, LocalDate.of(2026, 1, 11), TransactionType.EXPENSE)
+        val viewModel = createViewModel(existingTransactions = listOf(duplicate))
+        viewModel.onFileSelected("extrato.pdf", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(null, viewModel.onEntryEdited(0, "Compra corrigida", "25,90", "11/01/2026"))
+        assertTrue((viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).isCheckingOverlaps)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val state = viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertEquals(1, state.potentialOverlapCount)
+        assertTrue(!state.canConfirm)
+        viewModel.onOverlapAcknowledged(true)
+        assertTrue((viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).canConfirm)
+    }
+
+    @Test
+    fun `invalid corrections keep the original data and reject impossible dates`() = runTest {
+        val viewModel = createViewModel()
+        viewModel.onFileSelected("extrato.pdf", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.onEntryEdited(0, "Compra", "20,00", "31/02/2026") != null)
+        assertTrue(viewModel.onEntryEdited(0, "Compra", "-20,00", "10/01/2026") != null)
+        assertTrue(viewModel.onEntryEdited(0, " ", "20,00", "10/01/2026") != null)
+        assertEquals(entry, (viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).suggestions.single().entry)
+    }
+
+    @Test
+    fun `confirming batch cannot be reset or replaced by another file`() = runTest {
+        val repository = FakeStatementImportRepository().apply { confirmGate = CompletableDeferred() }
+        val viewModel = createViewModel(statementImportRepository = repository)
+        viewModel.onFileSelected("original.pdf", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onConfirmImport()
+        viewModel.onStartOver()
+        viewModel.onFileSelected("outro.pdf", byteArrayOf(2))
+        testDispatcher.scheduler.runCurrent()
+        val state = viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertEquals("original.pdf", state.fileName)
+        assertTrue(state.isConfirming)
+        repository.confirmGate!!.complete(Unit)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is ImportStatementUiState.Success)
+        assertEquals(1, repository.imports.size)
     }
 
     @Test

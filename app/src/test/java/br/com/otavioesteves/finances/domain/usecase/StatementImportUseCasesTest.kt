@@ -217,6 +217,19 @@ class StatementImportUseCasesTest {
         assertEquals(1, FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(stored)))(entries))
     }
 
+    @Test
+    fun correctionsPreserveTheOriginalBatchFingerprint() = runBlocking {
+        val original = RawStatementEntry("Mercado", Money(1000), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
+        val category = Category(1, "Mercado", CategoryType.EXPENSE)
+        val suggestion = CategorySuggestion(original, category, 0.8f)
+        val repository = FakeStatementImportRepository()
+        val confirm = ConfirmStatementImportUseCase(repository, FakeDateProvider(LocalDateTime.of(2026, 1, 15, 10, 0)))
+        confirm("scan.pdf", listOf(suggestion))
+        confirm("scan.pdf", listOf(suggestion.copy(entry = original.copy(amount = Money(2000), description = "Corrigida", date = original.date.plusDays(1)))))
+        assertEquals(repository.fingerprints[0], repository.fingerprints[1])
+        assertEquals(2000L, repository.addedTransactions.last().amount.cents)
+    }
+
     private class FakeStatementParserRepository(
         private val entries: List<RawStatementEntry>
     ) : StatementParserRepository {
@@ -224,7 +237,7 @@ class StatementImportUseCasesTest {
         var lastRawContent: ByteArray? = null
         var lastKind: StatementKind? = null
 
-        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind): List<RawStatementEntry> {
+        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
             lastFileName = fileName
             lastRawContent = rawContent
             lastKind = kind

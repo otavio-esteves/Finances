@@ -106,6 +106,7 @@ dependencies {
     // e a inferência real conforme docs/PLANO_MOTOR_IA_LOCAL.md, seção 4.
     implementation(libs.litertlm.android)
     implementation(libs.pdfbox.android)
+    implementation(libs.tesseract.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

@@ -8,6 +8,7 @@ sealed interface ImportStatementUiState {
     data object Idle : ImportStatementUiState
 
     data object Loading : ImportStatementUiState
+    data class NeedsPassword(val fileName: String, val error: String? = null) : ImportStatementUiState
 
     data class ReviewingSuggestions(
         val fileName: String,
@@ -15,12 +16,17 @@ sealed interface ImportStatementUiState {
         val availableCategories: List<Category>,
         val potentialOverlapCount: Int = 0,
         val overlapAcknowledged: Boolean = false,
-        val isConfirming: Boolean = false
+        val isConfirming: Boolean = false,
+        val ocrAcknowledged: Boolean = false,
+        val isCheckingOverlaps: Boolean = false,
+        val validationError: String? = null
     ) : ImportStatementUiState {
         val canConfirm: Boolean
             get() = suggestions.isNotEmpty() && suggestions.all {
                 it.suggestedCategory?.type?.name == it.entry.type.name
-            } && (potentialOverlapCount == 0 || overlapAcknowledged) && !isConfirming
+            } && (potentialOverlapCount == 0 || overlapAcknowledged) && !isConfirming &&
+                (!requiresOcrReview || ocrAcknowledged) && !isCheckingOverlaps && validationError == null
+        val requiresOcrReview: Boolean get() = suggestions.any { it.entry.extractedByOcr }
     }
 
     data class Success(val transactionCount: Int) : ImportStatementUiState

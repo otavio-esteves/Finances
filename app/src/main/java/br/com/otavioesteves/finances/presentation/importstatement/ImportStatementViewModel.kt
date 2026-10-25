@@ -20,11 +20,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import br.com.otavioesteves.finances.utils.readBoundedDocument
 import java.io.InputStream
+import br.com.otavioesteves.finances.domain.model.StatementPasswordRequiredException
+import br.com.otavioesteves.finances.utils.MoneyFormatter
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 
 class ImportStatementViewModel(
     private val importStatement: ImportStatementUseCase,
@@ -37,6 +44,10 @@ class ImportStatementViewModel(
 ) : ViewModel() {
 
     private var loadJob: Job? = null
+    private var validationJob: Job? = null
+    private var validationRevision = 0
+    private data class PendingFile(val name: String, val kind: StatementKind, val openStream: () -> InputStream)
+    private var pendingFile: PendingFile? = null
 
     private val _uiState = MutableStateFlow<ImportStatementUiState>(ImportStatementUiState.Idle)
     val uiState: StateFlow<ImportStatementUiState> = _uiState.asStateFlow()
@@ -45,12 +56,26 @@ class ImportStatementViewModel(
         onFileSelected(fileName, kind) { ByteArrayInputStream(content) }
 
     fun onFileSelected(fileName: String, kind: StatementKind = StatementKind.BANK_STATEMENT, openStream: () -> InputStream) {
+        startReading(PendingFile(fileName, kind, openStream))
+    }
+
+    fun onPasswordSubmitted(password: String) {
+        if (_uiState.value !is ImportStatementUiState.NeedsPassword || password.isEmpty()) return
+        pendingFile?.let { startReading(it, password) }
+    }
+
+    private fun startReading(file: PendingFile, password: String? = null) {
+        if ((_uiState.value as? ImportStatementUiState.ReviewingSuggestions)?.isConfirming == true) return
         loadJob?.cancel()
+        validationJob?.cancel()
+        validationRevision++
+        pendingFile = file
+        val (fileName, kind, openStream) = file
         _uiState.value = ImportStatementUiState.Loading
         loadJob = viewModelScope.launch {
             try {
                 val content = withContext(ioDispatcher) { readBounded(openStream()) }
-                val entries = withContext(cpuDispatcher) { importStatement(fileName, content, kind) }
+                val entries = withContext(cpuDispatcher) { importStatement(fileName, content, kind, password) }
                 if (entries.isEmpty()) {
                     _uiState.value = ImportStatementUiState.Error(
                         "Nenhuma transação encontrada neste arquivo."
@@ -61,6 +86,7 @@ class ImportStatementViewModel(
                 val potentialOverlapCount = findPotentialOverlaps(entries)
                 val suggestions = withContext(cpuDispatcher) { synthesizeStatement(entries) }
                 val categories = categoriesRepository.getCategories().first()
+                pendingFile = null
 
                 _uiState.value = ImportStatementUiState.ReviewingSuggestions(
                     fileName = fileName,
@@ -68,9 +94,13 @@ class ImportStatementViewModel(
                     availableCategories = categories,
                     potentialOverlapCount = potentialOverlapCount
                 )
+            } catch (e: StatementPasswordRequiredException) {
+                currentCoroutineContext().ensureActive()
+                _uiState.value = ImportStatementUiState.NeedsPassword(fileName, if (e.incorrectPassword) e.message else null)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
                 _uiState.value = ImportStatementUiState.Error(
                     e.message ?: "Não foi possível ler o extrato."
                 )
@@ -113,6 +143,45 @@ class ImportStatementViewModel(
         if (!current.isConfirming) _uiState.value = current.copy(overlapAcknowledged = acknowledged)
     }
 
+    fun onOcrAcknowledged(acknowledged: Boolean) {
+        val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (!current.isConfirming) _uiState.value = current.copy(ocrAcknowledged = acknowledged)
+    }
+
+    fun onEntryEdited(index: Int, description: String, amount: String, date: String): String? {
+        val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return "Revisão indisponível."
+        if (current.isConfirming || index !in current.suggestions.indices) return "Revisão indisponível."
+        if (description.isBlank()) return "Informe uma descrição."
+        val money = MoneyFormatter.parse(amount)?.takeUnless { it.isNegative() } ?: return "Informe um valor válido, sem sinal."
+        val parsedDate = runCatching {
+            LocalDate.parse(date.trim(), DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT))
+        }.getOrNull() ?: return "Informe uma data válida no formato dd/MM/aaaa."
+        val updated = current.suggestions.toMutableList().apply {
+            this[index] = this[index].copy(
+                entry = this[index].entry.copy(description = description.trim(), amount = money, date = parsedDate),
+                confidence = 1f, source = SuggestionSource.USER
+            )
+        }
+        validationJob?.cancel()
+        val revision = ++validationRevision
+        _uiState.value = current.copy(suggestions = updated, ocrAcknowledged = false, overlapAcknowledged = false,
+            isCheckingOverlaps = true, validationError = null)
+        validationJob = viewModelScope.launch {
+            try {
+                val overlaps = withContext(cpuDispatcher) { findPotentialOverlaps(updated.map { it.entry }) }
+                val latest = _uiState.value as? ImportStatementUiState.ReviewingSuggestions
+                if (revision == validationRevision && latest != null) _uiState.value = latest.copy(
+                    potentialOverlapCount = overlaps, isCheckingOverlaps = false)
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                val latest = _uiState.value as? ImportStatementUiState.ReviewingSuggestions
+                if (revision == validationRevision && latest != null) _uiState.value = latest.copy(
+                    isCheckingOverlaps = false, validationError = "Não foi possível conferir duplicidades. Selecione o arquivo novamente.")
+            }
+        }
+        return null
+    }
+
     fun onConfirmImport() {
         val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
         if (!current.canConfirm) return
@@ -133,7 +202,11 @@ class ImportStatementViewModel(
     }
 
     fun onStartOver() {
+        if ((_uiState.value as? ImportStatementUiState.ReviewingSuggestions)?.isConfirming == true) return
         loadJob?.cancel()
+        validationJob?.cancel()
+        validationRevision++
+        pendingFile = null
         _uiState.value = ImportStatementUiState.Idle
     }
 
