@@ -17,7 +17,7 @@ Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Hi
 
 ## 1. Remover trabalho pesado da thread principal
 
-**Importação:** a leitura limitada já roda em `Dispatchers.IO`; parsing e categorização também saíram da thread principal. CSV/OFX/PDF têm limite de 10 MB, e escolher outro arquivo cancela a seleção anterior. O parser ainda recebe um `ByteArray` completo. Medir o custo de manter os bytes, texto e linhas em memória; preferir leitura incremental se arquivos maiores forem suportados.
+**Importação:** PDF agora limita o texto expandido a 4 Mi caracteres/100 páginas, inicializa os recursos PDFBox uma vez e percorre as linhas sem materializar uma lista completa. A leitura limitada já roda em `Dispatchers.IO`; parsing e categorização também saíram da thread principal. CSV/OFX/PDF têm limite de 10 MB, e escolher outro arquivo cancela a seleção anterior. O parser ainda recebe um `ByteArray` completo. Medir o custo de manter os bytes, texto e linhas em memória; preferir leitura incremental se arquivos maiores forem suportados.
 
 **Exportação:** CSV/JSON e backup/restauração já usam despachantes de fundo para leitura, serialização e escrita. Medir esses fluxos com arquivos grandes antes de outros ajustes.
 
@@ -31,13 +31,13 @@ Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Hi
 
 **Ajuste aplicado:** o `HorizontalPager` tem quatro páginas (Início, Gráficos, Transações e Chat) e mantém uma página adjacente composta em cada direção. A barra inferior anima trocas adjacentes em 220 ms e salta diretamente entre páginas distantes. Medir no S21 a fluidez e o custo de memória antes de novos ajustes.
 
-**Também implementado:** a coleta do rascunho ficou dentro do compositor do Chat, separada da lista de mensagens. O posicionamento inicial no fim do histórico passou a ser imediato; mensagens novas ainda animam a rolagem. O raio, cores, transparências e formas do efeito de vidro continuam iguais; qualquer mudança no `hazeSource` depende de trace e comparação visual no S21.
+**Também implementado:** páginas pré-compostas têm ciclo de vida limitado à visibilidade, suspendendo coletores quando ficam fora de vista. Um `SaveableStateHolder` preserva rolagem e seleções ao visitar Categorias/Configurações. A coleta do rascunho ficou dentro do compositor do Chat, separada da lista de mensagens. O posicionamento inicial no fim do histórico passou a ser imediato; mensagens novas ainda animam a rolagem. O raio, cores, transparências e formas do efeito de vidro continuam iguais; qualquer mudança no `hazeSource` depende de trace e comparação visual no S21.
 
 **Aceite:** queda mensurável de quadros lentos na troca de páginas e na rolagem, sem diferença visual perceptível nas capturas e no uso normal.
 
 ## 3. Consultar somente os dados necessários
 
-- `DashboardViewModel` recebe todas as transações do mês, ordena a lista novamente e usa apenas seis. Criar consulta Room com `ORDER BY date DESC, id DESC LIMIT 6` para a Início; manter a consulta completa para o Histórico.
+- A Início já consulta apenas seis lançamentos com `ORDER BY date DESC, id DESC LIMIT 6`. O Histórico continua mostrando o mês completo; o mapeador reutiliza linhas formatadas que não mudaram e mantém período e dados na mesma emissão.
 - Avaliar um índice por data e id em `transactions` após medir as consultas em meses grandes. Uma mudança de schema exige migração, schema exportado e teste instrumentado.
 - O Chat lê e transforma todo o histórico a cada atualização. Se o histórico longo aparecer nos traces, introduzir paginação ou carregamento por blocos sem alterar a ordem e o visual das mensagens.
 
@@ -45,11 +45,11 @@ Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Hi
 
 **Primeiro ajuste aplicado:** a Início já usa `LIMIT 6` no Room e o schema 4 acrescenta um índice por data e id, usado pela consulta ordenada do Histórico. Confirmar o ganho no S21 com a mesma base antes/depois.
 
-**Também implementado:** o Chat consulta inicialmente 100 mensagens e carrega mais 100 ao tocar em “Carregar mensagens anteriores”. O schema 5 indexa a ordenação do histórico. Nenhuma mensagem é apagada.
+**Também implementado:** Gráficos usa agregação SQL por mês/categoria e compartilha a consulta por ano, sem reler o histórico anual ao mudar mês ou categoria. Repositórios descartam emissões idênticas antes de converter entidades. O Chat consulta inicialmente 100 mensagens e carrega mais 100 ao tocar em “Carregar mensagens anteriores”. O schema 5 indexa a ordenação do histórico. Nenhuma mensagem é apagada.
 
 ## 4. Reduzir a latência da IA local
 
-- `LiteRtLocalAiRepository` inicializa e libera um `Engine` a cada mensagem; medir separadamente carga do modelo e geração da resposta. Se a carga dominar, manter uma instância reutilizável enquanto o app estiver ativo, com fila de acesso, liberação em baixa memória e tratamento de cancelamento.
+- `LiteRtEngineSession` já compartilha e reutiliza um `Engine` entre Chat e categorização, com acesso serializado e liberação por memória/segundo plano. Medir separadamente carga e geração antes de ajustar essa política. O contexto/respostas determinísticas e a conversão do histórico rodam fora da thread principal; voltar ao Chat preserva a posição de leitura.
 - Medir memória de pico e latência em aparelho recente e intermediário antes de escolher cache permanente. Preservar o fallback por regras e os limites de privacidade atuais.
 
 **Aceite:** segunda pergunta responde mais rápido sem crescimento contínuo de memória, falhas de inferência ou alteração dos valores financeiros apresentados.
@@ -62,3 +62,7 @@ Reduzir travamentos perceptíveis no Samsung Galaxy S21, sobretudo ao abrir o Hi
 4. Medir o Chat com histórico longo para avaliar os blocos de 100 mensagens; otimizar a vida útil do modelo após medir seu custo real.
 
 Comparar cada etapa com a mesma base de dados e o mesmo aparelho. Como meta inicial para uma tela de 60 Hz: reduzir em pelo menos 30% o número de quadros acima de 16,7 ms nos fluxos afetados e eliminar pausas da thread principal acima de 100 ms causadas por leitura, parsing ou exportação. Registrar antes/depois e ajustar a meta à taxa de atualização do aparelho. Testes JVM, build, Lint e testes instrumentados de migração continuam como verificações de regressão; eles não substituem a medição visual e de fluidez no celular.
+
+## Validação desta rodada
+
+Consulte [VALIDACAO_OTIMIZACAO.md](VALIDACAO_OTIMIZACAO.md) para testes, base sintética e comparação visual no emulador. A validação de fluidez no S21 permanece pendente; não há percentual de melhoria de quadros comprovado em aparelho real.

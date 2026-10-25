@@ -8,7 +8,7 @@ O [README](../README.md) mostra a experiência de produto e o estado atual. A [a
 
 | Passo da experiência | Hoje | Alvo |
 |---|---|---|
-| Receber arquivo | Seletor do Android; parser CSV/OFX (também `.qfx` como OFX) e PDF com texto extraível em formato restrito. | Ampliar o PDF para formatos reais de instituições e digitalizações com OCR local. |
+| Receber arquivo | Seletor do Android; CSV/OFX (também `.qfx` como OFX), PDF digital, digitalizado ou misto, senha e OCR local com revisão obrigatória. | Validar os layouts dos bancos priorizados com arquivos reais anonimizados; cobertura detalhada em [Importação de PDFs](PDF_IMPORTACAO.md). |
 | Organizar lançamentos | Sugestões por regras ou tentativa de LiteRT-LM com modelo importado; revisão manual antes de salvar. | Categorização medida, baixa confiança visível, importação segura contra duplicatas e falha parcial. |
 | Entender os gastos | Saldo mensal, gráfico por categoria, transações recentes e filtro por mês. | Insights proativos baseados em lançamentos confirmados, com números e período verificáveis. |
 | Tirar dúvidas | Chat com contexto de saldo e totais por categoria de um mês resolvido pela pergunta. | Perguntas por intervalos e transações específicas, recuperação detalhada, resposta progressiva e latência aceitável. |
@@ -55,7 +55,7 @@ Os testes JVM cobrem os roteadores e a lógica independente do SDK. Ainda faltam
 
 ### A. Faturas e extratos reais
 
-- Ampliar a extração de PDF para as variações de faturas de cartão e extratos bancários. O parser atual aceita PDFs com texto extraível em linhas com data completa, descrição e valor, inclusive quando o lançamento ocupa até três linhas consecutivas; não aceita PDFs digitalizados. O parser de CSV exige colunas reconhecíveis de data, descrição e valor; `.ofx`/`.qfx` usam blocos de transação OFX.
+- A extração de PDF aceita texto posicionado, colunas de débito/crédito, digitalizações por OCR local, documentos mistos e senha. Datas abreviadas exigem referência inequívoca no documento. Nubank, PicPay, Banco do Brasil, Caixa e Inter têm famílias de layouts exercitadas com PDFs sintéticos; falta validar arquivos reais anonimizados dessas instituições. Os limites e a cobertura estão em [Importação de PDFs](PDF_IMPORTACAO.md). O parser de CSV exige colunas reconhecíveis de data, descrição e valor; `.ofx`/`.qfx` usam blocos de transação OFX.
 - Definir formatos de amostra anonimizados e testes por instituição; mostrar erro compreensível para arquivos incompatíveis ou malformados.
 - A confirmação do lote é atômica e recusa um conjunto idêntico de lançamentos extraídos, independentemente da ordem nos novos lotes v2, sem eliminar compras repetidas. Possíveis sobreposições por data, valor e descrição geram aviso e exigem confirmação. Ainda faltam identificação confiável de descrições alteradas, arquivos antigos com hash v1 reordenados e importações anteriores à migração 2→3.
 - **Aceite:** importar uma fatura real de cada formato suportado sem perder valor/data/descrição, revisar sugestões e repetir o arquivo sem duplicar lançamentos silenciosamente.
