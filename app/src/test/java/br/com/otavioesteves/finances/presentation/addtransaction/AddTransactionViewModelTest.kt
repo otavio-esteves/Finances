@@ -15,6 +15,7 @@ import br.com.otavioesteves.finances.domain.usecase.AddTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.UpdateTransactionUseCase
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -49,6 +50,10 @@ class AddTransactionViewModelTest {
     ) : TransactionsRepository {
         var deletedId: Long? = null
         var shouldFailDelete = false
+        var shouldFailSave = false
+        var saveGate: CompletableDeferred<Unit>? = null
+        var insertCalls = 0
+        var updateCalls = 0
 
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(transactions.find { it.id == id })
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(transactions.filter {
@@ -56,6 +61,9 @@ class AddTransactionViewModelTest {
         })
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {
+            insertCalls++
+            saveGate?.await()
+            if (shouldFailSave) error("Save failed")
             transactions = transactions + transaction
         }
         override suspend fun removeTransaction(transactionId: Long) {
@@ -64,6 +72,9 @@ class AddTransactionViewModelTest {
             transactions = transactions.filter { it.id != transactionId }
         }
         override suspend fun updateTransaction(transaction: Transaction) {
+            updateCalls++
+            saveGate?.await()
+            if (shouldFailSave) error("Save failed")
             transactions = transactions.map { if (it.id == transaction.id) transaction else it }
         }
     }
@@ -165,6 +176,113 @@ class AddTransactionViewModelTest {
         
         assertNotNull(viewModel.uiState.value.error)
         assertEquals("Erro ao excluir transação", viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun `repeated saves before during and after insert create only one transaction`() = runTest {
+        val repository = FakeTransactionsRepository().apply { saveGate = CompletableDeferred() }
+        val viewModel = createViewModel(repository)
+        testDispatcher.scheduler.advanceUntilIdle()
+        fillNewTransaction(viewModel)
+
+        viewModel.saveTransaction()
+        viewModel.saveTransaction()
+        assertTrue(viewModel.uiState.value.isSaving)
+        testDispatcher.scheduler.runCurrent()
+        viewModel.saveTransaction()
+        viewModel.onDeleteConfirm()
+        assertEquals(1, repository.insertCalls)
+        assertTrue(repository.transactions.isEmpty())
+        assertEquals(null, repository.deletedId)
+
+        repository.saveGate!!.complete(Unit)
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, repository.transactions.size)
+        assertEquals(1, repository.insertCalls)
+        assertTrue(viewModel.uiState.value.isSaveSuccessful)
+        assertFalse(viewModel.uiState.value.isSaving)
+    }
+
+    @Test
+    fun `repeated saves during edit perform only one update`() = runTest {
+        val repository = FakeTransactionsRepository(listOf(createFakeTransaction(7))).apply {
+            saveGate = CompletableDeferred()
+        }
+        val viewModel = createViewModel(repository, transactionId = 7)
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onDescriptionChange("Corrigida")
+
+        viewModel.saveTransaction()
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.runCurrent()
+        viewModel.saveTransaction()
+        assertEquals(1, repository.updateCalls)
+        repository.saveGate!!.complete(Unit)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("Corrigida", repository.transactions.single().description)
+        assertEquals(1, repository.updateCalls)
+        assertFalse(viewModel.uiState.value.isSaving)
+    }
+
+    @Test
+    fun `failed save releases guard and allows retry`() = runTest {
+        val repository = FakeTransactionsRepository().apply { shouldFailSave = true }
+        val viewModel = createViewModel(repository)
+        testDispatcher.scheduler.advanceUntilIdle()
+        fillNewTransaction(viewModel)
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isSaving)
+        assertFalse(viewModel.uiState.value.isSaveSuccessful)
+        assertNotNull(viewModel.uiState.value.error)
+
+        repository.shouldFailSave = false
+        viewModel.saveTransaction()
+        assertEquals(null, viewModel.uiState.value.error)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, repository.transactions.size)
+        assertTrue(viewModel.uiState.value.isSaveSuccessful)
+    }
+
+    @Test
+    fun `invalid form does not claim save or insert anything`() = runTest {
+        val repository = FakeTransactionsRepository()
+        val viewModel = createViewModel(repository)
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isSaving)
+        assertEquals(0, repository.insertCalls)
+    }
+
+    @Test
+    fun `failed edit allows retry and preserves the original transaction`() = runTest {
+        val original = createFakeTransaction(7)
+        val repository = FakeTransactionsRepository(listOf(original)).apply { shouldFailSave = true }
+        val viewModel = createViewModel(repository, transactionId = 7)
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onDescriptionChange("Corrigida")
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(original, repository.transactions.single())
+        assertFalse(viewModel.uiState.value.isSaving)
+        assertFalse(viewModel.uiState.value.isSaveSuccessful)
+
+        repository.shouldFailSave = false
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals("Corrigida", repository.transactions.single().description)
+        assertEquals(2, repository.updateCalls)
+        assertTrue(viewModel.uiState.value.isSaveSuccessful)
+    }
+
+    private fun fillNewTransaction(viewModel: AddTransactionViewModel) {
+        viewModel.onDescriptionChange("Compra")
+        viewModel.onAmountChange("100,00")
+        viewModel.onCategoryChange(Category(1, "Alimentação", CategoryType.EXPENSE))
     }
 
     private fun createViewModel(

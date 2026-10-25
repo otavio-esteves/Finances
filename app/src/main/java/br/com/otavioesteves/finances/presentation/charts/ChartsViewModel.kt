@@ -8,13 +8,15 @@ import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
-import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.model.summarizeAnnualTransactions
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
 import br.com.otavioesteves.finances.domain.usecase.EXAMPLE_TRANSACTIONS_NOTE
 import br.com.otavioesteves.finances.domain.usecase.exampleTransactions2026
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +26,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -41,16 +46,9 @@ data class ChartsUiState(
 data class ExampleActionState(val isBusy: Boolean = false, val error: String? = null)
 
 internal fun annualExpenseTotals(transactions: List<Transaction>, year: Int, categoryId: Long? = null): List<Long> {
-    val totals = LongArray(12)
-    transactions.forEach { transaction ->
-        if (transaction.date.year == year && transaction.type == TransactionType.EXPENSE &&
-            (categoryId == null || transaction.categoryId == categoryId)
-        ) {
-            val index = transaction.date.monthValue - 1
-            totals[index] = Math.addExact(totals[index], transaction.amount.cents)
-        }
-    }
-    return totals.toList()
+    val summary = summarizeAnnualTransactions(transactions, year, trackedNote = null)
+    return if (categoryId == null) summary.monthlyExpenses
+        else summary.categoryMonthlyExpenses[categoryId] ?: List(12) { 0L }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -58,37 +56,47 @@ class ChartsViewModel(
     private val getCategorySummaries: GetCategorySummariesUseCase,
     private val transactionsRepository: TransactionsRepository,
     private val categoriesRepository: CategoriesRepository,
-    private val dateProvider: DateProvider
+    private val dateProvider: DateProvider,
+    private val computationDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
     private val selectedMonth = MutableStateFlow(dateProvider.getCurrentMonthPeriod())
     private val selectedCategory = MutableStateFlow<Long?>(null)
     private val _exampleAction = MutableStateFlow(ExampleActionState())
     val exampleAction = _exampleAction.asStateFlow()
 
+    // Month and category changes reuse the same compact annual data while the year stays selected.
+    private val annualSummary = selectedMonth.map { it.year }.distinctUntilChanged()
+        .flatMapLatest { year -> transactionsRepository.getAnnualSummary(year, EXAMPLE_TRANSACTIONS_NOTE) }
+        .flowOn(computationDispatcher)
+        .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
+    private val expenseCategories = categoriesRepository.getCategories()
+        .map { categories -> categories.filter { it.type == CategoryType.EXPENSE } }
+        .distinctUntilChanged()
+        .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
     val uiState: StateFlow<ChartsUiState> = selectedMonth.flatMapLatest { period ->
         combine(
             getCategorySummaries(period),
-            transactionsRepository.getTransactionsForYear(period.year),
-            categoriesRepository.getCategories(),
+            annualSummary,
+            expenseCategories,
             selectedCategory
-        ) { summaries, transactions, categories, categoryId ->
-            val expenseCategories = categories.filter { it.type == CategoryType.EXPENSE }
-            val effectiveCategoryId = categoryId?.takeIf { id -> expenseCategories.any { it.id == id } }
-                ?: expenseCategories.firstOrNull()?.id
+        ) { summaries, annual, categories, categoryId ->
+            if (annual.year != period.year) return@combine ChartsUiState(monthPeriod = period)
+            val effectiveCategoryId = categoryId?.takeIf { id -> categories.any { it.id == id } }
+                ?: categories.firstOrNull()?.id
             ChartsUiState(
                 monthPeriod = period,
                 categorySummaries = summaries,
-                categories = expenseCategories,
+                categories = categories,
                 selectedCategoryId = effectiveCategoryId,
-                annualExpenses = annualExpenseTotals(transactions, period.year),
-                categoryAnnualExpenses = effectiveCategoryId?.let {
-                    annualExpenseTotals(transactions, period.year, it)
-                } ?: List(12) { 0L },
-                exampleCount = transactions.count { it.notes == EXAMPLE_TRANSACTIONS_NOTE },
+                annualExpenses = annual.monthlyExpenses,
+                categoryAnnualExpenses = effectiveCategoryId?.let { annual.categoryMonthlyExpenses[it] } ?: List(12) { 0L },
+                exampleCount = annual.trackedNoteCount,
                 isLoading = false
             )
         }
-    }.flowOn(Dispatchers.Default).stateIn(
+    }.flowOn(computationDispatcher).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = ChartsUiState(monthPeriod = selectedMonth.value)
@@ -115,6 +123,8 @@ class ChartsViewModel(
                 samples.filterNot { (it.date to it.description) in existing }
                     .forEach { transactionsRepository.addTransaction(it) }
                 _exampleAction.value = ExampleActionState()
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 _exampleAction.value = ExampleActionState(error = error.message ?: "Não foi possível adicionar os exemplos.")
             }
@@ -130,6 +140,8 @@ class ChartsViewModel(
                     .filter { it.notes == EXAMPLE_TRANSACTIONS_NOTE }
                     .forEach { transactionsRepository.removeTransaction(it.id) }
                 _exampleAction.value = ExampleActionState()
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 _exampleAction.value = ExampleActionState(error = error.message ?: "Não foi possível remover os exemplos.")
             }

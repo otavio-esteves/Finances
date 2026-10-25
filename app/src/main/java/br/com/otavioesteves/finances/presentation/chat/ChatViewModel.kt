@@ -16,11 +16,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModel(
     private val getChatHistory: GetChatHistoryUseCase,
-    private val sendChatMessage: SendChatMessageUseCase
+    private val sendChatMessage: SendChatMessageUseCase,
+    private val mappingDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     private val historyLimit = MutableStateFlow(HISTORY_PAGE_SIZE)
@@ -40,7 +45,7 @@ class ChatViewModel(
                 hasOlder = hasOlder
             )
         }
-    }.stateIn(
+    }.distinctUntilChanged().flowOn(mappingDispatcher).stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = ChatHistoryPage()

@@ -51,7 +51,8 @@ class SendChatMessageUseCaseTest {
             chatRepository,
             getMonthlyBalanceUseCase,
             getCategorySummariesUseCase,
-            dateProvider
+            dateProvider,
+            FakeCategoriesRepository(summaries)
         )
 
         val result = useCase("Faça um resumo do mês.")
@@ -79,7 +80,8 @@ class SendChatMessageUseCaseTest {
             ai, chat,
             GetMonthlyBalanceUseCase(transactions),
             GetCategorySummariesUseCase(categories),
-            FakeDateProvider(period)
+            FakeDateProvider(period),
+            categories
         )
 
         val reply = useCase("Mostre as categorias em fevereiro de 2026.")
@@ -100,7 +102,8 @@ class SendChatMessageUseCaseTest {
             ai, FakeChatRepository(),
             GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
             GetCategorySummariesUseCase(FakeCategoriesRepository(summaries)),
-            FakeDateProvider(period)
+            FakeDateProvider(period),
+            FakeCategoriesRepository(summaries)
         )
 
         val answer = useCase("Quanto gastei com Mercado em fevereiro de 2026?")
@@ -118,7 +121,8 @@ class SendChatMessageUseCaseTest {
             ai, FakeChatRepository(),
             GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
             GetCategorySummariesUseCase(FakeCategoriesRepository(summaries)),
-            FakeDateProvider(period)
+            FakeDateProvider(period),
+            FakeCategoriesRepository(summaries)
         )
 
         val answer = useCase("Quanto gastei com alimentação em fevereiro de 2026?")
@@ -137,12 +141,32 @@ class SendChatMessageUseCaseTest {
             ai, chat,
             GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.fromCents(100_000))),
             GetCategorySummariesUseCase(FakeCategoriesRepository(emptyList())),
-            FakeDateProvider(period)
+            FakeDateProvider(period),
+            FakeCategoriesRepository(emptyList())
         )
 
         val reply = useCase("Quanto gastei em janeiro e fevereiro de 2026?")
 
         assertTrue(reply.content.contains("um mês por vez"))
+        assertEquals(null, ai.lastMessage)
+        assertEquals(2, chat.savedMessages.size)
+    }
+
+    @Test
+    fun invoke_answersZeroForRegisteredCategoryWithoutMovementAndDoesNotCallAi() = runBlocking {
+        val period = MonthPeriod(2026, 2)
+        val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "inventado", LocalDateTime.now()))
+        val categories = FakeCategoriesRepository(emptyList(), listOf(Category(3, "Saúde", CategoryType.EXPENSE)))
+        val chat = FakeChatRepository()
+        val useCase = SendChatMessageUseCase(
+            ai, chat, GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
+            GetCategorySummariesUseCase(categories), FakeDateProvider(period), categories
+        )
+
+        val reply = useCase("Quanto gastei com saúde em fevereiro de 2026?")
+
+        assertTrue(reply.content.contains("0,00"))
+        assertTrue(reply.content.contains("Saúde"))
         assertEquals(null, ai.lastMessage)
         assertEquals(2, chat.savedMessages.size)
     }
@@ -187,10 +211,11 @@ class SendChatMessageUseCaseTest {
     }
 
     private class FakeCategoriesRepository(
-        private val summaries: List<CategorySummary>
+        private val summaries: List<CategorySummary>,
+        private val categories: List<Category> = summaries.map { it.category }
     ) : CategoriesRepository {
         var requestedPeriod: MonthPeriod? = null
-        override fun getCategories(): Flow<List<Category>> = flowOf(emptyList())
+        override fun getCategories(): Flow<List<Category>> = flowOf(categories)
         override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> {
             requestedPeriod = period
             return flowOf(summaries)

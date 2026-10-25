@@ -128,7 +128,7 @@ fun AddTransactionScreen(
                     }
                 },
                 actions = {
-                    if (isEditMode && !uiState.isLoading) {
+                    if (isEditMode && !uiState.isLoading && !uiState.isSaving && !uiState.isSaveSuccessful) {
                         IconButton(onClick = viewModel::onDeleteRequest) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
@@ -299,8 +299,9 @@ fun AddTransactionScreen(
 
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     PrimaryActionButton(
-                        text = "Salvar",
-                        onClick = viewModel::saveTransaction
+                        text = if (uiState.isSaving) "Salvando..." else "Salvar",
+                        onClick = viewModel::saveTransaction,
+                        enabled = !uiState.isSaving && !uiState.isSaveSuccessful
                     )
                     PrimaryActionButton(
                         text = "Cancelar",

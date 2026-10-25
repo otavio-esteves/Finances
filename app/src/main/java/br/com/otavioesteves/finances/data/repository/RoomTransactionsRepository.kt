@@ -3,11 +3,13 @@ package br.com.otavioesteves.finances.data.repository
 import br.com.otavioesteves.finances.data.local.dao.TransactionDao
 import br.com.otavioesteves.finances.data.local.mapper.toDomain
 import br.com.otavioesteves.finances.data.local.mapper.toEntity
+import br.com.otavioesteves.finances.domain.model.AnnualTransactionSummary
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 
@@ -16,13 +18,35 @@ class RoomTransactionsRepository(
 ) : TransactionsRepository {
 
     override fun getTransaction(id: Long): Flow<Transaction?> =
-        transactionDao.getTransactionById(id).map { it?.toDomain() }
+        transactionDao.getTransactionById(id).distinctUntilChanged().map { it?.toDomain() }
 
     override fun getTransactionsForYear(year: Int): Flow<List<Transaction>> {
         val startDate = LocalDate.of(year, 1, 1)
         val endDate = LocalDate.of(year, 12, 31)
         return transactionDao.getTransactionsByDateRange(startDate.toString(), endDate.toString())
+            .distinctUntilChanged()
             .map { entities -> entities.map { it.toDomain() } }
+    }
+
+    override fun getAnnualSummary(year: Int, trackedNote: String?): Flow<AnnualTransactionSummary> {
+        val startDate = LocalDate.of(year, 1, 1)
+        val endDate = LocalDate.of(year, 12, 31)
+        return transactionDao.getAnnualSummary(startDate.toString(), endDate.toString(), trackedNote)
+            .distinctUntilChanged()
+            .map { rows ->
+                val monthly = LongArray(12)
+                val byCategory = mutableMapOf<Long, LongArray>()
+                var noteCount = 0
+                rows.forEach { row ->
+                    noteCount = Math.addExact(noteCount, row.trackedNoteCount)
+                    if (row.expenseCount > 0) {
+                        val month = row.month - 1
+                        monthly[month] = Math.addExact(monthly[month], row.expenseCents)
+                        byCategory.getOrPut(row.categoryId) { LongArray(12) }[month] = row.expenseCents
+                    }
+                }
+                AnnualTransactionSummary(year, monthly.toList(), byCategory.mapValues { it.value.toList() }, noteCount)
+            }
     }
 
     override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> {
@@ -30,6 +54,7 @@ class RoomTransactionsRepository(
         val endDate = startDate.plusMonths(1).minusDays(1)
 
         return transactionDao.getTransactionsByDateRange(startDate.toString(), endDate.toString())
+            .distinctUntilChanged()
             .map { entities -> entities.map { it.toDomain() } }
     }
 
@@ -38,6 +63,7 @@ class RoomTransactionsRepository(
         val startDate = LocalDate.of(period.year, period.month, 1)
         val endDate = startDate.plusMonths(1).minusDays(1)
         return transactionDao.getRecentTransactionsByDateRange(startDate.toString(), endDate.toString(), limit)
+            .distinctUntilChanged()
             .map { entities -> entities.map { it.toDomain() } }
     }
 
@@ -46,6 +72,7 @@ class RoomTransactionsRepository(
         val endDate = startDate.plusMonths(1).minusDays(1)
 
         return transactionDao.getMonthlyBalance(startDate.toString(), endDate.toString())
+            .distinctUntilChanged()
             .map { Money.fromCents(it ?: 0L) }
     }
 

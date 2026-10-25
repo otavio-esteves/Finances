@@ -9,8 +9,6 @@ import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
 import br.com.otavioesteves.finances.utils.ExportFormat
-import br.com.otavioesteves.finances.utils.DateFormatter
-import br.com.otavioesteves.finances.utils.MoneyFormatter
 import br.com.otavioesteves.finances.utils.TransactionExporter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +21,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -39,31 +39,37 @@ class TransactionsViewModel(
 
     private val _transactionToDelete = MutableStateFlow<Transaction?>(null)
     private val _error = MutableStateFlow<String?>(null)
+    private var mappedPeriod: MonthPeriod? = null
+    private var itemMapper = TransactionItemMapper()
+    private var lastMonthlyState: TransactionsUiState? = null
 
     val uiState: StateFlow<TransactionsUiState> = combine(
         _selectedMonthPeriod.flatMapLatest { period ->
+            if (mappedPeriod != period) {
+                itemMapper = TransactionItemMapper()
+                mappedPeriod = period
+            }
+            val mapper = itemMapper
             combine(
                 getTransactionsByMonth(period),
                 categoriesRepository.getCategories()
             ) { transactions, categories ->
-                val categoryMap = categories.associateBy { it.id }
-                transactions.map { transaction ->
-                    TransactionItem(
-                        transaction = transaction,
-                        category = categoryMap[transaction.categoryId],
-                        formattedAmount = MoneyFormatter.format(transaction.amount),
-                        formattedDate = DateFormatter.format(transaction.date)
-                    )
+                TransactionsUiState(monthPeriod = period, transactions = mapper.map(transactions, categories))
+                    .also { lastMonthlyState = it }
+            }.onStart {
+                // Re-entering the same month keeps cached rows visible while Room refreshes.
+                // Emptying the list here would also reset its restored scroll position.
+                if (lastMonthlyState?.monthPeriod != period || lastMonthlyState?.isLoading != false) {
+                    val loading = TransactionsUiState(monthPeriod = period, isLoading = true)
+                    lastMonthlyState = loading
+                    emit(loading)
                 }
             }
         }.flowOn(mappingDispatcher),
         _transactionToDelete,
         _error
-    ) { items, toDelete, errorMsg ->
-        TransactionsUiState(
-            monthPeriod = _selectedMonthPeriod.value,
-            transactions = items,
-            isLoading = false,
+    ) { monthlyState, toDelete, errorMsg ->
+        monthlyState.copy(
             transactionToDelete = toDelete,
             error = errorMsg
         )
@@ -95,6 +101,8 @@ class TransactionsViewModel(
         viewModelScope.launch {
             try {
                 deleteTransaction(transaction.id)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = "Erro ao excluir transação"
             }

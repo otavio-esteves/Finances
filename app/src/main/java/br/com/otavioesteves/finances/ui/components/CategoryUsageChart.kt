@@ -22,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
@@ -32,13 +34,10 @@ import java.util.Locale
 import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.Money
-import br.com.otavioesteves.finances.ui.theme.CategoryPalette
-import br.com.otavioesteves.finances.ui.theme.OtherCategoryColor
 import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import kotlin.math.roundToInt
 
-private val MAX_SLOTS = CategoryPalette.size - 1 // last slot reserved for "Outros"
 private val PT_BR = Locale.forLanguageTag("pt-BR")
 
 internal fun chartCenterAmount(amount: Money): String {
@@ -57,14 +56,14 @@ internal fun chartCenterAmount(amount: Money): String {
     return "R$ ${formatter.format(compact)} ${unit.second}"
 }
 
-private data class CategoryChartSlice(
+internal data class CategoryChartSlice(
     val label: String,
     val amount: Money,
     val fraction: Float,
     val color: Color
 )
 
-private fun buildChartSlices(
+internal fun buildChartSlices(
     summaries: List<CategorySummary>,
     palette: List<Color>,
     otherColor: Color
@@ -75,34 +74,41 @@ private fun buildChartSlices(
 
     if (expenses.isEmpty()) return emptyList()
 
-    val totalCents = expenses.sumOf { it.totalAmount.cents }.toFloat()
-    val head = expenses.take(MAX_SLOTS)
-    val tail = expenses.drop(MAX_SLOTS)
+    require(palette.isNotEmpty())
+    val maxSlots = (palette.size - 1).coerceAtLeast(1)
+    val totalCents = expenses.fold(0L) { sum, summary -> Math.addExact(sum, summary.totalAmount.cents) }.toDouble()
+    val head = expenses.take(maxSlots)
+    val tail = expenses.drop(maxSlots)
 
     val headSlices = head.mapIndexed { index, summary ->
         CategoryChartSlice(
             label = summary.category.name,
             amount = summary.totalAmount,
-            fraction = summary.totalAmount.cents / totalCents,
+            fraction = (summary.totalAmount.cents / totalCents).toFloat(),
             color = palette[index]
         )
     }
 
     if (tail.isEmpty()) return headSlices
 
-    val otherAmount = Money.fromCents(tail.sumOf { it.totalAmount.cents })
+    val otherAmount = Money.fromCents(tail.fold(0L) { sum, summary -> Math.addExact(sum, summary.totalAmount.cents) })
     return headSlices + CategoryChartSlice(
         label = "Outros",
         amount = otherAmount,
-        fraction = otherAmount.cents / totalCents,
+        fraction = (otherAmount.cents / totalCents).toFloat(),
         color = otherColor
     )
+}
+
+enum class CategoryChartStyle(val label: String) {
+    DONUT("Rosca"), PIE("Pizza")
 }
 
 @Composable
 fun CategoryUsageChart(
     summaries: List<CategorySummary>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    style: CategoryChartStyle = CategoryChartStyle.DONUT
 ) {
     val colors = FinancesThemeTokens.colors
     val slices = remember(summaries, colors) {
@@ -117,24 +123,29 @@ fun CategoryUsageChart(
         return
     }
 
-    val totalAmount = remember(slices) { Money.fromCents(slices.sumOf { it.amount.cents }) }
+    val totalAmount = remember(slices) { Money.fromCents(slices.fold(0L) { sum, slice -> Math.addExact(sum, slice.amount.cents) }) }
     val centerAmount = remember(totalAmount) { chartCenterAmount(totalAmount) }
     val fullAmount = remember(totalAmount) { MoneyFormatter.format(totalAmount) }
 
+    val chartDescription = remember(slices, style) {
+        "${style.label}. " + slices.joinToString("; ") { "${it.label}: ${MoneyFormatter.format(it.amount)}" }
+    }
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        DonutRing(
+        val chartModifier = Modifier.fillMaxWidth(0.62f).aspectRatio(1f)
+            .semantics { contentDescription = chartDescription }
+        if (style == CategoryChartStyle.PIE) {
+            PieChart(slices, chartModifier)
+        } else DonutRing(
             slices = slices,
             centerLabel = centerAmount,
             centerCaption = "em gastos",
-            modifier = Modifier
-                .fillMaxWidth(0.62f)
-                .aspectRatio(1f)
+            modifier = chartModifier
         )
-        if (centerAmount != fullAmount) {
+        if (style == CategoryChartStyle.PIE || centerAmount != fullAmount) {
             Text(
                 text = "Total: $fullAmount",
                 style = MaterialTheme.typography.bodySmall,
@@ -143,6 +154,31 @@ fun CategoryUsageChart(
             )
         }
         DonutLegend(slices = slices)
+    }
+}
+
+@Composable
+private fun PieChart(slices: List<CategoryChartSlice>, modifier: Modifier) {
+    val dividerColor = MaterialTheme.colorScheme.surface
+    Canvas(modifier = modifier) {
+        var angle = -90f
+        slices.forEach { slice ->
+            val sweep = slice.fraction * 360f
+            drawArc(slice.color, angle, sweep, useCenter = true)
+            angle += sweep
+        }
+        if (slices.size > 1) {
+            angle = -90f
+            slices.forEach { slice ->
+                val radians = Math.toRadians(angle.toDouble())
+                val edge = androidx.compose.ui.geometry.Offset(
+                    center.x + kotlin.math.cos(radians).toFloat() * size.width / 2f,
+                    center.y + kotlin.math.sin(radians).toFloat() * size.height / 2f
+                )
+                drawLine(dividerColor, center, edge, 1.dp.toPx())
+                angle += slice.fraction * 360f
+            }
+        }
     }
 }
 

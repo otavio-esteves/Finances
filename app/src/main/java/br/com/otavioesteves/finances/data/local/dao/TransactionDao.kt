@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
+import br.com.otavioesteves.finances.data.local.entity.TransactionMonthAggregateEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -30,6 +31,19 @@ interface TransactionDao {
         WHERE date >= :startDate AND date <= :endDate
     """)
     fun getMonthlyBalance(startDate: String, endDate: String): Flow<Long?>
+
+    @Query("""
+        SELECT CAST(substr(date, 6, 2) AS INTEGER) AS month, categoryId,
+            SUM(CASE WHEN type = 'EXPENSE' THEN amountCents ELSE 0 END) AS expenseCents,
+            SUM(CASE WHEN type = 'EXPENSE' THEN 1 ELSE 0 END) AS expenseCount,
+            SUM(CASE WHEN :trackedNote IS NOT NULL AND notes = :trackedNote THEN 1 ELSE 0 END) AS trackedNoteCount
+        FROM transactions
+        WHERE date >= :startDate AND date <= :endDate
+            AND (type = 'EXPENSE' OR (:trackedNote IS NOT NULL AND notes = :trackedNote))
+        GROUP BY month, categoryId
+        ORDER BY month, categoryId
+    """)
+    fun getAnnualSummary(startDate: String, endDate: String, trackedNote: String?): Flow<List<TransactionMonthAggregateEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionEntity)

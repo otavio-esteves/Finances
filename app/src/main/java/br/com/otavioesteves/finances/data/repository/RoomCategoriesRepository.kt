@@ -8,6 +8,7 @@ import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 
@@ -17,7 +18,7 @@ class RoomCategoriesRepository(
 ) : CategoriesRepository {
 
     override fun getCategories(): Flow<List<Category>> {
-        return categoryDao.getAllCategories().map { entities ->
+        return categoryDao.getAllCategories().distinctUntilChanged().map { entities ->
             entities.map { it.toDomain() }
         }
     }
@@ -27,6 +28,7 @@ class RoomCategoriesRepository(
         val endDate = startDate.plusMonths(1).minusDays(1)
 
         return categoryDao.getCategorySummaries(startDate.toString(), endDate.toString())
+            .distinctUntilChanged()
             .map { entities -> 
                 entities.map { it.toDomain() }
                     .sortedBy { it.category.id }

@@ -104,10 +104,12 @@ class ChatViewModelTest {
             chatRepository,
             GetMonthlyBalanceUseCase(FakeTransactionsRepository()),
             GetCategorySummariesUseCase(FakeCategoriesRepository()),
-            fakeDateProvider
+            fakeDateProvider,
+            FakeCategoriesRepository(),
+            workerDispatcher = testDispatcher
         )
 
-        viewModel = ChatViewModel(getChatHistory, sendChatMessage)
+        viewModel = ChatViewModel(getChatHistory, sendChatMessage, mappingDispatcher = testDispatcher)
     }
 
     @After

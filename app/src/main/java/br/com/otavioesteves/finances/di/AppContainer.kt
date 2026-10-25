@@ -207,7 +207,8 @@ class DefaultAppContainer(
             chatRepository,
             getMonthlyBalanceUseCase,
             getCategorySummariesUseCase,
-            dateProvider
+            dateProvider,
+            categoriesRepository
         )
     }
 

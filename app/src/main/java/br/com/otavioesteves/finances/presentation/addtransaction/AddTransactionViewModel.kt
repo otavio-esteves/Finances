@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import java.time.LocalDate
 import java.math.BigDecimal
 
@@ -107,6 +108,7 @@ class AddTransactionViewModel(
     }
 
     fun onDeleteRequest() {
+        if (_uiState.value.isSaving || _uiState.value.isLoading || _uiState.value.isSaveSuccessful) return
         _uiState.update { it.copy(showDeleteConfirmation = true) }
     }
 
@@ -115,12 +117,15 @@ class AddTransactionViewModel(
     }
 
     fun onDeleteConfirm() {
+        if (_uiState.value.isSaving || _uiState.value.isLoading || _uiState.value.isSaveSuccessful) return
         val id = transactionId ?: return
         _uiState.update { it.copy(showDeleteConfirmation = false, isLoading = true) }
         viewModelScope.launch {
             try {
                 deleteTransactionUseCase(id)
                 _uiState.update { it.copy(isSaveSuccessful = true) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "Erro ao excluir transação") }
             }
@@ -129,6 +134,7 @@ class AddTransactionViewModel(
 
     fun saveTransaction() {
         val currentState = _uiState.value
+        if (currentState.isSaving || currentState.isLoading || currentState.isSaveSuccessful) return
         var hasError = false
 
         if (currentState.description.isBlank()) {
@@ -149,6 +155,8 @@ class AddTransactionViewModel(
         
         if (hasError) return
 
+        // Claim the save before launching so a second tap cannot enqueue another insert.
+        _uiState.update { it.copy(isSaving = true, error = null) }
         viewModelScope.launch {
             try {
                 val existing = editingTransaction
@@ -179,8 +187,12 @@ class AddTransactionViewModel(
                     addTransactionUseCase(transaction)
                 }
                 _uiState.update { it.copy(isSaveSuccessful = true) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Erro ao salvar transação") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }

@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -149,9 +150,9 @@ private fun ChatContent(
             }
         } else {
             val listState = rememberLazyListState()
-            var displayedLastId by remember { mutableStateOf<Long?>(null) }
+            var displayedLastId by rememberSaveable { mutableStateOf<Long?>(null) }
             LaunchedEffect(messages.lastOrNull()?.id) {
-                if (messages.isNotEmpty()) {
+                if (messages.isNotEmpty() && displayedLastId != messages.last().id) {
                     val lastIndex = messages.lastIndex + if (hasOlder) 1 else 0
                     if (displayedLastId == null) {
                         listState.scrollToItem(lastIndex)
@@ -177,7 +178,7 @@ private fun ChatContent(
                         }
                     }
                 }
-                items(messages, key = { it.id }) { message ->
+                items(messages, key = { it.id }, contentType = { it.role }) { message ->
                     ChatBubble(message = message)
                 }
             }

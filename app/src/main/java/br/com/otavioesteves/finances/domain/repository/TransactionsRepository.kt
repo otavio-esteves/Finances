@@ -1,5 +1,7 @@
 package br.com.otavioesteves.finances.domain.repository
 
+import br.com.otavioesteves.finances.domain.model.AnnualTransactionSummary
+import br.com.otavioesteves.finances.domain.model.summarizeAnnualTransactions
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
@@ -14,6 +16,8 @@ interface TransactionsRepository {
         combine((1..12).map { month -> getTransactions(MonthPeriod(year, month)) }) { months ->
             months.flatMap { it }
         }
+    fun getAnnualSummary(year: Int, trackedNote: String? = null): Flow<AnnualTransactionSummary> =
+        getTransactionsForYear(year).map { summarizeAnnualTransactions(it, year, trackedNote) }
     fun getRecentTransactions(period: MonthPeriod, limit: Int): Flow<List<Transaction>> =
         getTransactions(period).map { it.take(limit) }
     fun getMonthlyBalance(period: MonthPeriod): Flow<Money>

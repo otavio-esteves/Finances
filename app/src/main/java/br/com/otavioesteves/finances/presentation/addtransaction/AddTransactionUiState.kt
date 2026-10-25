@@ -18,6 +18,7 @@ data class AddTransactionUiState(
     val iconKey: String? = null,
     val categories: List<Category> = emptyList(),
     val isSaveSuccessful: Boolean = false,
+    val isSaving: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
     val showDeleteConfirmation: Boolean = false

@@ -5,22 +5,29 @@ import br.com.otavioesteves.finances.domain.model.ChatMessage
 import br.com.otavioesteves.finances.domain.model.ChatRole
 import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.repository.ChatRepository
+import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class SendChatMessageUseCase(
     private val localAiRepository: LocalAiRepository,
     private val chatRepository: ChatRepository,
     private val getMonthlyBalanceUseCase: GetMonthlyBalanceUseCase,
     private val getCategorySummariesUseCase: GetCategorySummariesUseCase,
-    private val dateProvider: DateProvider
+    private val dateProvider: DateProvider,
+    private val categoriesRepository: CategoriesRepository,
+    private val workerDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
-    suspend operator fun invoke(message: String): ChatMessage {
+    suspend operator fun invoke(message: String): ChatMessage = withContext(workerDispatcher) {
         val period = resolveChatPeriod(message, dateProvider.getCurrentMonthPeriod())
         val context = if (period != null) FinancialContext(
             period = period,
             monthlyBalance = getMonthlyBalanceUseCase(period).first(),
-            categorySummaries = getCategorySummariesUseCase(period).first()
+            categorySummaries = getCategorySummariesUseCase(period).first(),
+            categories = categoriesRepository.getCategories().first()
         ) else null
 
         chatRepository.addMessage(
@@ -48,6 +55,6 @@ class SendChatMessageUseCase(
             )
         } ?: localAiRepository.sendMessage(message, context)
         chatRepository.addMessage(reply)
-        return reply
+        reply
     }
 }

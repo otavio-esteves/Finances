@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -34,6 +35,16 @@ class MainTabsNavigationTest {
 
         composeRule.onNodeWithContentDescription("Início").performClick()
         composeRule.onNodeWithContentDescription("Abrir menu").assertIsDisplayed()
+    }
+
+    @Test
+    fun horizontalSwipesActivateEachPrefetchedPage() {
+        composeRule.onRoot().performTouchInput { swipeLeft(durationMillis = 250) }
+        composeRule.onNodeWithTag("charts_title").assertIsDisplayed()
+        composeRule.onRoot().performTouchInput { swipeLeft(durationMillis = 250) }
+        composeRule.onNodeWithTag("transactions_title").assertIsDisplayed()
+        composeRule.onRoot().performTouchInput { swipeLeft(durationMillis = 250) }
+        composeRule.onNodeWithText("Seu assistente").assertIsDisplayed()
     }
 
     @Test

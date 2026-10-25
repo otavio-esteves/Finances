@@ -48,10 +48,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -94,10 +99,15 @@ fun MainTabsScreen(
     val hazeState = remember { HazeState() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val screenStateHolder = rememberSaveableStateHolder()
     var section by rememberSaveable { mutableStateOf(Section.MAIN) }
     var tabNavigationJob by remember { mutableStateOf<Job?>(null) }
 
     fun showTab(tab: MainTab) {
+        if (section == Section.MAIN && pagerState.currentPage == tab.ordinal && !pagerState.isScrollInProgress) {
+            if (drawerState.isOpen) scope.launch { drawerState.close() }
+            return
+        }
         section = Section.MAIN
         if (drawerState.isOpen) scope.launch { drawerState.close() }
         tabNavigationJob?.cancel()
@@ -207,37 +217,44 @@ fun MainTabsScreen(
             )
         ) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-                when (section) {
-                    Section.MAIN -> HorizontalPager(
-                        state = pagerState,
-                        // Keep adjacent pages composed during a swipe.
-                        beyondViewportPageCount = 1,
-                        modifier = Modifier.fillMaxSize().hazeSource(hazeState)
-                    ) { page ->
-                        when (MainTab.entries[page]) {
-                            MainTab.HOME -> DashboardScreen(
-                                onHistoryClick = onHistoryClick,
-                                hazeState = hazeState
-                            )
-                            MainTab.CHARTS -> ChartsScreen(
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            MainTab.TRANSACTIONS -> TransactionsScreen(
-                                onBackClick = { showTab(MainTab.HOME) },
-                                onTransactionClick = onTransactionClick,
-                                embeddedInTabs = true
-                            )
-                            MainTab.CHAT -> ChatScreen()
+                screenStateHolder.SaveableStateProvider(section.name) {
+                    when (section) {
+                        Section.MAIN -> HorizontalPager(
+                            state = pagerState,
+                            // Keep adjacent pages composed during a swipe.
+                            beyondViewportPageCount = 1,
+                            modifier = Modifier.fillMaxSize().hazeSource(hazeState)
+                        ) { page ->
+                            ActivePage(
+                                active = page == pagerState.currentPage ||
+                                    (pagerState.isScrollInProgress && page == pagerState.targetPage)
+                            ) {
+                                when (MainTab.entries[page]) {
+                                    MainTab.HOME -> DashboardScreen(
+                                        onHistoryClick = onHistoryClick,
+                                        hazeState = hazeState
+                                    )
+                                    MainTab.CHARTS -> ChartsScreen(
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    MainTab.TRANSACTIONS -> TransactionsScreen(
+                                        onBackClick = { showTab(MainTab.HOME) },
+                                        onTransactionClick = onTransactionClick,
+                                        embeddedInTabs = true
+                                    )
+                                    MainTab.CHAT -> ChatScreen()
+                                }
+                            }
                         }
+                        Section.CATEGORIES -> CategoriesScreen(
+                            onCategoryClick = onCategoryClick,
+                            modifier = Modifier.fillMaxSize().hazeSource(hazeState)
+                        )
+                        Section.SETTINGS -> SettingsScreen(
+                            onAiModelClick = onAiModelClick,
+                            modifier = Modifier.fillMaxSize().hazeSource(hazeState)
+                        )
                     }
-                    Section.CATEGORIES -> CategoriesScreen(
-                        onCategoryClick = onCategoryClick,
-                        modifier = Modifier.fillMaxSize().hazeSource(hazeState)
-                    )
-                    Section.SETTINGS -> SettingsScreen(
-                        onAiModelClick = onAiModelClick,
-                        modifier = Modifier.fillMaxSize().hazeSource(hazeState)
-                    )
                 }
                 FinancesBottomBar(
                     selectedTab = if (section == Section.MAIN) MainTab.entries[pagerState.currentPage] else null,
@@ -253,6 +270,21 @@ fun MainTabsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ActivePage(active: Boolean, content: @Composable () -> Unit) {
+    val parent = LocalLifecycleOwner.current
+    val owner = remember(parent) { PageLifecycleOwner(parent.lifecycle, active) }
+    DisposableEffect(parent, owner) {
+        parent.lifecycle.addObserver(owner)
+        onDispose {
+            parent.lifecycle.removeObserver(owner)
+            owner.dispose()
+        }
+    }
+    SideEffect { owner.setActive(active) }
+    CompositionLocalProvider(LocalLifecycleOwner provides owner, content = content)
 }
 
 @Composable

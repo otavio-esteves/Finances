@@ -15,6 +15,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -46,8 +47,9 @@ class TransactionsViewModelTest {
         var deletedId: Long? = null
         var shouldFail = false
         var transactions: List<Transaction> = emptyList()
+        val monthlyFlows = mutableMapOf<MonthPeriod, Flow<List<Transaction>>>()
 
-        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(transactions)
+        override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = monthlyFlows[period] ?: flowOf(transactions)
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {}
         override suspend fun removeTransaction(transactionId: Long) {
@@ -155,6 +157,60 @@ class TransactionsViewModelTest {
         val item = viewModel.uiState.value.transactions.single()
         assertEquals("R\$ 1,00", item.formattedAmount)
         assertEquals(br.com.otavioesteves.finances.utils.DateFormatter.format(transaction.date), item.formattedDate)
+    }
+
+    @Test
+    fun `switching months never labels old rows with the new period while its query is pending`() = runTest {
+        val previousMonth = fakeMonthPeriod.previousMonth()
+        val pendingRows = MutableSharedFlow<List<Transaction>>()
+        val repository = FakeTransactionsRepository().apply {
+            transactions = listOf(createFakeTransaction(1))
+            monthlyFlows[previousMonth] = pendingRows
+        }
+        val viewModel = createViewModel(repository)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, viewModel.uiState.value.transactions.size)
+
+        viewModel.onMonthSelected(previousMonth)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(previousMonth, viewModel.uiState.value.monthPeriod)
+        org.junit.Assert.assertTrue(viewModel.uiState.value.isLoading)
+        org.junit.Assert.assertTrue(viewModel.uiState.value.transactions.isEmpty())
+
+        pendingRows.emit(listOf(createFakeTransaction(2)))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(previousMonth, viewModel.uiState.value.monthPeriod)
+        assertEquals(2L, viewModel.uiState.value.transactions.single().transaction.id)
+    }
+
+    @Test
+    fun `returning after collectors stop keeps rows and formatting while the same month refreshes`() = runTest {
+        val transaction = createFakeTransaction(7)
+        val repository = FakeTransactionsRepository().apply { transactions = listOf(transaction) }
+        val viewModel = createViewModel(repository)
+        val states = mutableListOf<TransactionsUiState>()
+        val firstCollector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect { states += it }
+        }
+        testDispatcher.scheduler.runCurrent()
+        val originalItem = viewModel.uiState.value.transactions.single()
+        firstCollector.cancel()
+        testDispatcher.scheduler.advanceTimeBy(5_001)
+        testDispatcher.scheduler.runCurrent()
+
+        val pendingRefresh = MutableSharedFlow<List<Transaction>>()
+        repository.monthlyFlows[fakeMonthPeriod] = pendingRefresh
+        states.clear()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect { states += it }
+        }
+        testDispatcher.scheduler.runCurrent()
+        org.junit.Assert.assertTrue(states.none { it.isLoading })
+        org.junit.Assert.assertSame(originalItem, viewModel.uiState.value.transactions.single())
+        pendingRefresh.emit(listOf(transaction))
+        testDispatcher.scheduler.runCurrent()
+        org.junit.Assert.assertSame(originalItem, viewModel.uiState.value.transactions.single())
     }
 
     private fun createViewModel(repository: FakeTransactionsRepository): TransactionsViewModel {

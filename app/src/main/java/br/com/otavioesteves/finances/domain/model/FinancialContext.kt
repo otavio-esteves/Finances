@@ -3,5 +3,6 @@ package br.com.otavioesteves.finances.domain.model
 data class FinancialContext(
     val period: MonthPeriod,
     val monthlyBalance: Money,
-    val categorySummaries: List<CategorySummary>
+    val categorySummaries: List<CategorySummary>,
+    val categories: List<Category> = categorySummaries.map { it.category }
 )
