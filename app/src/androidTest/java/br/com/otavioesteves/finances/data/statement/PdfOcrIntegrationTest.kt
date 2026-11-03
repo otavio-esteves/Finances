@@ -29,6 +29,60 @@ class PdfOcrIntegrationTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
+    fun enlargedFinancialWordMustAgreeWithTheOriginalReading() {
+        val bitmap = Bitmap.createBitmap(500, 120, Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.BLACK; textSize = 36f; typeface = android.graphics.Typeface.MONOSPACE
+            }
+            val text = "1.234,56"
+            Canvas(bitmap).drawText(text, 30f, 70f, paint)
+            val word = PdfWord(text, 30f, 70f + paint.fontMetrics.ascent,
+                30f + paint.measureText(text), 70f + paint.fontMetrics.descent, 50f)
+            OfflinePdfOcr(context) {}.use { ocr ->
+                assertTrue(ocr.rereadFinancialWord(bitmap, word) >= 80f)
+                assertEquals(0f, ocr.rereadFinancialWord(bitmap, word.copy(text = "9.999,99")))
+            }
+        } finally { bitmap.recycle() }
+    }
+
+    @Test
+    fun scannedBeneficiaryTableKeepsTheValueColumnAndIgnoresDailyBalance() = runBlocking {
+        val bytes = document { doc ->
+            val image = Bitmap.createBitmap(1600, 2100, Bitmap.Config.ARGB_8888)
+            try {
+                image.eraseColor(Color.WHITE)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 20f }
+                val canvas = Canvas(image)
+                fun put(x: Float, y: Float, text: String) = canvas.drawText(text, x, y, paint)
+                put(30f, 80f, "Extrato da conta")
+                put(30f, 200f, "Lancamentos"); put(330f, 200f, "Nr. Doc")
+                put(440f, 200f, "Historico/Complemento"); put(820f, 200f, "Favorecido")
+                put(1050f, 200f, "CPF/CNPJ"); put(1250f, 200f, "Valor"); put(1440f, 200f, "Saldo")
+                put(30f, 260f, "10/01/2025 - 00:00:00"); put(330f, 260f, "000000")
+                put(440f, 260f, "SALDO DIA"); put(1250f, 260f, "0,00 C"); put(1420f, 260f, "900,00 C")
+                put(30f, 320f, "10/01/2025 - 10:30:00"); put(330f, 320f, "000123")
+                put(440f, 320f, "RECEBIMENTO TED SALARIO"); put(820f, 320f, "Pessoa exemplo")
+                put(1050f, 320f, "***.123.456***"); put(1230f, 320f, "900,00 C"); put(1420f, 320f, "900,00 C")
+                val page = PDPage(); doc.addPage(page)
+                PDPageContentStream(doc, page).use {
+                    it.drawImage(LosslessFactory.createFromImage(doc, image), 0f, 0f, page.mediaBox.width, page.mediaBox.height)
+                }
+            } finally { image.recycle() }
+        }
+        val entries = try {
+            PdfStatementParser(PdfBoxTextExtractor(context)).parse("extrato.pdf", bytes)
+        } catch (error: IllegalArgumentException) {
+            throw AssertionError("Synthetic table extraction:\n" + PdfBoxTextExtractor(context).extract(bytes), error)
+        }
+        assertEquals(1, entries.size)
+        assertEquals(90000L, entries.single().amount.cents)
+        assertEquals(TransactionType.INCOME, entries.single().type)
+        assertTrue(entries.single().extractedByOcr)
+    }
+
+    @Test
     fun scannedStatementWorksOfflineWithBundledPortugueseModel() = runBlocking {
         val bytes = document { scanPage(it, listOf("EXTRATO DA CONTA", "Ano: 2026", "10/01/2026 Mercado Central -150,75")) }
         val entries = PdfStatementParser(PdfBoxTextExtractor(context)).parse("digitalizado.pdf", bytes)

@@ -12,3 +12,7 @@ captures/
 .cxx/
 
 local.properties
+
+# Amostras financeiras e resultados de diagnóstico ficam apenas nesta máquina.
+/samples/private/*
+!/samples/private/.gitkeep

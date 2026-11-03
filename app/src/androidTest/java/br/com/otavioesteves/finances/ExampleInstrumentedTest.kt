@@ -12,6 +12,6 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
 
-        assertEquals("br.com.otavioesteves.finances", appContext.packageName)
+        assertEquals("br.com.otavioesteves.finances", appContext.packageName.removeSuffix(".validation"))
     }
 }

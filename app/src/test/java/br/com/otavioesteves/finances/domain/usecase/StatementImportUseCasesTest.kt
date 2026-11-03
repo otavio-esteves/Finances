@@ -106,6 +106,20 @@ class StatementImportUseCasesTest {
     }
 
     @Test
+    fun synthesizeStatement_assignsTransferCategoryToPaymentsRecognizedByPdfParser() = runBlocking {
+        val entry = RawStatementEntry(
+            "Pagamento em 10 JAN", Money.fromCents(50_000), LocalDate.of(2026, 1, 10), TransactionType.TRANSFER
+        )
+        val transfer = Category(2, "Transferência", CategoryType.TRANSFER)
+        val result = SynthesizeStatementUseCase(
+            FakeTransactionCategorizer(listOf(CategorySuggestion(entry, null, 0f))),
+            FakeCategoriesRepository(listOf(transfer))
+        )(listOf(entry)).single()
+        assertEquals(transfer, result.suggestedCategory)
+        assertEquals(TransactionType.TRANSFER, result.originalType)
+    }
+
+    @Test
     fun confirmStatementImport_persistsTransactionsWithImportedOriginAndRecordsImport() = runBlocking {
         val category = Category(id = 1L, name = "Mercado", type = CategoryType.EXPENSE)
         val entry = RawStatementEntry(

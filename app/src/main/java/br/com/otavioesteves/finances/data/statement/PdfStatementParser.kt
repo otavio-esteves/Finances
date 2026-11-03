@@ -30,12 +30,16 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             "Não foi possível reconhecer texto neste PDF. Use uma digitalização mais nítida."
         }
         require(text.length <= MAX_TEXT_CHARS) { "O texto do PDF excede o limite de análise local." }
-        fun lines() = text.lineSequence().map { raw ->
-            raw.replace('\u00a0', ' ').split('\t').joinToString("\t") { it.replace(WHITESPACE, " ").trim() }
+        val document = PdfStatementDocument(text)
+        fun lines() = document.text.lineSequence().map { raw ->
+            raw.replace('\u2212', '-').replace('\u2013', '-').replace('\u00a0', ' ')
+                .split('\t').joinToString("\t") { it.replace(WHITESPACE, " ").trim() }
         }.filter { it.isNotBlank() }
         val dates = PdfDateResolver(lines().filterNot { PdfDateResolver.DATE_PREFIX.containsMatchIn(normalizePdfText(it)) })
-        val isCardBill = kind == StatementKind.CARD_BILL || CARD_BILL_HEADER.containsMatchIn(text)
-        val table = PdfTableParser(dates, ::parseAmount, isCardBill)
+        val isCardBill = kind == StatementKind.CARD_BILL || CARD_BILL_HEADER.containsMatchIn(document.text)
+        val table = PdfTableParser(dates, { raw, cardBill, direction ->
+            parseAmount(raw, cardBill, direction && !document.unsignedCredits)
+        }, isCardBill)
         val entries = mutableListOf<RawStatementEntry>()
         var pendingRow: String? = null
         var pendingLines = 0
@@ -103,7 +107,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                 body.substring(amounts.last().range.last + 1).isNotBlank() ||
                 amounts.zipWithNext().any { (first, second) -> body.substring(first.range.last + 1, second.range.first).isNotBlank() }
             ) invalidRow()
-            val amount = parseAmount(amounts.first().value, isCardBill, requireDirection = true)
+            val amount = parseAmount(amounts.first().value, isCardBill, requireDirection = !document.unsignedCredits)
             // Validate the balance column but never import it as a purchase or infer a transaction sign from it.
             if (runningBalanceColumn) parseAmount(amounts.last().value, isCardBill = false, requireDirection = false)
             val date = dates.resolve(dateMatch.value)
@@ -115,7 +119,12 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         require(entries.isNotEmpty()) {
             "Nenhum lançamento reconhecido no PDF. Use um PDF com texto e linhas no formato data, descrição e valor."
         }
-        return entries
+        document.validateTotals(entries)
+        return entries.map { entry ->
+            if (isCardBill && entry.type == TransactionType.INCOME && BILL_PAYMENT.containsMatchIn(normalizePdfText(entry.description)))
+                entry.copy(type = TransactionType.TRANSFER)
+            else entry
+        }
     }
 
     /** Explicit signs and debit/credit markers must agree; conflicting notation is never silently overridden. */
@@ -163,6 +172,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         private val VALUE_BALANCE_COLUMNS = Regex("\\bvalor\\b.*\\bsaldo\\b(?:\\s*\\(?r\\$\\)?)?\\s*$")
         private val PAGE_FOOTER = Regex("(?:pagina\\s+\\d+\\s*(?:de|/)\\s*\\d+|\\d+\\s+de\\s+\\d+)")
         private val SUMMARY_LABEL = Regex("(?:total(?: da fatura| de compras)?|saldo(?: anterior| atual| final| do dia)?|pagamento minimo|valor total|vencimento)")
+        private val BILL_PAYMENT = Regex("^pagamento\\s+(?:(?:de|da)\\s+fatura\\b|em\\s+\\d{1,2}\\s+[a-z]{3}\\b)")
         private val MARKER_SUFFIX = Regex("(?:credito|debito|cr|dr|c|d)$")
         private val AMOUNT_TOKEN = Regex(
             "(?<!\\S)(?:[+-]\\s*)?(?:R\\$\\s*)?(?:[+-]\\s*)?(?:\\(\\s*)?\\d[\\d.]*,\\d{2}(?:\\s*\\))?(?:\\s*[+-])?(?:\\s*(?:credito|crédito|debito|débito|CR|DR|C|D))?(?=\\s|$)",

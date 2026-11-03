@@ -85,7 +85,7 @@ class PdfBoxTextExtractor(context: Context) : PdfTextExtractor {
                             renderer = PdfRenderer(requireNotNull(descriptor))
                         }
                         requireNotNull(renderer).openPage(pageIndex).use { rasterPage ->
-                            val scale = min(2400f / maxOf(rasterPage.width, rasterPage.height),
+                            val scale = min(3200f / maxOf(rasterPage.width, rasterPage.height),
                                 sqrt(MAX_RENDER_PIXELS.toFloat() / (rasterPage.width.toFloat() * rasterPage.height)))
                             val bitmap = Bitmap.createBitmap((rasterPage.width * scale).toInt().coerceAtLeast(1),
                                 (rasterPage.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
@@ -108,8 +108,9 @@ class PdfBoxTextExtractor(context: Context) : PdfTextExtractor {
                         "Não foi possível reconhecer a página ${pageIndex + 1}. Use uma digitalização mais nítida."
                     }
                     output.write(layout.reconstruct(pageWords, width))
-                    output.write("\n")
+                    output.write("\n\u000c\n")
                 }
+                layout.finish()
                 return PdfTextExtraction(output.toString(), scannedPages > 0)
             }
         } catch (error: InvalidPasswordException) {
