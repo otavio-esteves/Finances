@@ -1,5 +1,6 @@
 package br.com.otavioesteves.finances.ui
 
+import android.app.UiAutomation
 import android.os.SystemClock
 import android.os.Build
 import android.graphics.Bitmap
@@ -35,12 +36,14 @@ import java.time.LocalDateTime
 @RunWith(AndroidJUnit4::class)
 class FinancesVisualCaptureTest {
     @get:Rule val composeRule = createAndroidComposeRule<MainActivity>()
+    private lateinit var automation: UiAutomation
 
     @Test
     fun capturePrimaryPagesWithLargeSyntheticHistory() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("visualCapture") == "true")
         assumeTrue(Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish")
+        automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val app = composeRule.activity.application as MainApplication
         val expectedBalance = runBlocking {
             val categories = app.container.categoriesRepository.getCategories().first { it.isNotEmpty() }
@@ -105,7 +108,10 @@ class FinancesVisualCaptureTest {
         SystemClock.sleep(500)
         val output = File(composeRule.activity.getExternalFilesDir(null), "visual-validation/$label-$page.png")
         output.parentFile!!.mkdirs()
-        val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        check(automation.rootInActiveWindow?.packageName?.toString() == composeRule.activity.packageName) {
+            "The app is covered by another window; refusing an invalid visual capture."
+        }
+        val bitmap = requireNotNull(automation.takeScreenshot())
         output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
     }

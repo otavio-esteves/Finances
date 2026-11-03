@@ -3,6 +3,12 @@ package br.com.otavioesteves.finances.ui
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -45,6 +51,39 @@ class MainTabsNavigationTest {
         composeRule.onNodeWithTag("transactions_title").assertIsDisplayed()
         composeRule.onRoot().performTouchInput { swipeLeft(durationMillis = 250) }
         composeRule.onNodeWithText("Seu assistente").assertIsDisplayed()
+    }
+
+    @Test
+    fun rapidTabRequestsKeepTheLastDestinationSelected() {
+        val actions = listOf("Gráficos", "Chat", "Início", "Transações", "Chat").map { label ->
+            requireNotNull(composeRule.onNodeWithContentDescription(label).fetchSemanticsNode()
+                .config[SemanticsActions.OnClick].action)
+        }
+        composeRule.runOnUiThread { actions.forEach { it() } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Chat").assertIsSelected()
+        composeRule.onNodeWithText("Seu assistente").assertIsDisplayed()
+    }
+
+    @Test
+    fun chatDraftSurvivesLeavingAndRecreatingThePage() {
+        composeRule.onNodeWithContentDescription("Chat").performClick()
+        composeRule.onNode(hasSetTextAction()).performTextInput("Rascunho de navegação")
+        composeRule.onNodeWithContentDescription("Início").performClick()
+        composeRule.onNodeWithContentDescription("Chat").performClick()
+        composeRule.onNode(hasSetTextAction()).assertTextEquals("Rascunho de navegação")
+    }
+
+    @Test
+    fun chartStyleSurvivesLeavingAndRecreatingThePage() {
+        composeRule.onNodeWithContentDescription("Gráficos").performClick()
+        composeRule.onNodeWithContentDescription("Tipo do gráfico Categorias: Rosca")
+            .performScrollTo().performClick()
+        composeRule.onNodeWithText("Pizza").performClick()
+        composeRule.onNodeWithContentDescription("Chat").performClick()
+        composeRule.onNodeWithContentDescription("Gráficos").performClick()
+        composeRule.onNodeWithContentDescription("Tipo do gráfico Categorias: Pizza")
+            .performScrollTo().assertIsDisplayed()
     }
 
     @Test

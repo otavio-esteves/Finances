@@ -50,6 +50,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -96,6 +97,7 @@ fun MainTabsScreen(
     modifier: Modifier = Modifier
 ) {
     val pagerState = rememberPagerState(pageCount = { MainTab.entries.size })
+    val settledPage by remember { derivedStateOf { pagerState.settledPage } }
     val hazeState = remember { HazeState() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -112,13 +114,12 @@ fun MainTabsScreen(
         if (drawerState.isOpen) scope.launch { drawerState.close() }
         tabNavigationJob?.cancel()
         tabNavigationJob = scope.launch {
-            val distance = kotlin.math.abs(pagerState.currentPage - tab.ordinal)
-            if (distance == 1) pagerState.animateScrollToPage(tab.ordinal, animationSpec = tween(220))
-            else pagerState.scrollToPage(tab.ordinal)
+            // A tab click selects a destination directly; only a horizontal gesture moves the full viewport.
+            pagerState.scrollToPage(tab.ordinal)
         }
     }
 
-    BackHandler(enabled = section != Section.MAIN || pagerState.currentPage != MainTab.HOME.ordinal) {
+    BackHandler(enabled = section != Section.MAIN || settledPage != MainTab.HOME.ordinal || pagerState.isScrollInProgress) {
         if (section != Section.MAIN) section = Section.MAIN else showTab(MainTab.HOME)
     }
 
@@ -170,13 +171,13 @@ fun MainTabsScreen(
                     Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         DrawerLabel("VISÃO GERAL")
                         DrawerMenuItem("Início", Icons.Filled.Home,
-                            section == Section.MAIN && pagerState.currentPage == MainTab.HOME.ordinal) { showTab(MainTab.HOME) }
+                            section == Section.MAIN && settledPage == MainTab.HOME.ordinal) { showTab(MainTab.HOME) }
                         DrawerMenuItem("Gráficos", Icons.Filled.BarChart,
-                            section == Section.MAIN && pagerState.currentPage == MainTab.CHARTS.ordinal) { showTab(MainTab.CHARTS) }
+                            section == Section.MAIN && settledPage == MainTab.CHARTS.ordinal) { showTab(MainTab.CHARTS) }
                         DrawerMenuItem("Transações", Icons.AutoMirrored.Outlined.ReceiptLong,
-                            section == Section.MAIN && pagerState.currentPage == MainTab.TRANSACTIONS.ordinal) { showTab(MainTab.TRANSACTIONS) }
+                            section == Section.MAIN && settledPage == MainTab.TRANSACTIONS.ordinal) { showTab(MainTab.TRANSACTIONS) }
                         DrawerMenuItem("Chat", Icons.AutoMirrored.Filled.Chat,
-                            section == Section.MAIN && pagerState.currentPage == MainTab.CHAT.ordinal) { showTab(MainTab.CHAT) }
+                            section == Section.MAIN && settledPage == MainTab.CHAT.ordinal) { showTab(MainTab.CHAT) }
                         DrawerMenuItem("Categorias", Icons.Filled.PieChart, section == Section.CATEGORIES) {
                             showSection(Section.CATEGORIES)
                         }
@@ -221,7 +222,7 @@ fun MainTabsScreen(
                     when (section) {
                         Section.MAIN -> HorizontalPager(
                             state = pagerState,
-                            // Keep adjacent pages composed during a swipe.
+                            // Keep neighbouring layouts ready; their financial collectors stay paused until visible.
                             beyondViewportPageCount = 1,
                             modifier = Modifier.fillMaxSize().hazeSource(hazeState)
                         ) { page ->
@@ -257,7 +258,7 @@ fun MainTabsScreen(
                     }
                 }
                 FinancesBottomBar(
-                    selectedTab = if (section == Section.MAIN) MainTab.entries[pagerState.currentPage] else null,
+                    selectedTab = if (section == Section.MAIN) MainTab.entries[settledPage] else null,
                     onTabSelected = ::showTab,
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onImportClick = onImportStatementClick,
