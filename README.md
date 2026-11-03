@@ -44,6 +44,8 @@ Na página Gráficos, a ação **Adicionar exemplos** insere 60 lançamentos fic
 
 O [plano do motor local](docs/PLANO_MOTOR_IA_LOCAL.md) detalha as decisões e pendências de IA. A [arquitetura](docs/ARCHITECTURE.md) descreve os fluxos e contratos implementados.
 
+Arquivos que falham na importação podem ser investigados em `samples/private/`, ignorado pelo Git. O [guia de amostras locais](samples/README.md) explica como registrar o erro e repetir a validação dos PDFs no Android com contagens e totais esperados.
+
 ## IA local e limites atuais
 
 O motor escolhido para a integração atual é **LiteRT-LM**. O usuário pode importar manualmente um bundle `.litertlm` pela tela de modelo em Config. A importação copia o arquivo para o armazenamento privado do app, calcula seu SHA-256 e tenta inicializar o runtime antes de substituir o modelo anterior. A lista de hashes de modelos medidos ainda está vazia. Por isso, um modelo importado aparece como não verificado até que haja medições e hashes conhecidos; a inicialização sozinha não comprova qualidade das respostas.
@@ -84,6 +86,14 @@ Requisitos: JDK 17 completo, Android SDK Platform 36 e Build Tools 35.0.0, com `
 ./gradlew lintStandaloneDebug
 ./gradlew assembleStandaloneDebug
 ```
+
+Se o Gradle informar que o Java não oferece `JAVA_COMPILER`, o runtime selecionado não contém o compilador `javac`. Aponte `JAVA_HOME` para um JDK completo e confirme com `"$JAVA_HOME/bin/javac" -version`. Nesta máquina, o JDK incluído no Android Studio está em `/opt/android-studio/jbr`:
+
+```bash
+JAVA_HOME=/opt/android-studio/jbr ./gradlew testStandaloneDebugUnitTest
+```
+
+Esse caminho depende da instalação local; não o fixe nas configurações compartilhadas do Gradle. No Android Studio, selecione o mesmo JDK em **Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK**.
 
 O CI também executa `connectedStandaloneDebugAndroidTest` em um emulador API 35. O APK de debug fica em `app/build/outputs/apk/standalone/debug/`. As versões efetivas de Kotlin, KSP, Room e LiteRT-LM estão em [`gradle/libs.versions.toml`](gradle/libs.versions.toml); consulte esse arquivo antes de atualizar dependências ou a documentação.
 
