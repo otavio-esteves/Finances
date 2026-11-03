@@ -6,8 +6,9 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -77,13 +78,17 @@ class MainTabsNavigationTest {
     @Test
     fun chartStyleSurvivesLeavingAndRecreatingThePage() {
         composeRule.onNodeWithContentDescription("Gráficos").performClick()
+        composeRule.onNodeWithTag("charts_list")
+            .performScrollToNode(hasContentDescription("Tipo do gráfico Categorias: Rosca"))
         composeRule.onNodeWithContentDescription("Tipo do gráfico Categorias: Rosca")
-            .performScrollTo().performClick()
+            .performClick()
         composeRule.onNodeWithText("Pizza").performClick()
         composeRule.onNodeWithContentDescription("Chat").performClick()
         composeRule.onNodeWithContentDescription("Gráficos").performClick()
+        composeRule.onNodeWithTag("charts_list")
+            .performScrollToNode(hasContentDescription("Tipo do gráfico Categorias: Pizza"))
         composeRule.onNodeWithContentDescription("Tipo do gráfico Categorias: Pizza")
-            .performScrollTo().assertIsDisplayed()
+            .assertIsDisplayed()
     }
 
     @Test

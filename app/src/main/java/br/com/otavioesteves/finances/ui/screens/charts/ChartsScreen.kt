@@ -73,7 +73,7 @@ fun ChartsScreen(
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().testTag("charts_list"),
             verticalArrangement = Arrangement.spacedBy(18.dp),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 64.dp, bottom = 112.dp)
         ) {
