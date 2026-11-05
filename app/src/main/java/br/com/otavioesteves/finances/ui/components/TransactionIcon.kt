@@ -13,31 +13,29 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import br.com.otavioesteves.finances.domain.model.TransactionType
 
 data class TransactionIconOption(
     val key: String,
     val label: String,
-    val image: ImageVector,
-    val color: Color
+    val image: ImageVector
 )
 
 /** Stable keys are stored with the transaction; changing the order does not change saved icons. */
 val transactionIconOptions = listOf(
-    TransactionIconOption("market", "Mercado", Icons.Filled.ShoppingCart, Color(0xFFFF4D32)),
-    TransactionIconOption("food", "Comida", Icons.Filled.Fastfood, Color(0xFFFF8B21)),
-    TransactionIconOption("transport", "Transporte", Icons.Filled.DirectionsCar, Color(0xFFD93039)),
-    TransactionIconOption("home", "Casa", Icons.Filled.Home, Color(0xFFFF6840)),
-    TransactionIconOption("health", "Saúde", Icons.Filled.LocalHospital, Color(0xFFC62242)),
-    TransactionIconOption("shopping", "Compras", Icons.Filled.Checkroom, Color(0xFFE54C52)),
-    TransactionIconOption("leisure", "Lazer", Icons.Filled.Movie, Color(0xFFE67800)),
-    TransactionIconOption("education", "Estudos", Icons.Filled.School, Color(0xFFAD3042)),
-    TransactionIconOption("travel", "Viagem", Icons.Filled.Flight, Color(0xFFFFA62B)),
-    TransactionIconOption("income", "Receita", Icons.Filled.AttachMoney, Color(0xFFBE5A00)),
-    TransactionIconOption("transfer", "Transferência", Icons.Filled.AccountBalanceWallet, Color(0xFF696A73)),
-    TransactionIconOption("other", "Outros", Icons.Filled.Receipt, Color(0xFF37373D))
+    TransactionIconOption("market", "Mercado", Icons.Filled.ShoppingCart),
+    TransactionIconOption("food", "Comida", Icons.Filled.Fastfood),
+    TransactionIconOption("transport", "Transporte", Icons.Filled.DirectionsCar),
+    TransactionIconOption("home", "Casa", Icons.Filled.Home),
+    TransactionIconOption("health", "Saúde", Icons.Filled.LocalHospital),
+    TransactionIconOption("shopping", "Compras", Icons.Filled.Checkroom),
+    TransactionIconOption("leisure", "Lazer", Icons.Filled.Movie),
+    TransactionIconOption("education", "Estudos", Icons.Filled.School),
+    TransactionIconOption("travel", "Viagem", Icons.Filled.Flight),
+    TransactionIconOption("income", "Receita", Icons.Filled.AttachMoney),
+    TransactionIconOption("transfer", "Transferência", Icons.Filled.AccountBalanceWallet),
+    TransactionIconOption("other", "Outros", Icons.Filled.Receipt)
 )
 
 fun transactionIconOption(key: String?): TransactionIconOption? =

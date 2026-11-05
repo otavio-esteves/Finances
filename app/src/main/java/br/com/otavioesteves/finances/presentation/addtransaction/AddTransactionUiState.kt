@@ -21,5 +21,8 @@ data class AddTransactionUiState(
     val isSaving: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val showCategoryCreation: Boolean = false,
+    val isCreatingCategory: Boolean = false,
+    val categoryCreationError: String? = null,
     val showDeleteConfirmation: Boolean = false
 )

@@ -1,5 +1,6 @@
 package br.com.otavioesteves.finances.ui.screens.importstatement
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -24,8 +25,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
@@ -33,7 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import br.com.otavioesteves.finances.ui.components.FinanceGlassIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -61,8 +69,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.shape.CircleShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.otavioesteves.finances.domain.model.Category
@@ -72,13 +84,13 @@ import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.presentation.AppViewModelProvider
 import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementUiState
+import br.com.otavioesteves.finances.presentation.importstatement.ImportProcessingStage
 import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementViewModel
 import br.com.otavioesteves.finances.ui.components.AmountText
 import br.com.otavioesteves.finances.ui.components.EmptyState
 import br.com.otavioesteves.finances.ui.components.FinanceCard
 import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
 import br.com.otavioesteves.finances.ui.components.financeTopAppBarColors
-import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 import br.com.otavioesteves.finances.utils.DateFormatter
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import br.com.otavioesteves.finances.utils.queryDisplayName
@@ -88,9 +100,11 @@ import br.com.otavioesteves.finances.utils.queryDisplayName
 fun ImportStatementScreen(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: ImportStatementViewModel = viewModel(factory = AppViewModelProvider.Factory)
+    viewModel: ImportStatementViewModel = viewModel(factory = AppViewModelProvider.Factory),
+    onAddTransactionClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    BackHandler(enabled = uiState is ImportStatementUiState.Loading) { viewModel.onStartOver() }
     val context = LocalContext.current
     val contentResolver = context.applicationContext.contentResolver
     var isAtTop by remember { mutableStateOf(true) }
@@ -113,9 +127,11 @@ fun ImportStatementScreen(
         topBar = {
             CenterAlignedTopAppBar(
                 colors = financeTopAppBarColors(isAtTop),
-                title = { Text("Importar transações") },
+                title = { if (uiState !is ImportStatementUiState.Loading) Text("Importar transações") },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    FinanceGlassIconButton(onClick = {
+                        if (uiState is ImportStatementUiState.Loading) viewModel.onStartOver() else onBackClick()
+                    }) {
                         Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 }
@@ -129,13 +145,14 @@ fun ImportStatementScreen(
         ) {
             when (val state = uiState) {
                 is ImportStatementUiState.Idle -> IdleContent(
+                    onAddTransactionClick = onAddTransactionClick,
                     onSelectFileClick = { kind ->
                         selectedKind = kind
                         filePickerLauncher.launch("*/*")
                     }
                 )
 
-                is ImportStatementUiState.Loading -> LoadingContent()
+                is ImportStatementUiState.Loading -> LoadingContent(state)
                 is ImportStatementUiState.NeedsPassword -> PasswordContent(state, viewModel::onPasswordSubmitted, viewModel::onStartOver)
 
                 is ImportStatementUiState.ReviewingSuggestions -> ReviewContent(
@@ -169,78 +186,100 @@ fun ImportStatementScreen(
 @Composable
 private fun IdleContent(
     onSelectFileClick: (StatementKind) -> Unit,
+    onAddTransactionClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var kind by rememberSaveable { mutableStateOf(StatementKind.BANK_STATEMENT) }
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(20.dp),
+        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .navigationBarsPadding().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text(
-            text = "Comece pelo seu arquivo",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface
-        )
         FinanceCard(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(68.dp)
-                        .clip(CircleShape)
-                        .background(FinancesThemeTokens.colors.heroSurface)
-                        .border(1.dp, FinancesThemeTokens.colors.border.copy(alpha = 0.35f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.UploadFile,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(30.dp)
-                    )
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Importar de um arquivo", style = MaterialTheme.typography.titleLarge)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StatementKindChoice("Extrato bancário", "Entradas e saídas da conta",
+                        Icons.Filled.AccountBalance, kind == StatementKind.BANK_STATEMENT,
+                        onClick = { kind = StatementKind.BANK_STATEMENT })
+                    StatementKindChoice("Fatura de cartão", "Compras e estornos do cartão",
+                        Icons.Filled.CreditCard, kind == StatementKind.CARD_BILL,
+                        onClick = { kind = StatementKind.CARD_BILL })
                 }
-                Text(
-                    text = "Fatura ou extrato",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Escolha o tipo de arquivo. Em CSV de fatura, valores positivos são compras e negativos são estornos. Confira todos os lançamentos antes de importar.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-                PrimaryActionButton(
-                    text = "Escolher extrato",
-                    onClick = { onSelectFileClick(StatementKind.BANK_STATEMENT) }
-                )
-                PrimaryActionButton(
-                    text = "Escolher fatura",
-                    onClick = { onSelectFileClick(StatementKind.CARD_BILL) }
-                )
+                Text("PDF, CSV ou OFX · até 10 MB", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PrimaryActionButton(text = "Selecionar arquivo", onClick = { onSelectFileClick(kind) })
+            }
+        }
+        FinanceCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Lançamento individual", style = MaterialTheme.typography.titleMedium)
+                OutlinedButton(onClick = onAddTransactionClick, modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text("Adicionar lançamento", modifier = Modifier.padding(start = 8.dp))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun LoadingContent(modifier: Modifier = Modifier) {
+private fun StatementKindChoice(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val shape = MaterialTheme.shapes.small
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                else MaterialTheme.colorScheme.surface)
+            .border(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), shape)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(icon, contentDescription = null,
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        RadioButton(selected = selected, onClick = null)
+    }
+}
+
+@Composable
+private fun LoadingContent(
+    state: ImportStatementUiState.Loading,
+    modifier: Modifier = Modifier
+) {
+    val title = when (state.stage) {
+        ImportProcessingStage.READING, ImportProcessingStage.EXTRACTING -> "Importando…"
+        ImportProcessingStage.CHECKING_OVERLAPS, ImportProcessingStage.CATEGORIZING,
+        ImportProcessingStage.PREPARING_REVIEW -> "Processando…"
+    }
     Column(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
+        modifier = modifier.fillMaxSize().navigationBarsPadding().padding(32.dp)
+            .testTag("import_processing"),
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-        Text(
-            text = "Organizando suas transações...",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 16.dp)
-        )
+        Text(title, style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        val progress = state.progress
+        if (progress == null) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().testTag("import_progress_indeterminate"))
+        } else {
+            LinearProgressIndicator(progress = { progress },
+                modifier = Modifier.fillMaxWidth().testTag("import_progress_measured"))
+        }
     }
 }
 
@@ -260,7 +299,7 @@ private fun SuccessContent(
         Icon(
             imageVector = Icons.Filled.CheckCircle,
             contentDescription = null,
-            tint = FinancesThemeTokens.colors.income,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(56.dp)
         )
         Text(
@@ -317,11 +356,17 @@ private fun ReviewContent(
                 .fold(Money.Zero) { total, suggestion -> total + suggestion.entry.amount }
             val incomes = state.suggestions.filter { it.entry.type == TransactionType.INCOME }
                 .fold(Money.Zero) { total, suggestion -> total + suggestion.entry.amount }
-            Text(
-                text = "${state.suggestions.size} lançamentos · Despesas: ${MoneyFormatter.format(expenses)} · Receitas: ${MoneyFormatter.format(incomes)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("${state.suggestions.size} lançamentos para conferir", style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Despesas", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AmountText(MoneyFormatter.format(expenses), isPositive = false, style = MaterialTheme.typography.titleSmall)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Receitas", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AmountText(MoneyFormatter.format(incomes), isPositive = true, style = MaterialTheme.typography.titleSmall)
+                }
+            }
         }
 
         LazyColumn(
@@ -336,6 +381,7 @@ private fun ReviewContent(
                 SuggestionRow(
                     suggestion = suggestion,
                     availableCategories = state.availableCategories,
+                    enabled = !state.isConfirming,
                     onCategorySelected = { category -> onCategorySelected(index, category) },
                     onEntryEdited = { description, amount, date -> onEntryEdited(index, description, amount, date) },
                     onTypeSelected = { type -> onTypeSelected(index, type) }
@@ -365,9 +411,14 @@ private fun ReviewContent(
                     color = MaterialTheme.colorScheme.error
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = state.overlapAcknowledged, onCheckedChange = onOverlapAcknowledged)
+                    Checkbox(checked = state.overlapAcknowledged, onCheckedChange = onOverlapAcknowledged, enabled = !state.isConfirming)
                     Text("Revisei os possíveis lançamentos repetidos")
                 }
+            }
+            if (state.isConfirming || state.isCheckingOverlaps) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(if (state.isConfirming) "Salvando seus lançamentos…" else "Conferindo possíveis repetições…",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
             PrimaryActionButton(
                 text = if (state.isConfirming) "Confirmando..." else "Confirmar Importação",
@@ -389,7 +440,8 @@ private fun SuggestionRow(
     onCategorySelected: (Category) -> Unit,
     onTypeSelected: (TransactionType) -> Unit,
     onEntryEdited: (String, String, String) -> String?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     var showEditor by remember { mutableStateOf(false) }
     if (showEditor) EntryEditor(suggestion, onEntryEdited, onDismiss = { showEditor = false })
@@ -398,7 +450,7 @@ private fun SuggestionRow(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            TextButton(onClick = { showEditor = true }) { Text("Corrigir dados") }
+            TextButton(onClick = { showEditor = true }, enabled = enabled) { Text("Corrigir dados") }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -424,7 +476,7 @@ private fun SuggestionRow(
 
             var typeExpanded by remember { mutableStateOf(false) }
             Box {
-                TextButton(onClick = { typeExpanded = true }) {
+                TextButton(onClick = { typeExpanded = true }, enabled = enabled) {
                     Text(
                         when (suggestion.entry.type) {
                             TransactionType.EXPENSE -> "Tipo: Despesa"
@@ -440,7 +492,7 @@ private fun SuggestionRow(
                         TransactionType.TRANSFER to "Pagamento de fatura / transferência"
                     ).filter { (type, _) -> availableCategories.any { it.type.name == type.name } }
                         .forEach { (type, label) ->
-                            DropdownMenuItem(text = { Text(label) }, onClick = {
+                            DropdownMenuItem(text = { Text(label) }, enabled = enabled, onClick = {
                                 onTypeSelected(type)
                                 typeExpanded = false
                             })
@@ -451,7 +503,7 @@ private fun SuggestionRow(
             var expanded by remember { mutableStateOf(false) }
             ExposedDropdownMenuBox(
                 expanded = expanded,
-                onExpandedChange = { expanded = !expanded }
+                onExpandedChange = { if (enabled) expanded = !expanded }
             ) {
                 OutlinedTextField(
                     value = suggestion.suggestedCategory
@@ -459,6 +511,7 @@ private fun SuggestionRow(
                         ?.name ?: "Selecione uma categoria",
                     onValueChange = {},
                     readOnly = true,
+                    enabled = enabled,
                     label = { Text("Categoria") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
@@ -475,6 +528,7 @@ private fun SuggestionRow(
                     availableCategories.filter { it.type.name == suggestion.entry.type.name }.forEach { category ->
                         DropdownMenuItem(
                             text = { Text(category.name) },
+                            enabled = enabled,
                             onClick = {
                                 onCategorySelected(category)
                                 expanded = false

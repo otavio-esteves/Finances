@@ -8,6 +8,8 @@ import br.com.otavioesteves.finances.data.local.entity.CategoryEntity
 import br.com.otavioesteves.finances.data.local.entity.ChatMessageEntity
 import br.com.otavioesteves.finances.data.local.entity.StatementImportEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
+import br.com.otavioesteves.finances.domain.model.BackupModel
+import br.com.otavioesteves.finances.domain.model.CategoryExportModel
 import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.ChatRole
 import br.com.otavioesteves.finances.domain.model.TransactionOrigin
@@ -22,6 +24,26 @@ import java.time.LocalDateTime
 
 @RunWith(AndroidJUnit4::class)
 class RoomBackupRepositoryTest {
+    @Test
+    fun restoringEmptyOrPartialCategoriesKeepsEveryTransactionTypeUsable() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java
+        ).build()
+        try {
+            val repository = RoomBackupRepository(database)
+            repository.restoreBackup(BackupModel(categories = emptyList(), transactions = emptyList()))
+            assertEquals(CategoryType.entries.toSet(), database.categoryDao().getAllCategoriesForBackup().map { it.type }.toSet())
+            repository.restoreBackup(BackupModel(
+                categories = listOf(CategoryExportModel(77, "Personalizada", CategoryType.EXPENSE)),
+                transactions = emptyList()
+            ))
+            val categories = database.categoryDao().getAllCategoriesForBackup()
+            assertEquals(CategoryType.entries.toSet(), categories.map { it.type }.toSet())
+            assertEquals("Personalizada", categories.single { it.id == 77L }.name)
+            assertEquals(1, categories.count { it.type == CategoryType.EXPENSE })
+        } finally { database.close() }
+    }
+
     @Test
     fun zeroAmountRoundTripSucceedsAndNegativeBackupLeavesDatabaseIntact() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(

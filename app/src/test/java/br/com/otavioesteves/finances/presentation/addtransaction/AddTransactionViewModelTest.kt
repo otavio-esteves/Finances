@@ -18,6 +18,7 @@ import br.com.otavioesteves.finances.domain.usecase.UpdateTransactionUseCase
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -80,7 +81,13 @@ class AddTransactionViewModelTest {
     }
 
     private class FakeCategoriesRepository : CategoriesRepository {
-        override fun getCategories(): Flow<List<Category>> = flowOf(listOf(Category(1, "Alimentação", CategoryType.EXPENSE)))
+        var creationFailure: String? = null
+        val categories = MutableStateFlow(listOf(Category(1, "Alimentação", CategoryType.EXPENSE)))
+        override suspend fun createCategory(name: String, type: CategoryType): Category {
+            creationFailure?.let { error(it) }
+            return Category(2, name, type).also { categories.value = categories.value + it }
+        }
+        override fun getCategories(): Flow<List<Category>> = categories
         override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> = flowOf(emptyList())
     }
 
@@ -158,7 +165,8 @@ class AddTransactionViewModelTest {
     fun `onDeleteConfirm calls delete use case and emits success`() = runTest {
         val repository = FakeTransactionsRepository(listOf(createFakeTransaction(10)))
         val viewModel = createViewModel(repository, transactionId = 10)
-        
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onDeleteRequest()
         viewModel.onDeleteConfirm()
         testDispatcher.scheduler.advanceUntilIdle()
         
@@ -168,9 +176,10 @@ class AddTransactionViewModelTest {
 
     @Test
     fun `onDeleteConfirm failure emits error`() = runTest {
-        val repository = FakeTransactionsRepository().apply { shouldFailDelete = true }
+        val repository = FakeTransactionsRepository(listOf(createFakeTransaction(1))).apply { shouldFailDelete = true }
         val viewModel = createViewModel(repository, transactionId = 1)
-        
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onDeleteRequest()
         viewModel.onDeleteConfirm()
         testDispatcher.scheduler.advanceUntilIdle()
         
@@ -285,16 +294,143 @@ class AddTransactionViewModelTest {
         viewModel.onCategoryChange(Category(1, "Alimentação", CategoryType.EXPENSE))
     }
 
+    @Test
+    fun `editing a zero imported transaction preserves its value and metadata`() = runTest {
+        val original = createFakeTransaction(7).copy(
+            amount = Money.Zero,
+            origin = TransactionOrigin.IMPORTED,
+            date = LocalDate.of(2025, 8, 3)
+        )
+        val repository = FakeTransactionsRepository(listOf(original))
+        val viewModel = createViewModel(repository, transactionId = original.id)
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onDescriptionChange("Descrição corrigida")
+        viewModel.onNotesChange("Conferido")
+        viewModel.onIconChange("market")
+
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(original.copy(description = "Descrição corrigida", notes = "Conferido", iconKey = "market"),
+            repository.transactions.single())
+        assertTrue(viewModel.uiState.value.isSaveSuccessful)
+    }
+
+    @Test
+    fun `manual creation still rejects zero and editing rejects negative values`() = runTest {
+        val repository = FakeTransactionsRepository(listOf(createFakeTransaction(7)))
+        val creating = createViewModel(repository)
+        val editing = createViewModel(repository, transactionId = 7)
+        testDispatcher.scheduler.advanceUntilIdle()
+        fillNewTransaction(creating)
+        creating.onAmountChange("0,00")
+        creating.saveTransaction()
+        editing.onAmountChange("-1,00")
+        editing.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, repository.insertCalls)
+        assertEquals(0, repository.updateCalls)
+        assertNotNull(creating.uiState.value.amountError)
+        assertNotNull(editing.uiState.value.amountError)
+    }
+
+    @Test
+    fun `editing shows a format error for empty or invalid amounts`() = runTest {
+        val repository = FakeTransactionsRepository(listOf(createFakeTransaction(7)))
+        val viewModel = createViewModel(repository, transactionId = 7)
+        testDispatcher.scheduler.advanceUntilIdle()
+        listOf("", "abc", "1,2,3").forEach { invalid ->
+            viewModel.onAmountChange(invalid)
+            viewModel.saveTransaction()
+            assertEquals("Informe um valor válido", viewModel.uiState.value.amountError)
+        }
+        assertEquals(0, repository.updateCalls)
+    }
+
+    @Test
+    fun `late categories update the form without discarding edited fields`() = runTest {
+        val categories = MutableStateFlow<List<Category>>(emptyList())
+        val categoryRepository = object : CategoriesRepository {
+            override fun getCategories(): Flow<List<Category>> = categories
+            override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> = flowOf(emptyList())
+        }
+        val original = createFakeTransaction(7)
+        val viewModel = createViewModel(FakeTransactionsRepository(listOf(original)), 7, categoryRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(emptyList<Category>(), viewModel.uiState.value.categories)
+        viewModel.onDescriptionChange("Descrição digitada")
+
+        val category = Category(1, "Alimentação", CategoryType.EXPENSE)
+        categories.value = listOf(category)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(category, viewModel.uiState.value.selectedCategory)
+        assertEquals("Descrição digitada", viewModel.uiState.value.description)
+
+        val custom = Category(2, "Educação", CategoryType.EXPENSE)
+        categories.value = listOf(category, custom)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(category, custom), viewModel.uiState.value.categories)
+        assertEquals("Descrição digitada", viewModel.uiState.value.description)
+    }
+
+    @Test
+    fun `creating a category selects it with the current type and preserves the form`() = runTest {
+        val repository = FakeCategoriesRepository()
+        val viewModel = createViewModel(FakeTransactionsRepository(), categoriesRepository = repository)
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.onDescriptionChange("Salário de novembro")
+        viewModel.onAmountChange("2000,00")
+        viewModel.onIconChange("income")
+        viewModel.onTypeChange(TransactionType.INCOME)
+        viewModel.showCreateCategory()
+        viewModel.createCategory("  Trabalho   extra  ")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(Category(2, "Trabalho extra", CategoryType.INCOME), state.selectedCategory)
+        assertTrue(state.categories.contains(state.selectedCategory))
+        assertEquals("Salário de novembro", state.description)
+        assertEquals("2000,00", state.amount)
+        assertEquals("income", state.iconKey)
+        assertFalse(state.showCategoryCreation)
+        assertFalse(state.isCreatingCategory)
+    }
+
+    @Test
+    fun `category creation failure keeps the form and allows retry`() = runTest {
+        val repository = FakeCategoriesRepository().apply { creationFailure = "Categoria já existe" }
+        val viewModel = createViewModel(FakeTransactionsRepository(), categoriesRepository = repository)
+        testDispatcher.scheduler.advanceUntilIdle()
+        fillNewTransaction(viewModel)
+        val originalCategory = viewModel.uiState.value.selectedCategory
+        viewModel.showCreateCategory()
+        viewModel.createCategory("Duplicada")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals("Categoria já existe", viewModel.uiState.value.categoryCreationError)
+        assertTrue(viewModel.uiState.value.showCategoryCreation)
+        assertFalse(viewModel.uiState.value.isCreatingCategory)
+        assertEquals(originalCategory, viewModel.uiState.value.selectedCategory)
+        assertEquals("Compra", viewModel.uiState.value.description)
+
+        repository.creationFailure = null
+        viewModel.createCategory("Nova")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals("Nova", viewModel.uiState.value.selectedCategory?.name)
+        assertFalse(viewModel.uiState.value.showCategoryCreation)
+    }
+
     private fun createViewModel(
         repository: FakeTransactionsRepository,
-        transactionId: Long? = null
+        transactionId: Long? = null,
+        categoriesRepository: CategoriesRepository = FakeCategoriesRepository()
     ): AddTransactionViewModel {
         return AddTransactionViewModel(
             addTransactionUseCase = AddTransactionUseCase(repository),
             updateTransactionUseCase = UpdateTransactionUseCase(repository),
             getTransactionUseCase = GetTransactionUseCase(repository),
             deleteTransactionUseCase = DeleteTransactionUseCase(repository),
-            categoriesRepository = FakeCategoriesRepository(),
+            categoriesRepository = categoriesRepository,
             dateProvider = fakeDateProvider,
             transactionId = transactionId
         )

@@ -9,10 +9,12 @@ import br.com.otavioesteves.finances.utils.MoneyFormatter
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
+import java.util.Locale
 
 /**
  * Parses CSV bills/statements and signed OFX transactions. The selected kind
- * controls CSV sign interpretation; OFX keeps its own signed amount convention.
+ * controls bank CSV sign interpretation; native exports preserve cents and type.
+ * OFX keeps its own signed amount convention.
  */
 class CsvOfxStatementParser : StatementParserRepository {
 
@@ -31,7 +33,12 @@ class CsvOfxStatementParser : StatementParserRepository {
             .filter { row -> row.any { it.isNotBlank() } }
         require(rows.size >= 2) { "CSV vazio ou sem linhas de transação" }
 
-        val header = rows.first().map { it.trim().lowercase() }
+        val header = rows.first().map { it.trim().lowercase(Locale.ROOT) }
+        val centsIndex = header.indexOf("valor (centavos)")
+        val nativeExport = centsIndex >= 0
+        require(!nativeExport || (header.size == NATIVE_EXPORT_HEADERS.size && header.toSet() == NATIVE_EXPORT_HEADERS)) {
+            "CSV em centavos não corresponde ao formato exportado pelo Finances"
+        }
         val dateIndex = header.indexOfFirst { it.contains("data") || it.contains("date") }
         val descriptionIndex = header.indexOfFirst {
             it.contains("descri") || it.contains("histor") || it.contains("memo") || it.contains("description")
@@ -43,15 +50,28 @@ class CsvOfxStatementParser : StatementParserRepository {
         }
 
         return rows.drop(1).map { fields ->
+            require(!nativeExport || fields.size == header.size) {
+                "Linha do CSV exportado não corresponde ao cabeçalho"
+            }
             require(fields.size > maxOf(dateIndex, descriptionIndex, amountIndex)) {
                 "Linha CSV com menos colunas que o cabeçalho"
             }
-            val amountCents = parseAmountCents(fields[amountIndex])
+            val amountCents = if (nativeExport) {
+                fields[centsIndex].trim().let { raw ->
+                    require(UNSIGNED_CENTS.matches(raw)) { "Valor em centavos inválido: $raw" }
+                    raw.toLongOrNull() ?: throw IllegalArgumentException("Valor em centavos fora do limite: $raw")
+                }
+            } else parseAmountCents(fields[amountIndex])
+            val nativeType = if (nativeExport) {
+                val raw = fields[header.indexOf("tipo")].trim()
+                TransactionType.entries.firstOrNull { it.name == raw }
+                    ?: throw IllegalArgumentException("Tipo de transação inválido no CSV exportado: $raw")
+            } else null
             RawStatementEntry(
                 description = fields[descriptionIndex].trim(),
                 amount = Money.fromCents(if (amountCents < 0) Math.negateExact(amountCents) else amountCents),
                 date = parseCsvDate(fields[dateIndex].trim()),
-                type = when (kind) {
+                type = nativeType ?: when (kind) {
                     StatementKind.BANK_STATEMENT -> if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME
                     StatementKind.CARD_BILL -> if (amountCents < 0) TransactionType.INCOME else TransactionType.EXPENSE
                 }
@@ -159,6 +179,8 @@ class CsvOfxStatementParser : StatementParserRepository {
     }
 
     private companion object {
+        val NATIVE_EXPORT_HEADERS = setOf("id", "data", "descrição", "valor (centavos)", "tipo", "categoria", "observações")
+        val UNSIGNED_CENTS = Regex("[0-9]+")
         val OFX_EXTENSIONS = setOf("ofx", "qfx")
         val BR_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT)
         // OFX is SGML-based and closing tags (e.g. </STMTTRN>) are often omitted,

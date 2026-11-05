@@ -1,5 +1,7 @@
 package br.com.otavioesteves.finances.ui.navigation
 
+import br.com.otavioesteves.finances.domain.model.MonthPeriod
+
 sealed interface FinancesRoute {
     val route: String
 
@@ -13,6 +15,11 @@ sealed interface FinancesRoute {
 
     data object Transactions : FinancesRoute {
         override val route: String = "transactions"
+        const val ARG_YEAR = "year"
+        const val ARG_MONTH = "month"
+        const val ROUTE_PATTERN = "transactions?year={year}&month={month}"
+
+        fun forPeriod(period: MonthPeriod): String = "$route?year=${period.year}&month=${period.month}"
     }
 
     data object AiModel : FinancesRoute {
@@ -32,12 +39,15 @@ sealed interface FinancesRoute {
         }
     }
 
-    data class CategoryDetails(val categoryId: Long) : FinancesRoute {
-        override val route: String = "categories/$categoryId"
+    data class CategoryDetails(val categoryId: Long, val period: MonthPeriod? = null) : FinancesRoute {
+        override val route: String = "categories/$categoryId" +
+            (period?.let { "?year=${it.year}&month=${it.month}" } ?: "")
 
         companion object {
             const val ARG_CATEGORY_ID = "categoryId"
-            const val ROUTE_PATTERN = "categories/{$ARG_CATEGORY_ID}"
+            const val ARG_YEAR = "year"
+            const val ARG_MONTH = "month"
+            const val ROUTE_PATTERN = "categories/{$ARG_CATEGORY_ID}?year={year}&month={month}"
         }
     }
 }

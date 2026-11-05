@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +40,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,19 +53,23 @@ import br.com.otavioesteves.finances.ui.components.AnnualExpenseChart
 import br.com.otavioesteves.finances.ui.components.CategoryChartStyle
 import br.com.otavioesteves.finances.ui.components.CategoryUsageChart
 import br.com.otavioesteves.finances.ui.components.FinanceCard
+import dev.chrisbanes.haze.HazeState
 import br.com.otavioesteves.finances.ui.components.MonthPeriodSelector
 import br.com.otavioesteves.finances.ui.components.financeTopAppBarColors
 
 private val categoryStyles = CategoryChartStyle.entries.map { it.label }
 private val annualStyles = AnnualChartStyle.entries.map { it.label }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChartsScreen(
     modifier: Modifier = Modifier,
+    hazeState: HazeState? = null,
     viewModel: ChartsViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val loadedState by viewModel.uiState.collectAsStateWithLifecycle()
+    val monthPeriod by viewModel.selectedMonthPeriod.collectAsStateWithLifecycle()
+    val state = if (loadedState.monthPeriod == monthPeriod) loadedState else br.com.otavioesteves.finances.presentation.charts.ChartsUiState(monthPeriod)
     val exampleAction by viewModel.exampleAction.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var categoryStyle by rememberSaveable { mutableStateOf(CategoryChartStyle.DONUT) }
@@ -75,48 +84,16 @@ fun ChartsScreen(
             state = listState,
             modifier = Modifier.fillMaxSize().testTag("charts_list"),
             verticalArrangement = Arrangement.spacedBy(18.dp),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 64.dp, bottom = 112.dp)
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 64.dp, bottom = 128.dp)
         ) {
             item(key = "month_selector") {
                 MonthPeriodSelector(
                     monthPeriod = state.monthPeriod,
+                    hazeState = hazeState,
                     onPreviousClick = { viewModel.onMonthSelected(state.monthPeriod.previousMonth()) },
                     onNextClick = { viewModel.onMonthSelected(state.monthPeriod.nextMonth()) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp)
                 )
-            }
-            if (state.monthPeriod.year == 2026) {
-                item(key = "examples_2026") {
-                    FinanceCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("Exemplos de janeiro a outubro de 2026", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "Lançamentos fictícios identificados por [EXEMPLO]. Eles entram nos totais e podem ser removidos aqui.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (state.exampleCount > 0) {
-                                Text("${state.exampleCount} exemplos adicionados", style = MaterialTheme.typography.labelMedium)
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = viewModel::addExamples, enabled = !exampleAction.isBusy) {
-                                    Text(if (state.exampleCount == 0) "Adicionar exemplos" else "Completar exemplos")
-                                }
-                                if (state.exampleCount > 0) {
-                                    TextButton(onClick = viewModel::removeExamples, enabled = !exampleAction.isBusy) {
-                                        Text("Remover")
-                                    }
-                                }
-                            }
-                            exampleAction.error?.let { error ->
-                                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
             }
             if (state.isLoading) {
                 item(key = "loading") {
@@ -191,6 +168,39 @@ fun ChartsScreen(
                     }
                 }
             }
+            if (state.monthPeriod.year == 2026) {
+                item(key = "examples_2026") {
+                    FinanceCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Exemplos de janeiro a outubro de 2026", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Lançamentos fictícios identificados por [EXEMPLO]. Eles entram nos totais e podem ser removidos aqui.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (state.exampleCount > 0) {
+                                Text("${state.exampleCount} exemplos adicionados", style = MaterialTheme.typography.labelMedium)
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = viewModel::addExamples, enabled = !exampleAction.isBusy) {
+                                    Text(if (state.exampleCount == 0) "Adicionar exemplos" else "Completar exemplos")
+                                }
+                                if (state.exampleCount > 0) {
+                                    TextButton(onClick = viewModel::removeExamples, enabled = !exampleAction.isBusy) {
+                                        Text("Remover")
+                                    }
+                                }
+                            }
+                            exampleAction.error?.let { error ->
+                                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
         }
         CenterAlignedTopAppBar(
             title = { Text("Gráficos", modifier = Modifier.testTag("charts_title")) },
@@ -209,37 +219,36 @@ private fun ChartTitle(
     onStyleSelected: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text(
             text = title,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
         )
-        // Overlay the new control so it does not increase the existing title/card height.
-        Box(modifier = Modifier.matchParentSize(), contentAlignment = Alignment.CenterEnd) {
-            Box {
-                IconButton(onClick = { expanded = true }, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Filled.ArrowDropDown,
-                        contentDescription = "Tipo do gráfico $title: $selectedStyle",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+        Box {
+            TextButton(
+                onClick = { expanded = true },
+                modifier = Modifier.heightIn(min = 48.dp).semantics {
+                    contentDescription = "Tipo do gráfico $title: $selectedStyle"
                 }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    styles.forEachIndexed { index, label ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            trailingIcon = {
-                                if (label == selectedStyle) Icon(Icons.Filled.Check, contentDescription = "Selecionado")
-                            },
-                            onClick = {
-                                onStyleSelected(index)
-                                expanded = false
-                            }
-                        )
-                    }
+            ) {
+                Text(selectedStyle)
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                styles.forEachIndexed { index, label ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        trailingIcon = {
+                            if (label == selectedStyle) Icon(Icons.Filled.Check, contentDescription = "Selecionado")
+                        },
+                        onClick = { onStyleSelected(index); expanded = false }
+                    )
                 }
             }
         }

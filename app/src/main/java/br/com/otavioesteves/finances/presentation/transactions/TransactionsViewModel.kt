@@ -1,6 +1,8 @@
 package br.com.otavioesteves.finances.presentation.transactions
 
 import androidx.lifecycle.ViewModel
+import br.com.otavioesteves.finances.domain.state.SelectedMonthState
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
@@ -22,8 +24,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TransactionsViewModel(
@@ -31,10 +35,16 @@ class TransactionsViewModel(
     private val deleteTransaction: DeleteTransactionUseCase,
     private val categoriesRepository: CategoriesRepository,
     dateProvider: DateProvider,
-    private val mappingDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val mappingDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val monthSelection: SelectedMonthState = SelectedMonthState(
+        savedStateHandle.get<String>("selected_month")?.let {
+            runCatching { MonthPeriod.from(java.time.YearMonth.parse(it)) }.getOrNull()
+        } ?: dateProvider.getCurrentMonthPeriod()
+    )
 ) : ViewModel() {
 
-    private val _selectedMonthPeriod = MutableStateFlow(dateProvider.getCurrentMonthPeriod())
+    private val _selectedMonthPeriod = monthSelection.period
     val selectedMonthPeriod: StateFlow<MonthPeriod> = _selectedMonthPeriod
 
     private val _transactionToDelete = MutableStateFlow<Transaction?>(null)
@@ -83,7 +93,14 @@ class TransactionsViewModel(
     )
 
     fun onMonthSelected(period: MonthPeriod) {
-        _selectedMonthPeriod.value = period
+        savedStateHandle["selected_month"] = period.toYearMonth().toString()
+        monthSelection.select(period)
+    }
+
+    fun initializeMonthPeriod(period: MonthPeriod?) {
+        if (savedStateHandle.get<Boolean>("initial_month_applied") == true) return
+        if (period != null) onMonthSelected(period)
+        savedStateHandle["initial_month_applied"] = true
     }
 
     fun onDeleteRequest(transaction: Transaction) {
@@ -113,13 +130,10 @@ class TransactionsViewModel(
         _error.value = null
     }
 
-    fun getExportData(format: ExportFormat): String {
-        val currentState = uiState.value
-        val transactions = currentState.transactions.map { it.transaction }
-        val categoryMap = currentState.transactions
-            .mapNotNull { it.category }
-            .associateBy { it.id }
-        
-        return TransactionExporter().export(transactions, categoryMap, format)
+    suspend fun getExportData(format: ExportFormat, period: MonthPeriod): String = withContext(mappingDispatcher) {
+        // Export a fresh query for the requested month, independent of UI subscriptions and loading state.
+        val transactions = getTransactionsByMonth(period).first()
+        val categoryMap = categoriesRepository.getCategories().first().associateBy { it.id }
+        TransactionExporter().export(transactions, categoryMap, format)
     }
 }

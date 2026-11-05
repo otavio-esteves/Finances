@@ -1,5 +1,9 @@
 package br.com.otavioesteves.finances.ui
 
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isPopup
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -135,7 +139,7 @@ class ChartsTypesTest {
     private fun selectStyle(chart: String, current: String, next: String) {
         scrollToMenu(chart, current)
         composeRule.onNodeWithContentDescription("Tipo do gráfico $chart: $current").performClick()
-        composeRule.onNodeWithText(next).performClick()
+        composeRule.onNode(hasText(next) and hasAnyAncestor(isPopup())).performClick()
         composeRule.onNodeWithContentDescription("Tipo do gráfico $chart: $next").assertExists()
     }
 

@@ -1,6 +1,8 @@
 package br.com.otavioesteves.finances.ui.screens.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,13 +18,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
+import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,16 +59,20 @@ import dev.chrisbanes.haze.HazeState
 
 @Composable
 fun DashboardScreen(
-    onHistoryClick: () -> Unit,
+    onHistoryClick: (MonthPeriod) -> Unit,
+    onTransactionClick: (Transaction) -> Unit = {},
     hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val loadedState by viewModel.uiState.collectAsStateWithLifecycle()
+    val monthPeriod by viewModel.selectedMonthPeriod.collectAsStateWithLifecycle()
+    val uiState = if (loadedState.monthPeriod == monthPeriod) loadedState else DashboardUiState(monthPeriod, Money.Zero)
 
     DashboardContent(
         state = uiState,
-        onHistoryClick = onHistoryClick,
+        onHistoryClick = { onHistoryClick(uiState.monthPeriod) },
+        onTransactionClick = onTransactionClick,
         onPreviousMonthClick = { viewModel.onMonthSelected(uiState.monthPeriod.previousMonth()) },
         onNextMonthClick = { viewModel.onMonthSelected(uiState.monthPeriod.nextMonth()) },
         hazeState = hazeState,
@@ -75,6 +86,7 @@ private fun DashboardContent(
     onHistoryClick: () -> Unit,
     onPreviousMonthClick: () -> Unit,
     onNextMonthClick: () -> Unit,
+    onTransactionClick: (Transaction) -> Unit = {},
     hazeState: HazeState? = null,
     modifier: Modifier = Modifier
 ) {
@@ -82,11 +94,17 @@ private fun DashboardContent(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .testTag("dashboard_list")
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
-            Spacer(modifier = Modifier.height(48.dp))
+            MonthPeriodSelector(
+                monthPeriod = state.monthPeriod,
+                onPreviousClick = onPreviousMonthClick,
+                onNextClick = onNextMonthClick,
+                hazeState = hazeState
+            )
 
             BalanceHero(balance = state.monthlyBalance)
 
@@ -118,13 +136,6 @@ private fun DashboardContent(
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    TextButton(onClick = onHistoryClick) {
-                        Text(
-                            text = "Ver todas",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
                 }
                 if (state.recentTransactions.isEmpty()) {
                     FinanceCard(modifier = Modifier.fillMaxWidth()) {
@@ -136,7 +147,8 @@ private fun DashboardContent(
                             state.recentTransactions.forEachIndexed { index, item ->
                                 TransactionListRow(
                                     transaction = item.transaction,
-                                    categoryName = item.category?.name
+                                    categoryName = item.category?.name,
+                                    modifier = Modifier.clickable { onTransactionClick(item.transaction) }
                                 )
                                 if (index < state.recentTransactions.lastIndex) {
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
@@ -145,45 +157,47 @@ private fun DashboardContent(
                         }
                     }
                 }
+                PrimaryActionButton(
+                    text = "Ver transações",
+                    onClick = onHistoryClick,
+                    modifier = Modifier.testTag("dashboard_view_transactions")
+                )
             }
-            Spacer(modifier = Modifier.height(104.dp))
+            Spacer(modifier = Modifier.height(128.dp))
         }
-        MonthPeriodSelector(
-            monthPeriod = state.monthPeriod,
-            onPreviousClick = onPreviousMonthClick,
-            onNextClick = onNextMonthClick,
-            hazeState = hazeState,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(horizontal = 20.dp, vertical = 16.dp)
-        )
     }
 }
 
 @Composable
 private fun BalanceHero(balance: Money) {
+    val colors = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .shadow(14.dp, RoundedCornerShape(28.dp), spotColor = colors.primary.copy(alpha = 0.22f))
             .clip(RoundedCornerShape(28.dp))
-            .background(FinancesThemeTokens.colors.heroSurface)
+            .background(Brush.linearGradient(listOf(
+                androidx.compose.ui.graphics.lerp(colors.primary, Color.Black, 0.18f), colors.primary
+            )))
+            .border(1.dp, colors.onPrimary.copy(alpha = 0.32f), RoundedCornerShape(28.dp))
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Text(
                 text = "VISÃO DO MÊS",
                 style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.4.sp),
-                color = FinancesThemeTokens.colors.heroLabel
+                color = colors.onPrimary.copy(alpha = 0.85f)
             )
             Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = "Saldo do mês",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+                color = colors.onPrimary.copy(alpha = 0.85f)
             )
             Text(
                 text = MoneyFormatter.format(balance),
                 style = MaterialTheme.typography.headlineMedium,
-                color = if (balance.cents >= 0) FinancesThemeTokens.colors.income else FinancesThemeTokens.colors.expense
+                color = colors.onPrimary,
+                fontWeight = FontWeight.Bold
             )
         }
     }

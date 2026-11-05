@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.data.repository
 
 import androidx.room.withTransaction
+import br.com.otavioesteves.finances.data.local.ESSENTIAL_CATEGORIES
 import br.com.otavioesteves.finances.data.local.AppDatabase
 import br.com.otavioesteves.finances.data.local.entity.CategoryEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
@@ -12,7 +13,6 @@ import br.com.otavioesteves.finances.domain.model.TransactionExportModel
 import br.com.otavioesteves.finances.domain.model.StatementImportExportModel
 import br.com.otavioesteves.finances.domain.model.ChatMessageExportModel
 import br.com.otavioesteves.finances.domain.repository.BackupRepository
-import br.com.otavioesteves.finances.domain.model.CategoryType
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -88,9 +88,9 @@ class RoomBackupRepository(
                 CategoryEntity(it.id, it.name, it.type)
             }
             database.categoryDao().insertCategories(categories)
-            if (categories.none { it.type == CategoryType.TRANSFER }) {
-                database.categoryDao().insertCategories(listOf(CategoryEntity(name = "Transferência", type = CategoryType.TRANSFER)))
-            }
+            database.categoryDao().insertCategories(
+                ESSENTIAL_CATEGORIES.filter { required -> categories.none { it.type == required.type } }
+            )
 
             val transactions = backup.transactions.map {
                 TransactionEntity(
@@ -112,6 +112,7 @@ class RoomBackupRepository(
             database.chatMessageDao().insertMessages(backup.chatMessages.map {
                 ChatMessageEntity(it.id, it.role, it.content, LocalDateTime.parse(it.createdAt))
             })
+            database.markDataRestored()
         }
     }
 }

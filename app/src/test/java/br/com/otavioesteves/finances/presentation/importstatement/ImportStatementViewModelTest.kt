@@ -27,6 +27,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -141,11 +143,12 @@ class ImportStatementViewModelTest {
         parserFailure: Exception? = null,
         parserRepository: FakeStatementParserRepository = FakeStatementParserRepository(entries, parserFailure),
         statementImportRepository: FakeStatementImportRepository = FakeStatementImportRepository(),
-        existingTransactions: List<Transaction> = emptyList()
+        existingTransactions: List<Transaction> = emptyList(),
+        categorizer: TransactionCategorizer = FakeTransactionCategorizer(suggestions)
     ): ImportStatementViewModel {
         val importStatement = ImportStatementUseCase(parserRepository)
         val synthesizeStatement = SynthesizeStatementUseCase(
-            FakeTransactionCategorizer(suggestions),
+            categorizer,
             FakeCategoriesRepository(categories)
         )
         val confirmStatementImport = ConfirmStatementImportUseCase(
@@ -161,6 +164,89 @@ class ImportStatementViewModelTest {
             ioDispatcher = testDispatcher,
             cpuDispatcher = testDispatcher
         )
+    }
+
+    @Test
+    fun `processing reports measured categorization progress and finishes only in review`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val entries = listOf(entry, entry.copy(description = "Segunda compra"))
+        val repository = FakeStatementImportRepository()
+        val states = mutableListOf<ImportStatementUiState>()
+        val categorizer = object : TransactionCategorizer {
+            override suspend fun categorize(entries: List<RawStatementEntry>, categories: List<Category>, onProgress: (Int, Int) -> Unit): Result<List<CategorySuggestion>> {
+                onProgress(1, entries.size)
+                gate.await()
+                onProgress(entries.size, entries.size)
+                return Result.success(entries.map { CategorySuggestion(it, mercado, 0.8f) })
+            }
+        }
+        val vm = createViewModel(entries = entries, categorizer = categorizer, statementImportRepository = repository)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect { states += it } }
+        vm.onFileSelected("minha-fatura.pdf", byteArrayOf(1), StatementKind.CARD_BILL)
+        assertEquals(ImportProcessingStage.READING, (vm.uiState.value as ImportStatementUiState.Loading).stage)
+        testDispatcher.scheduler.runCurrent()
+        val processing = vm.uiState.value as ImportStatementUiState.Loading
+        assertEquals("minha-fatura.pdf", processing.fileName)
+        assertEquals(ImportProcessingStage.CATEGORIZING, processing.stage)
+        assertEquals(0.5f, processing.progress!!, 0.0001f)
+        assertEquals(1, processing.processedEntries)
+        assertTrue(repository.imports.isEmpty())
+
+        gate.complete(Unit)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is ImportStatementUiState.ReviewingSuggestions)
+        assertEquals(ImportProcessingStage.entries.toList(), states.filterIsInstance<ImportStatementUiState.Loading>().map { it.stage }.distinct())
+        assertTrue(states.filterIsInstance<ImportStatementUiState.Loading>().none { it.progress == 1f })
+        assertTrue(repository.imports.isEmpty())
+    }
+
+    @Test
+    fun `cancelled or replaced categorization callbacks cannot replace newer state`() = runTest {
+        val callbacks = mutableListOf<(Int, Int) -> Unit>()
+        val categorizer = object : TransactionCategorizer {
+            override suspend fun categorize(entries: List<RawStatementEntry>, categories: List<Category>, onProgress: (Int, Int) -> Unit): Result<List<CategorySuggestion>> {
+                callbacks += onProgress
+                CompletableDeferred<Unit>().await()
+                return Result.success(emptyList())
+            }
+        }
+        val vm = createViewModel(entries = listOf(entry, entry), categorizer = categorizer)
+        vm.onFileSelected("primeiro.pdf", byteArrayOf(1))
+        testDispatcher.scheduler.runCurrent()
+        assertEquals(1, callbacks.size)
+        vm.onStartOver()
+        callbacks[0](1, 2)
+        assertEquals(ImportStatementUiState.Idle, vm.uiState.value)
+
+        vm.onFileSelected("novo.pdf", byteArrayOf(2))
+        testDispatcher.scheduler.runCurrent()
+        assertEquals(2, callbacks.size)
+        callbacks[0](1, 2)
+        val state = vm.uiState.value as ImportStatementUiState.Loading
+        assertEquals("novo.pdf", state.fileName)
+        assertEquals(0, state.processedEntries)
+        callbacks[1](1, 2)
+        assertEquals(1, (vm.uiState.value as ImportStatementUiState.Loading).processedEntries)
+        vm.onStartOver()
+        testDispatcher.scheduler.advanceUntilIdle()
+    }
+
+    @Test
+    fun `failed categorization never reports completed processing`() = runTest {
+        val states = mutableListOf<ImportStatementUiState>()
+        val categorizer = object : TransactionCategorizer {
+            override suspend fun categorize(entries: List<RawStatementEntry>, categories: List<Category>, onProgress: (Int, Int) -> Unit): Result<List<CategorySuggestion>> {
+                onProgress(entries.size, entries.size)
+                return Result.failure(IllegalStateException("Falha ao organizar categorias"))
+            }
+        }
+        val vm = createViewModel(categorizer = categorizer)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect { states += it } }
+        vm.onFileSelected("fatura.pdf", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals("Falha ao organizar categorias", (vm.uiState.value as ImportStatementUiState.Error).message)
+        assertTrue(states.filterIsInstance<ImportStatementUiState.Loading>().none { it.progress == 1f })
+        assertTrue(states.none { it is ImportStatementUiState.ReviewingSuggestions || it is ImportStatementUiState.Success })
     }
 
     @Test

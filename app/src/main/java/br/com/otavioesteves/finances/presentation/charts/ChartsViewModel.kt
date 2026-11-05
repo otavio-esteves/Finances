@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.presentation.charts
 
 import androidx.lifecycle.ViewModel
+import br.com.otavioesteves.finances.domain.state.SelectedMonthState
 import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.Category
@@ -57,9 +58,11 @@ class ChartsViewModel(
     private val transactionsRepository: TransactionsRepository,
     private val categoriesRepository: CategoriesRepository,
     private val dateProvider: DateProvider,
-    private val computationDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val computationDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val monthSelection: SelectedMonthState = SelectedMonthState(dateProvider.getCurrentMonthPeriod())
 ) : ViewModel() {
-    private val selectedMonth = MutableStateFlow(dateProvider.getCurrentMonthPeriod())
+    val selectedMonthPeriod = monthSelection.period
+    private val selectedMonth = selectedMonthPeriod
     private val selectedCategory = MutableStateFlow<Long?>(null)
     private val _exampleAction = MutableStateFlow(ExampleActionState())
     val exampleAction = _exampleAction.asStateFlow()
@@ -103,7 +106,7 @@ class ChartsViewModel(
     )
 
     fun onMonthSelected(period: MonthPeriod) {
-        selectedMonth.value = period
+        monthSelection.select(period)
     }
 
     fun onCategorySelected(categoryId: Long) {

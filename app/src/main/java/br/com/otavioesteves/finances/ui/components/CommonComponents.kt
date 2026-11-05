@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
@@ -39,10 +41,9 @@ import dev.chrisbanes.haze.HazeState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("UNUSED_PARAMETER")
 fun financeTopAppBarColors(isAtTop: Boolean = true) = TopAppBarDefaults.topAppBarColors(
-    containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.Black else Color.White,
-    scrolledContainerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.Black else Color.White,
+    containerColor = if (isAtTop) Color.Transparent else MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+    scrolledContainerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
     navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
     titleContentColor = MaterialTheme.colorScheme.onBackground,
     actionIconContentColor = MaterialTheme.colorScheme.onBackground
@@ -52,6 +53,7 @@ fun financeTopAppBarColors(isAtTop: Boolean = true) = TopAppBarDefaults.topAppBa
 fun FinanceCard(
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surface,
+    borderColor: Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f),
     content: @Composable () -> Unit
 ) {
     Card(
@@ -60,7 +62,7 @@ fun FinanceCard(
             containerColor = containerColor
         ),
         shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)),
+        border = BorderStroke(1.dp, borderColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         content()
@@ -140,7 +142,7 @@ fun PrimaryActionButton(
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
         shape = MaterialTheme.shapes.large,
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
@@ -157,6 +159,21 @@ fun PrimaryActionButton(
 }
 
 @Composable
+fun FinanceGlassIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.size(48.dp).glassBackdrop(LocalFinanceGlassState.current).liquidGlass(),
+        content = content
+    )
+}
+
+@Composable
 fun MonthPeriodSelector(
     monthPeriod: MonthPeriod,
     onPreviousClick: () -> Unit,
@@ -166,11 +183,12 @@ fun MonthPeriodSelector(
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(
             onClick = onPreviousClick,
+            enabled = monthPeriod.year > 1 || monthPeriod.month > 1,
             modifier = Modifier
                 .size(48.dp)
                 .glassBackdrop(hazeState)
@@ -184,10 +202,11 @@ fun MonthPeriodSelector(
         }
         Box(
             modifier = Modifier
-                .height(48.dp)
+                .weight(1f, fill = false)
+                .heightIn(min = 48.dp)
                 .glassBackdrop(hazeState)
                 .liquidGlass()
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = 18.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -195,11 +214,14 @@ fun MonthPeriodSelector(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                overflow = TextOverflow.Ellipsis
             )
         }
         IconButton(
             onClick = onNextClick,
+            enabled = monthPeriod.year < 9999 || monthPeriod.month < 12,
             modifier = Modifier
                 .size(48.dp)
                 .glassBackdrop(hazeState)
@@ -239,7 +261,7 @@ fun EmptyState(
             PrimaryActionButton(
                 text = actionLabel,
                 onClick = it,
-                modifier = Modifier.fillMaxWidth(0.6f)
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

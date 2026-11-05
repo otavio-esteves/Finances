@@ -19,6 +19,14 @@ class ThemePreferences(context: Context) {
     )
     val palette = _palette.asStateFlow()
 
+    private val _allowScreenshots = MutableStateFlow(preferences.getBoolean("allow_screenshots", false))
+    val allowScreenshots = _allowScreenshots.asStateFlow()
+
+    fun setAllowScreenshots(allowed: Boolean) {
+        _allowScreenshots.value = allowed
+        preferences.edit().putBoolean("allow_screenshots", allowed).apply()
+    }
+
     fun setMode(mode: ThemeMode) {
         _mode.value = mode
         preferences.edit().putString("theme_mode", mode.name).apply()

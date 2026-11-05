@@ -74,7 +74,7 @@ class NavbarPerformanceTest {
         try {
             rule.waitForIdle()
             // Warm the renderer on every page before comparing repeated taps.
-            listOf("Gráficos", "Transações", "Chat", "Início").forEach {
+            listOf("Gráficos", "Transações", "Início").forEach {
                 rule.onNodeWithContentDescription(it).performClick(); rule.waitForIdle()
             }
             fun requireAppInForeground() {
@@ -86,7 +86,7 @@ class NavbarPerformanceTest {
             requireAppInForeground()
             rule.runOnUiThread { rule.activity.window.addOnFrameMetricsAvailableListener(listener, Handler(thread.looper)) }
             listenerAdded = true
-            val sequence = listOf("Gráficos", "Transações", "Chat", "Início", "Chat", "Gráficos", "Início", "Transações")
+            val sequence = listOf("Gráficos", "Transações", "Início", "Gráficos", "Início", "Transações")
             repeat(3) {
                 sequence.forEach { tab ->
                     val start = SystemClock.elapsedRealtimeNanos()

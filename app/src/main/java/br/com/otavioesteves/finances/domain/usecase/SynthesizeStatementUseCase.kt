@@ -13,9 +13,12 @@ class SynthesizeStatementUseCase(
     private val transactionCategorizer: TransactionCategorizer,
     private val categoriesRepository: CategoriesRepository
 ) {
-    suspend operator fun invoke(entries: List<RawStatementEntry>): List<CategorySuggestion> {
+    suspend operator fun invoke(
+        entries: List<RawStatementEntry>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
+    ): List<CategorySuggestion> {
         val knownCategories = categoriesRepository.getCategories().first()
-        val suggestions = transactionCategorizer.categorize(entries, knownCategories).getOrThrow()
+        val suggestions = transactionCategorizer.categorize(entries, knownCategories, onProgress).getOrThrow()
         val transferCategory = knownCategories.firstOrNull { it.type == CategoryType.TRANSFER }
         return suggestions.map { suggestion ->
             if (transferCategory != null && (suggestion.entry.type == TransactionType.TRANSFER ||

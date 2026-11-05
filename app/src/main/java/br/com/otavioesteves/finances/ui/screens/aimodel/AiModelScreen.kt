@@ -21,7 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import br.com.otavioesteves.finances.ui.components.FinanceGlassIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -94,7 +94,7 @@ fun AiModelScreen(
                 colors = financeTopAppBarColors(scrollState.value == 0),
                 title = { Text("Modelo de IA") },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    FinanceGlassIconButton(onClick = onBackClick) {
                         Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 }

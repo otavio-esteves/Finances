@@ -70,6 +70,38 @@ class RealLayoutRegressionTest {
     }
 
     @Test
+    fun picpaySubtotalsSplitAcrossPositionedCellsAreNotTransactionDates() {
+        val subtotals = listOf(
+            "Subtotal\tdos lançamentos\t50,00",
+            "\tSubtotal dos lançamentos\t50,00",
+            "\t\tSubtotal dos lançamentos 50,00",
+            "Subtotal dos\tlançamentos\tR$ 50,00"
+        )
+        for (subtotal in subtotals) {
+            val text = "PicPay\nFechamento: 29/01/2025\n\u000c\nTransações Nacionais\n" +
+                "data\tdescricao\tvalor\n" +
+                "02/01\tMercado Exemplo\t20,00\n" +
+                "03/01\tFarmácia Exemplo\t30,00\n" + subtotal
+            val entries = parser.parseText(text, StatementKind.CARD_BILL, strictUnmatchedMoney = true)
+            assertEquals(subtotal, listOf(2000L, 3000L), entries.map { it.amount.cents })
+            assertEquals(listOf(LocalDate.of(2025, 1, 2), LocalDate.of(2025, 1, 3)), entries.map { it.date })
+        }
+    }
+
+    @Test
+    fun subtotalDoesNotCompleteAnUnfinishedTransactionOrHideAnInvalidDate() {
+        val prefix = "Fatura de janeiro/2025\ndata\tdescricao\tvalor\n"
+        for (row in listOf("03/01\tCompra incompleta\t", "31/02/2025\tCompra inválida\t20,00")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                parser.parseText(prefix + row + "\nSubtotal\tdos lançamentos\t20,00", StatementKind.CARD_BILL)
+            }
+        }
+        val datedPurchase = parser.parseText(prefix + "03/01\tSubtotal dos lançamentos Loja Exemplo\t20,00",
+            StatementKind.CARD_BILL)
+        assertEquals("Subtotal dos lançamentos Loja Exemplo", datedPurchase.single().description)
+    }
+
+    @Test
     fun independentCardColumnsIncludePurchasesAboveTheFirstHeader() {
         val words = listOf(
             w("PicPay", 20f, 10f),

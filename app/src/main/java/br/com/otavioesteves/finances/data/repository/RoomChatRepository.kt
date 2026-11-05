@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.data.repository
 
-import br.com.otavioesteves.finances.data.local.dao.ChatMessageDao
+import br.com.otavioesteves.finances.data.local.AppDatabase
+import androidx.room.withTransaction
 import br.com.otavioesteves.finances.data.local.mapper.toDomain
 import br.com.otavioesteves.finances.data.local.mapper.toEntity
 import br.com.otavioesteves.finances.domain.model.ChatMessage
@@ -12,8 +13,10 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
 
 class RoomChatRepository(
-    private val chatMessageDao: ChatMessageDao
+    private val database: AppDatabase
 ) : ChatRepository {
+    private val chatMessageDao = database.chatMessageDao()
+    override val dataRevision: Long get() = database.dataRevision
 
     override fun getMessages(): Flow<List<ChatMessage>> {
         return chatMessageDao.getAllMessages().distinctUntilChanged()
@@ -28,5 +31,12 @@ class RoomChatRepository(
 
     override suspend fun addMessage(message: ChatMessage) {
         chatMessageDao.insertMessage(message.toEntity())
+    }
+
+    override suspend fun addMessage(message: ChatMessage, expectedRevision: Long) {
+        database.withTransaction {
+            check(dataRevision == expectedRevision) { "Os dados foram restaurados. Envie a pergunta novamente." }
+            chatMessageDao.insertMessage(message.toEntity())
+        }
     }
 }

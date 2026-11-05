@@ -5,5 +5,6 @@ enum class ThemeMode(val label: String) {
 }
 
 enum class ThemePalette(val label: String) {
-    RED("Vermelho e laranja"), ORANGE("Laranja"), BLUE("Azul"), GREEN("Verde"), PURPLE("Roxo")
+    RED("Vermelho e laranja"), ORANGE("Laranja"), BLUE("Azul"), GREEN("Verde"), PURPLE("Roxo"),
+    PINK("Rosa"), TEAL("Turquesa"), GOLD("Dourado"), MONOCHROME("Preto e branco")
 }

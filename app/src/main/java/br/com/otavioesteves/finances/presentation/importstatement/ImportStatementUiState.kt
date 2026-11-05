@@ -7,7 +7,17 @@ sealed interface ImportStatementUiState {
 
     data object Idle : ImportStatementUiState
 
-    data object Loading : ImportStatementUiState
+    data class Loading(
+        val fileName: String,
+        val stage: ImportProcessingStage = ImportProcessingStage.READING,
+        val processedEntries: Int = 0,
+        val totalEntries: Int? = null
+    ) : ImportStatementUiState {
+        /** Only categorization reports measured work; extraction/OCR has no estimated percentage. */
+        val progress: Float?
+            get() = totalEntries?.takeIf { it > 0 && stage == ImportProcessingStage.CATEGORIZING }
+                ?.let { processedEntries.coerceIn(0, it).toFloat() / it }
+    }
     data class NeedsPassword(val fileName: String, val error: String? = null) : ImportStatementUiState
 
     data class ReviewingSuggestions(
@@ -32,4 +42,8 @@ sealed interface ImportStatementUiState {
     data class Success(val transactionCount: Int) : ImportStatementUiState
 
     data class Error(val message: String) : ImportStatementUiState
+}
+
+enum class ImportProcessingStage {
+    READING, EXTRACTING, CHECKING_OVERLAPS, CATEGORIZING, PREPARING_REVIEW
 }

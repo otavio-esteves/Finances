@@ -3,6 +3,7 @@ package br.com.otavioesteves.finances.presentation.addtransaction
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.domain.DateProvider
+import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.Category
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
@@ -40,11 +41,27 @@ class AddTransactionViewModel(
 
     init {
         viewModelScope.launch {
-            val categories = categoriesRepository.getCategories().first()
-            _uiState.update { it.copy(categories = categories) }
-            
-            if (transactionId != null && transactionId > 0) {
-                loadTransaction(transactionId)
+            try {
+                categoriesRepository.getCategories().collect { categories ->
+                    _uiState.update { state ->
+                        val selectedId = state.selectedCategory?.id ?: editingTransaction?.categoryId
+                        state.copy(
+                            categories = categories,
+                            selectedCategory = categories.firstOrNull {
+                                it.id == selectedId && it.type.name == state.type.name
+                            }
+                        )
+                    }
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _uiState.update { it.copy(error = "Erro ao carregar categorias") } }
+        }
+        if (isEditMode) {
+            _uiState.update { it.copy(isLoading = true) }
+            viewModelScope.launch {
+                try { loadTransaction(requireNotNull(transactionId)) }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) { _uiState.update { it.copy(isLoading = false, error = "Erro ao carregar transação") } }
             }
         }
     }
@@ -95,6 +112,46 @@ class AddTransactionViewModel(
         _uiState.update { it.copy(selectedCategory = category, categoryError = null) }
     }
 
+    fun showCreateCategory() {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(showCategoryCreation = true, categoryCreationError = null) }
+    }
+
+    fun dismissCreateCategory() {
+        if (_uiState.value.isCreatingCategory) return
+        _uiState.update { it.copy(showCategoryCreation = false, categoryCreationError = null) }
+    }
+
+    fun createCategory(name: String) {
+        val state = _uiState.value
+        if (!state.showCategoryCreation || state.isCreatingCategory || state.isSaving) return
+        val normalized = name.trim().replace(Regex("\\s+"), " ")
+        if (normalized.isBlank() || normalized.length > 80) {
+            _uiState.update { it.copy(categoryCreationError = "Informe um nome com até 80 caracteres.") }
+            return
+        }
+        _uiState.update { it.copy(isCreatingCategory = true, categoryCreationError = null) }
+        viewModelScope.launch {
+            try {
+                val category = categoriesRepository.createCategory(normalized, CategoryType.valueOf(state.type.name))
+                _uiState.update { current ->
+                    current.copy(
+                        categories = (current.categories + category).distinctBy { it.id },
+                        selectedCategory = if (current.type == state.type) category else current.selectedCategory,
+                        categoryError = null,
+                        showCategoryCreation = false,
+                        isCreatingCategory = false
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isCreatingCategory = false,
+                    categoryCreationError = e.message ?: "Não foi possível criar a categoria.") }
+            }
+        }
+    }
+
     fun onDateChange(date: LocalDate) {
         _uiState.update { it.copy(date = date, dateError = null) }
     }
@@ -143,8 +200,14 @@ class AddTransactionViewModel(
         }
 
         val parsedAmount = MoneyFormatter.parse(currentState.amount)
-        if (parsedAmount == null || !parsedAmount.isPositive()) {
-            _uiState.update { it.copy(amountError = "Valor deve ser maior que zero") }
+        val amountError = when {
+            parsedAmount == null -> "Informe um valor válido"
+            parsedAmount.isNegative() -> "Valor não pode ser negativo"
+            !isEditMode && parsedAmount.isZero() -> "Valor deve ser maior que zero"
+            else -> null
+        }
+        if (amountError != null) {
+            _uiState.update { it.copy(amountError = amountError) }
             hasError = true
         }
 

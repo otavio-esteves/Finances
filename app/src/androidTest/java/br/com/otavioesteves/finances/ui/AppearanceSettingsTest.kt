@@ -15,6 +15,9 @@ import br.com.otavioesteves.finances.MainApplication
 import br.com.otavioesteves.finances.data.preferences.ThemePreferences
 import br.com.otavioesteves.finances.domain.model.ThemeMode
 import br.com.otavioesteves.finances.domain.model.ThemePalette
+import android.view.WindowManager
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -23,6 +26,34 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AppearanceSettingsTest {
     @get:Rule val composeRule = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun screenshotChoiceAppliesImmediatelyAndSurvivesRecreation() {
+        val preferences = (composeRule.activity.application as MainApplication).themePreferences
+        val original = preferences.allowScreenshots.value
+        fun isSecure() = composeRule.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
+        try {
+            composeRule.runOnIdle { preferences.setAllowScreenshots(false) }
+            composeRule.waitForIdle()
+            composeRule.runOnIdle { assertTrue(isSecure()) }
+            composeRule.onNodeWithContentDescription("Abrir menu").performClick()
+            composeRule.onNodeWithText("Configurações").performScrollTo().performClick()
+            composeRule.onNodeWithText("Permitir capturas de tela").performScrollTo().performClick()
+            composeRule.waitUntil(5_000) { !isSecure() }
+            composeRule.runOnIdle {
+                assertTrue(ThemePreferences(composeRule.activity).allowScreenshots.value)
+                assertFalse(isSecure())
+            }
+            composeRule.activityRule.scenario.recreate()
+            composeRule.waitUntil(5_000) { !isSecure() }
+            composeRule.runOnIdle { assertFalse(isSecure()) }
+            composeRule.onNodeWithText("Permitir capturas de tela").performScrollTo().performClick()
+            composeRule.waitUntil(5_000) { isSecure() }
+            composeRule.runOnIdle { assertTrue(isSecure()) }
+        } finally {
+            composeRule.runOnIdle { preferences.setAllowScreenshots(original) }
+        }
+    }
 
     @Test
     fun appearanceChoicesApplyAndPersist() {
@@ -42,7 +73,7 @@ class AppearanceSettingsTest {
             }
             ThemePalette.entries.forEach { palette ->
                 composeRule.onNodeWithText("Paleta de cores").performClick()
-                composeRule.onNode(hasText(palette.label) and hasAnyAncestor(isDialog())).performClick()
+                composeRule.onNode(hasText(palette.label) and hasAnyAncestor(isDialog())).performScrollTo().performClick()
                 composeRule.onNodeWithText(palette.label).assertIsDisplayed()
                 composeRule.runOnIdle {
                     assertEquals(palette, ThemePreferences(composeRule.activity).palette.value)
@@ -50,7 +81,7 @@ class AppearanceSettingsTest {
             }
             composeRule.activityRule.scenario.recreate()
             composeRule.onNodeWithText("Aparelho").assertIsDisplayed()
-            composeRule.onNodeWithText("Roxo").assertIsDisplayed()
+            composeRule.onNodeWithText(ThemePalette.entries.last().label).assertIsDisplayed()
         } finally {
             composeRule.runOnIdle {
                 preferences.setMode(originalMode)

@@ -3,6 +3,7 @@ package br.com.otavioesteves.finances.presentation.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.domain.model.ChatMessage
+import br.com.otavioesteves.finances.domain.model.ChatSendRequest
 import br.com.otavioesteves.finances.domain.usecase.GetChatHistoryUseCase
 import br.com.otavioesteves.finances.domain.usecase.SendChatMessageUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +32,7 @@ class ChatViewModel(
     private val historyLimit = MutableStateFlow(HISTORY_PAGE_SIZE)
 
     private val draft = MutableStateFlow("")
+    private var retryRequest: ChatSendRequest? = null
     val draftState: StateFlow<String> = draft.asStateFlow()
     private val isSending = MutableStateFlow(false)
     val isSendingState: StateFlow<Boolean> = isSending.asStateFlow()
@@ -75,6 +77,7 @@ class ChatViewModel(
 
     fun onDraftChange(value: String) {
         draft.value = value
+        if (retryRequest?.message != value.trim()) retryRequest = null
     }
 
     fun clearError() {
@@ -92,13 +95,19 @@ class ChatViewModel(
         isSending.value = true
         error.value = null
         draft.value = ""
+        val request = retryRequest?.takeIf { it.message == message } ?: ChatSendRequest(message)
+        retryRequest = request
         viewModelScope.launch {
             try {
-                sendChatMessage(message)
+                sendChatMessage(request)
+                if (retryRequest === request) retryRequest = null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (draft.value.isBlank()) draft.value = message
+                if (draft.value.isBlank()) {
+                    draft.value = message
+                    retryRequest = request
+                }
                 error.value = "Não foi possível enviar a mensagem. Tente novamente."
             } finally {
                 isSending.value = false

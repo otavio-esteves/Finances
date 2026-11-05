@@ -4,5 +4,5 @@ enum class MainTab {
     HOME,
     CHARTS,
     TRANSACTIONS,
-    CHAT
+    CATEGORIES
 }

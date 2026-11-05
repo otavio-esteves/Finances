@@ -2,6 +2,10 @@ package br.com.otavioesteves.finances.data.statement
 
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.model.StatementKind
+import br.com.otavioesteves.finances.domain.model.Money
+import br.com.otavioesteves.finances.domain.model.Transaction
+import br.com.otavioesteves.finances.utils.ExportFormat
+import br.com.otavioesteves.finances.utils.TransactionExporter
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -11,6 +15,65 @@ import java.time.LocalDate
 class CsvOfxStatementParserTest {
 
     private val parser = CsvOfxStatementParser()
+
+    @Test
+    fun parse_nativeExport_preservesAmountsTypesDatesAndQuotedDescriptionsForEitherStatementKind() = runBlocking {
+        val date = LocalDate.of(2026, 11, 1)
+        val transactions = listOf(
+            Transaction(1, "Mercado, com \"aspas\"\ne continuação", Money(1_000), 1, date, TransactionType.EXPENSE),
+            Transaction(2, "Salário", Money(350_050), 2, date.plusDays(1), TransactionType.INCOME),
+            Transaction(3, "Entre contas", Money(1), 3, date.plusDays(2), TransactionType.TRANSFER),
+            Transaction(4, "Lançamento zerado", Money.Zero, 1, date.plusDays(3), TransactionType.EXPENSE),
+            Transaction(5, "Limite de centavos", Money(Long.MAX_VALUE), 2, date.plusDays(4), TransactionType.INCOME)
+        )
+        val csv = TransactionExporter().export(transactions, emptyMap(), ExportFormat.CSV)
+
+        for (kind in StatementKind.entries) {
+            val entries = parser.parse("finances.csv", csv.toByteArray(), kind)
+            assertEquals(transactions.map { it.description }, entries.map { it.description })
+            assertEquals(transactions.map { it.amount }, entries.map { it.amount })
+            assertEquals(transactions.map { it.date }, entries.map { it.date })
+            assertEquals(transactions.map { it.type }, entries.map { it.type })
+        }
+    }
+
+    @Test
+    fun parse_nativeExport_acceptsReorderedColumnsWithoutLosingTheExplicitType() = runBlocking {
+        val csv = "Tipo;Valor (Centavos);Descrição;Data;ID;Observações;Categoria\n" +
+            "TRANSFER;0;Entre contas;2026-11-01;1;;Transferência"
+
+        val entry = parser.parse("finances.csv", csv.toByteArray()).single()
+
+        assertEquals(Money.Zero, entry.amount)
+        assertEquals(TransactionType.TRANSFER, entry.type)
+    }
+
+    @Test
+    fun parse_nativeExport_rejectsInvalidCentsAndTypesInsteadOfUsingBankSignRules() {
+        val header = "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações\n"
+        for ((amount, type) in listOf(
+            "-1000" to "EXPENSE", "10.00" to "INCOME", "10,00" to "INCOME",
+            "9223372036854775808" to "INCOME", "1000" to "UNKNOWN", "1000" to ""
+        )) {
+            val csv = header + "1,2026-11-01,Teste,\"$amount\",$type,Outros,"
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("finances.csv", csv.toByteArray()) }
+            }
+        }
+    }
+
+    @Test
+    fun parse_csv_rejectsIncompleteOrDuplicateNativeHeadersRatherThanMultiplyingCents() {
+        for (csv in listOf(
+            "Data,Descrição,Valor (Centavos)\n2026-11-01,Mercado,1000",
+            "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Tipo\n1,2026-11-01,Mercado,1000,EXPENSE,Outros,EXPENSE",
+            "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações\n1,2026-11-01,Mercado,1000,EXPENSE,Outros"
+        )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("finances.csv", csv.toByteArray()) }
+            }
+        }
+    }
 
     @Test
     fun parse_csv_rejectsInvalidCalendarDatesAndAcceptsLeapDay() = runBlocking {

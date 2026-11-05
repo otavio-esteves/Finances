@@ -9,7 +9,8 @@ import br.com.otavioesteves.finances.MainApplication
 import br.com.otavioesteves.finances.presentation.addtransaction.AddTransactionViewModel
 import br.com.otavioesteves.finances.presentation.aimodel.AiModelViewModel
 import br.com.otavioesteves.finances.presentation.categories.CategoriesViewModel
-import br.com.otavioesteves.finances.presentation.chat.ChatViewModel
+import br.com.otavioesteves.finances.presentation.categories.CategoryDetailsViewModel
+import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.presentation.charts.ChartsViewModel
 import br.com.otavioesteves.finances.presentation.dashboard.DashboardViewModel
 import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementViewModel
@@ -36,7 +37,22 @@ object AppViewModelProvider {
         initializer {
             CategoriesViewModel(
                 getCategorySummaries = financesApplication().container.getCategorySummariesUseCase,
-                dateProvider = financesApplication().container.dateProvider
+                dateProvider = financesApplication().container.dateProvider,
+                categoriesRepository = financesApplication().container.categoriesRepository,
+                monthSelection = financesApplication().container.selectedMonth
+            )
+        }
+        initializer {
+            val args = createSavedStateHandle()
+            val year = args.get<Int>(FinancesRoute.CategoryDetails.ARG_YEAR) ?: 0
+            val month = args.get<Int>(FinancesRoute.CategoryDetails.ARG_MONTH) ?: 0
+            CategoryDetailsViewModel(
+                categoryId = requireNotNull(args.get<Long>(FinancesRoute.CategoryDetails.ARG_CATEGORY_ID)),
+                period = if (year in 1..9999 && month in 1..12) MonthPeriod(year, month)
+                    else financesApplication().container.selectedMonth.period.value,
+                categoriesRepository = financesApplication().container.categoriesRepository,
+                getTransactionsByMonth = financesApplication().container.getTransactionsByMonthUseCase,
+                monthSelection = financesApplication().container.selectedMonth
             )
         }
         initializer {
@@ -45,7 +61,8 @@ object AppViewModelProvider {
                 getTransactionsByMonth = financesApplication().container.getTransactionsByMonthUseCase,
                 getCategorySummaries = financesApplication().container.getCategorySummariesUseCase,
                 categoriesRepository = financesApplication().container.categoriesRepository,
-                dateProvider = financesApplication().container.dateProvider
+                dateProvider = financesApplication().container.dateProvider,
+                selectedMonth = financesApplication().container.selectedMonth
             )
         }
         initializer {
@@ -53,7 +70,8 @@ object AppViewModelProvider {
                 getCategorySummaries = financesApplication().container.getCategorySummariesUseCase,
                 transactionsRepository = financesApplication().container.transactionsRepository,
                 categoriesRepository = financesApplication().container.categoriesRepository,
-                dateProvider = financesApplication().container.dateProvider
+                dateProvider = financesApplication().container.dateProvider,
+                monthSelection = financesApplication().container.selectedMonth
             )
         }
         initializer {
@@ -61,19 +79,15 @@ object AppViewModelProvider {
                 getTransactionsByMonth = financesApplication().container.getTransactionsByMonthUseCase,
                 deleteTransaction = financesApplication().container.deleteTransactionUseCase,
                 categoriesRepository = financesApplication().container.categoriesRepository,
-                dateProvider = financesApplication().container.dateProvider
+                dateProvider = financesApplication().container.dateProvider,
+                savedStateHandle = createSavedStateHandle(),
+                monthSelection = financesApplication().container.selectedMonth
             )
         }
         initializer {
             SettingsViewModel(
                 createBackup = financesApplication().container.createBackupUseCase,
                 restoreBackup = financesApplication().container.restoreBackupUseCase
-            )
-        }
-        initializer {
-            ChatViewModel(
-                getChatHistory = financesApplication().container.getChatHistoryUseCase,
-                sendChatMessage = financesApplication().container.sendChatMessageUseCase
             )
         }
         initializer {

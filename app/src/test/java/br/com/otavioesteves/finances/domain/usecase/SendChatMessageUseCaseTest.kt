@@ -6,6 +6,7 @@ import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.ChatMessage
 import br.com.otavioesteves.finances.domain.model.ChatRole
+import br.com.otavioesteves.finances.domain.model.ChatSendRequest
 import br.com.otavioesteves.finances.domain.model.FinancialContext
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
@@ -14,9 +15,13 @@ import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.ChatRepository
 import br.com.otavioesteves.finances.domain.repository.LocalAiRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
+import br.com.otavioesteves.finances.domain.repository.FinancialContextRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,7 +51,7 @@ class SendChatMessageUseCaseTest {
         val localAiRepository = FakeLocalAiRepository(expectedReply)
         val chatRepository = FakeChatRepository()
 
-        val useCase = SendChatMessageUseCase(
+        val useCase = createUseCase(
             localAiRepository,
             chatRepository,
             getMonthlyBalanceUseCase,
@@ -76,7 +81,7 @@ class SendChatMessageUseCaseTest {
         val chat = FakeChatRepository()
         val transactions = FakeTransactionsRepository(Money.fromCents(100_000))
         val categories = FakeCategoriesRepository(emptyList())
-        val useCase = SendChatMessageUseCase(
+        val useCase = createUseCase(
             ai, chat,
             GetMonthlyBalanceUseCase(transactions),
             GetCategorySummariesUseCase(categories),
@@ -98,7 +103,7 @@ class SendChatMessageUseCaseTest {
         val period = MonthPeriod(2026, 2)
         val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "inventado", LocalDateTime.now()))
         val summaries = listOf(CategorySummary(Category(1, "Alimentação", CategoryType.EXPENSE), Money.fromCents(25_000)))
-        val useCase = SendChatMessageUseCase(
+        val useCase = createUseCase(
             ai, FakeChatRepository(),
             GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
             GetCategorySummariesUseCase(FakeCategoriesRepository(summaries)),
@@ -117,7 +122,7 @@ class SendChatMessageUseCaseTest {
         val period = MonthPeriod(2026, 2)
         val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "inventado", LocalDateTime.now()))
         val summaries = listOf(CategorySummary(Category(1, "Alimentação", CategoryType.EXPENSE), Money.fromCents(25_000)))
-        val useCase = SendChatMessageUseCase(
+        val useCase = createUseCase(
             ai, FakeChatRepository(),
             GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
             GetCategorySummariesUseCase(FakeCategoriesRepository(summaries)),
@@ -137,7 +142,7 @@ class SendChatMessageUseCaseTest {
         val period = MonthPeriod(2026, 1)
         val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "incorreto", LocalDateTime.now()))
         val chat = FakeChatRepository()
-        val useCase = SendChatMessageUseCase(
+        val useCase = createUseCase(
             ai, chat,
             GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.fromCents(100_000))),
             GetCategorySummariesUseCase(FakeCategoriesRepository(emptyList())),
@@ -158,7 +163,7 @@ class SendChatMessageUseCaseTest {
         val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "inventado", LocalDateTime.now()))
         val categories = FakeCategoriesRepository(emptyList(), listOf(Category(3, "Saúde", CategoryType.EXPENSE)))
         val chat = FakeChatRepository()
-        val useCase = SendChatMessageUseCase(
+        val useCase = createUseCase(
             ai, chat, GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
             GetCategorySummariesUseCase(categories), FakeDateProvider(period), categories
         )
@@ -190,6 +195,86 @@ class SendChatMessageUseCaseTest {
         assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei em 05/01/2026?", period))
         assertEquals(true, canAnswerWithCurrentMonth("Quanto gastei em janeiro de 2026?", period))
     }
+
+    @Test
+    fun retryIsIdempotentWhenCancellationArrivesAfterTheReplyWasCommitted() = runBlocking {
+        val period = MonthPeriod(2026, 1)
+        val reply = ChatMessage(0, ChatRole.ASSISTANT, "Resumo", LocalDateTime.of(2026, 1, 15, 10, 0))
+        val chat = FakeChatRepository()
+        val categories = FakeCategoriesRepository(emptyList())
+        val useCase = createUseCase(
+            FakeLocalAiRepository(reply), chat,
+            GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
+            GetCategorySummariesUseCase(categories), FakeDateProvider(period), categories
+        )
+        val request = ChatSendRequest("Faça um resumo das categorias.")
+        lateinit var sendJob: Job
+        chat.afterAssistantWrite = { sendJob.cancel() }
+        sendJob = launch(start = kotlinx.coroutines.CoroutineStart.LAZY) { useCase(request) }
+        sendJob.start()
+        sendJob.join()
+        assertTrue(sendJob.isCancelled)
+        assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), chat.savedMessages.map { it.role })
+
+        chat.afterAssistantWrite = null
+        assertEquals(reply, useCase(request))
+        assertEquals(2, chat.savedMessages.size)
+    }
+
+    @Test
+    fun retryAfterRestoreDiscardsCachedReplyAndResavesQuestionInTheNewDataset() = runBlocking {
+        val period = MonthPeriod(2026, 1)
+        val oldReply = ChatMessage(0, ChatRole.ASSISTANT, "Resposta antiga", LocalDateTime.of(2026, 1, 15, 10, 0))
+        val newReply = oldReply.copy(content = "Resposta dos dados restaurados")
+        val chat = FakeChatRepository().apply { failNextAssistantWrite = true }
+        val categories = FakeCategoriesRepository(emptyList())
+        val ai = FakeLocalAiRepository(oldReply)
+        val useCase = createUseCase(ai, chat,
+            GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
+            GetCategorySummariesUseCase(categories), FakeDateProvider(period), categories)
+        val request = ChatSendRequest("Faça um resumo das categorias.")
+        assertTrue(runCatching { useCase(request) }.isFailure)
+        assertEquals(1, ai.callCount)
+        assertEquals(listOf(ChatRole.USER), chat.savedMessages.map { it.role })
+
+        chat.restoreEmptyDataset()
+        ai.reply = newReply
+        assertEquals(newReply, useCase(request))
+        assertEquals(2, ai.callCount)
+        assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), chat.savedMessages.map { it.role })
+        assertEquals(newReply.content, chat.savedMessages.last().content)
+    }
+
+    @Test
+    fun restoreDuringInferenceRejectsStaleReplyAndNextRetryUsesTheNewDataset() = runBlocking {
+        val period = MonthPeriod(2026, 1)
+        val oldReply = ChatMessage(0, ChatRole.ASSISTANT, "Resposta antiga", LocalDateTime.of(2026, 1, 15, 10, 0))
+        val chat = FakeChatRepository()
+        val categories = FakeCategoriesRepository(emptyList())
+        val ai = FakeLocalAiRepository(oldReply).apply { beforeReply = { chat.restoreEmptyDataset() } }
+        val useCase = createUseCase(ai, chat,
+            GetMonthlyBalanceUseCase(FakeTransactionsRepository(Money.Zero)),
+            GetCategorySummariesUseCase(categories), FakeDateProvider(period), categories)
+        val request = ChatSendRequest("Faça um resumo das categorias.")
+        assertTrue(runCatching { useCase(request) }.exceptionOrNull() is IllegalStateException)
+        assertTrue(chat.savedMessages.isEmpty())
+
+        ai.beforeReply = null
+        ai.reply = oldReply.copy(content = "Resposta nova")
+        assertEquals(ai.reply, useCase(request))
+        assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), chat.savedMessages.map { it.role })
+    }
+
+    private fun createUseCase(
+        ai: LocalAiRepository,
+        chat: ChatRepository,
+        balance: GetMonthlyBalanceUseCase,
+        summaries: GetCategorySummariesUseCase,
+        dates: DateProvider,
+        categories: CategoriesRepository
+    ) = SendChatMessageUseCase(ai, chat, FinancialContextRepository { period ->
+        FinancialContext(period, balance(period).first(), summaries(period).first(), categories.getCategories().first())
+    }, dates)
 
     private class FakeDateProvider(private val period: MonthPeriod) : DateProvider {
         override fun getCurrentMonthPeriod(): MonthPeriod = period
@@ -224,22 +309,39 @@ class SendChatMessageUseCaseTest {
 
     private class FakeChatRepository : ChatRepository {
         val savedMessages = mutableListOf<ChatMessage>()
+        var afterAssistantWrite: (() -> Unit)? = null
+        var failNextAssistantWrite = false
+        override var dataRevision = 0L
+
+        fun restoreEmptyDataset() {
+            savedMessages.clear()
+            dataRevision++
+        }
 
         override fun getMessages(): Flow<List<ChatMessage>> = flowOf(savedMessages)
         override suspend fun addMessage(message: ChatMessage) {
+            if (message.role == ChatRole.ASSISTANT && failNextAssistantWrite) {
+                failNextAssistantWrite = false
+                error("Reply write failed")
+            }
             savedMessages += message
+            if (message.role == ChatRole.ASSISTANT) afterAssistantWrite?.invoke()
         }
     }
 
     private class FakeLocalAiRepository(
-        private val reply: ChatMessage
+        var reply: ChatMessage
     ) : LocalAiRepository {
+        var beforeReply: (() -> Unit)? = null
+        var callCount = 0
         var lastMessage: String? = null
         var lastContext: FinancialContext? = null
 
         override suspend fun sendMessage(message: String, context: FinancialContext): ChatMessage {
+            callCount++
             lastMessage = message
             lastContext = context
+            beforeReply?.invoke()
             return reply
         }
     }

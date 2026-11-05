@@ -2,6 +2,8 @@ package br.com.otavioesteves.finances.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import br.com.otavioesteves.finances.ui.components.FinanceGlassPage
+import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -25,11 +27,8 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
     ) {
         composable(FinancesRoute.Dashboard.route) {
             MainTabsScreen(
-                onAddTransactionClick = {
-                    navController.navigate(FinancesRoute.AddTransaction.route)
-                },
-                onHistoryClick = {
-                    navController.navigate(FinancesRoute.Transactions.route)
+                onHistoryClick = { period ->
+                    navController.navigate(FinancesRoute.Transactions.forPeriod(period))
                 },
                 onTransactionClick = { transaction ->
                     navController.navigate(FinancesRoute.EditTransaction(transaction.id).route)
@@ -37,9 +36,9 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
                 onImportStatementClick = {
                     navController.navigate(FinancesRoute.ImportStatement.route)
                 },
-                onCategoryClick = { categorySummary ->
+                onCategoryClick = { categorySummary, period ->
                     navController.navigate(
-                        FinancesRoute.CategoryDetails(categorySummary.category.id).route
+                        FinancesRoute.CategoryDetails(categorySummary.category.id, period).route
                     )
                 },
                 onAiModelClick = {
@@ -49,19 +48,34 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
         }
 
         composable(FinancesRoute.ImportStatement.route) {
-            ImportStatementScreen(
-                onBackClick = { navController.popBackStack() }
-            )
+            FinanceGlassPage {
+                ImportStatementScreen(
+                    onBackClick = { navController.popBackStack() },
+                    onAddTransactionClick = { navController.navigate(FinancesRoute.AddTransaction.route) }
+                )
+            }
         }
 
         composable(FinancesRoute.AiModel.route) {
-            AiModelScreen(
-                onBackClick = { navController.popBackStack() }
-            )
+            FinanceGlassPage {
+                AiModelScreen(
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
         }
 
-        composable(FinancesRoute.Transactions.route) {
+        composable(
+            route = FinancesRoute.Transactions.ROUTE_PATTERN,
+            arguments = listOf(
+                navArgument(FinancesRoute.Transactions.ARG_YEAR) { type = NavType.IntType; defaultValue = 0 },
+                navArgument(FinancesRoute.Transactions.ARG_MONTH) { type = NavType.IntType; defaultValue = 0 }
+            )
+        ) { entry ->
+            val year = entry.arguments?.getInt(FinancesRoute.Transactions.ARG_YEAR) ?: 0
+            val month = entry.arguments?.getInt(FinancesRoute.Transactions.ARG_MONTH) ?: 0
+            val initialPeriod = if (year in 1..9999 && month in 1..12) MonthPeriod(year, month) else null
             TransactionsScreen(
+                initialMonthPeriod = initialPeriod,
                 onBackClick = { navController.popBackStack() },
                 onTransactionClick = { transaction ->
                     navController.navigate(FinancesRoute.EditTransaction(transaction.id).route)
@@ -77,9 +91,11 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
                 }
             )
         ) {
-            AddTransactionScreen(
-                onBackClick = { navController.popBackStack() }
-            )
+            FinanceGlassPage {
+                AddTransactionScreen(
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(
@@ -87,23 +103,32 @@ fun FinancesNavHost(modifier: Modifier = Modifier) {
             arguments = listOf(
                 navArgument(FinancesRoute.CategoryDetails.ARG_CATEGORY_ID) {
                     type = NavType.LongType
-                }
+                },
+                navArgument(FinancesRoute.CategoryDetails.ARG_YEAR) { type = NavType.IntType; defaultValue = 0 },
+                navArgument(FinancesRoute.CategoryDetails.ARG_MONTH) { type = NavType.IntType; defaultValue = 0 }
             )
         ) { backStackEntry ->
             val categoryId = backStackEntry.arguments?.getLong(
                 FinancesRoute.CategoryDetails.ARG_CATEGORY_ID
             ) ?: return@composable
 
-            CategoryDetailsScreen(
-                categoryId = categoryId,
-                onBackClick = { navController.popBackStack() }
-            )
+            FinanceGlassPage {
+                CategoryDetailsScreen(
+                    categoryId = categoryId,
+                    onBackClick = { navController.popBackStack() },
+                    onTransactionClick = { transaction ->
+                        navController.navigate(FinancesRoute.EditTransaction(transaction.id).route)
+                    }
+                )
+            }
         }
 
         composable(FinancesRoute.AddTransaction.route) {
-            AddTransactionScreen(
-                onBackClick = { navController.popBackStack() }
-            )
+            FinanceGlassPage {
+                AddTransactionScreen(
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
         }
     }
 }

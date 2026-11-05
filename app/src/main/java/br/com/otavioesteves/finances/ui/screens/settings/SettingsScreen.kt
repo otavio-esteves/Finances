@@ -37,12 +37,15 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.RadioButton
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import br.com.otavioesteves.finances.domain.model.ThemeMode
 import br.com.otavioesteves.finances.domain.model.ThemePalette
@@ -88,6 +91,7 @@ fun SettingsScreen(
     val themePreferences = (context.applicationContext as MainApplication).themePreferences
     val themeMode by themePreferences.mode.collectAsStateWithLifecycle()
     val themePalette by themePreferences.palette.collectAsStateWithLifecycle()
+    val allowScreenshots by themePreferences.allowScreenshots.collectAsStateWithLifecycle()
     var showThemePicker by rememberSaveable { mutableStateOf(false) }
     var showPalettePicker by rememberSaveable { mutableStateOf(false) }
     val scrollState = rememberScrollState()
@@ -118,7 +122,7 @@ fun SettingsScreen(
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     ThemePalette.entries.forEach { option ->
-                        AppearanceOption(option.label, option == themePalette, paletteAccent(option, true)) {
+                        AppearanceOption(option.label, option == themePalette, paletteAccent(option, MaterialTheme.colorScheme.background.luminance() < 0.5f)) {
                             themePreferences.setPalette(option)
                             showPalettePicker = false
                         }
@@ -216,7 +220,7 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
-                    .padding(start = 20.dp, end = 20.dp, top = paddingValues.calculateTopPadding() + 20.dp, bottom = 112.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = paddingValues.calculateTopPadding() + 20.dp, bottom = 128.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 FinanceCard(modifier = Modifier.fillMaxWidth()) {
@@ -240,6 +244,31 @@ fun SettingsScreen(
                             icon = Icons.Filled.Palette,
                             onClick = { showPalettePicker = true }
                         )
+                    }
+                }
+                FinanceCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(vertical = 8.dp)) {
+                    Text("PRIVACIDADE", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .toggleable(value = allowScreenshots, role = Role.Switch,
+                                onValueChange = themePreferences::setAllowScreenshots)
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Permitir capturas de tela", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                if (allowScreenshots) "Capturas e gravação de tela permitidas" else "Seus dados ficam protegidos nas capturas",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = allowScreenshots, onCheckedChange = null)
+                    }
                     }
                 }
                 FinanceCard(modifier = Modifier.fillMaxWidth()) {

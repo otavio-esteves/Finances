@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.presentation.dashboard
 
 import androidx.lifecycle.ViewModel
+import br.com.otavioesteves.finances.domain.state.SelectedMonthState
 import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
@@ -10,10 +11,8 @@ import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetMonthlyBalanceUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
 import br.com.otavioesteves.finances.presentation.transactions.TransactionItem
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -25,11 +24,12 @@ class DashboardViewModel(
     private val getTransactionsByMonth: GetTransactionsByMonthUseCase,
     private val getCategorySummaries: GetCategorySummariesUseCase,
     private val categoriesRepository: CategoriesRepository,
-    dateProvider: DateProvider
+    dateProvider: DateProvider,
+    private val selectedMonth: SelectedMonthState = SelectedMonthState(dateProvider.getCurrentMonthPeriod())
 ) : ViewModel() {
 
-    private val _selectedMonthPeriod = MutableStateFlow(dateProvider.getCurrentMonthPeriod())
-    val selectedMonthPeriod: StateFlow<MonthPeriod> = _selectedMonthPeriod.asStateFlow()
+    private val _selectedMonthPeriod = selectedMonth.period
+    val selectedMonthPeriod: StateFlow<MonthPeriod> = _selectedMonthPeriod
 
     val uiState: StateFlow<DashboardUiState> = _selectedMonthPeriod.flatMapLatest { period ->
         combine(
@@ -59,6 +59,6 @@ class DashboardViewModel(
     )
 
     fun onMonthSelected(period: MonthPeriod) {
-        _selectedMonthPeriod.value = period
+        selectedMonth.select(period)
     }
 }

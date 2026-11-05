@@ -52,6 +52,13 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         lines().forEach { line ->
             val normalized = normalizePdfText(line)
             if (PAGE_FOOTER.matches(normalized)) return@forEach
+            // Positioned extraction can split this label across the date, description and value cells.
+            val subtotal = SUBTOTAL_ROW.matchEntire(normalized)?.groupValues?.get(1)
+            if (subtotal != null && AMOUNT_TOKEN.matches(subtotal)) {
+                if (pendingRow != null || table.hasPending) invalidRow()
+                parseAmount(subtotal, isCardBill = false, requireDirection = false)
+                return@forEach
+            }
             if (TABLE_HEADER.containsMatchIn(normalized) && !line.contains('\t')) {
                 runningBalanceColumn = VALUE_BALANCE_COLUMNS.containsMatchIn(normalized)
                 return@forEach
@@ -171,6 +178,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         private val TABLE_HEADER = Regex("^data\\s+.*(?:descricao|historico|lancamento|estabelecimento).*(?:valor|debito|credito)\\b")
         private val VALUE_BALANCE_COLUMNS = Regex("\\bvalor\\b.*\\bsaldo\\b(?:\\s*\\(?r\\$\\)?)?\\s*$")
         private val PAGE_FOOTER = Regex("(?:pagina\\s+\\d+\\s*(?:de|/)\\s*\\d+|\\d+\\s+de\\s+\\d+)")
+        private val SUBTOTAL_ROW = Regex("^subtotal dos lancamentos\\s+(.+)$")
         private val SUMMARY_LABEL = Regex("(?:total(?: da fatura| de compras)?|saldo(?: anterior| atual| final| do dia)?|pagamento minimo|valor total|vencimento)")
         private val BILL_PAYMENT = Regex("^pagamento\\s+(?:(?:de|da)\\s+fatura\\b|em\\s+\\d{1,2}\\s+[a-z]{3}\\b)")
         private val MARKER_SUFFIX = Regex("(?:credito|debito|cr|dr|c|d)$")

@@ -119,8 +119,9 @@ private val LightExtraColors = FinancesExtraColors(
     glassSurface = Color.White,
     glassBackdrop = Color.White,
     categoryPalette = listOf(
-        Color(0xFFD93039), Color(0xFFE67800), Color(0xFFB81936), Color(0xFFE45325),
-        Color(0xFFA72C3B), Color(0xFF29292F), Color(0xFF777780), Color(0xFFB86400)
+        Color(0xFF9B5D4D), Color(0xFF8B6E44), Color(0xFF557A60), Color(0xFF526F8D),
+        Color(0xFF805F87), Color(0xFF82713B), Color(0xFF477D79), Color(0xFF915E69),
+        Color(0xFF6E648F), Color(0xFF6D784B), Color(0xFF806959), Color(0xFF527887)
     ),
     otherCategory = Color(0xFF696A73)
 )
@@ -158,7 +159,15 @@ fun FinancesTheme(
         tertiary = accent,
         onTertiary = if (accent.luminance() > 0.179f) Color.Black else Color.White
     )
-    val extras = if (palette == ThemePalette.RED) baseExtras else baseExtras.copy(
+    val extras = if (palette == ThemePalette.MONOCHROME) baseExtras.copy(
+        heroSurface = androidx.compose.ui.graphics.lerp(baseScheme.surface, accent, 0.12f),
+        income = baseScheme.onSurface,
+        expense = baseScheme.onSurfaceVariant,
+        categoryPalette = baseExtras.categoryPalette.indices.map { index ->
+            androidx.compose.ui.graphics.lerp(baseScheme.onSurfaceVariant, accent, index / 12f)
+        },
+        otherCategory = baseScheme.onSurfaceVariant
+    ) else if (palette == ThemePalette.RED) baseExtras else baseExtras.copy(
         heroSurface = androidx.compose.ui.graphics.lerp(baseScheme.surface, accent, 0.16f),
         categoryPalette = listOf(accent, paletteAccent(palette, !darkTheme)) + baseExtras.categoryPalette.drop(2)
     )
@@ -179,4 +188,8 @@ fun paletteAccent(palette: ThemePalette, darkTheme: Boolean): Color = when (pale
     ThemePalette.BLUE -> if (darkTheme) Color(0xFF55AAFF) else Color(0xFF1565C0)
     ThemePalette.GREEN -> if (darkTheme) Color(0xFF47D78A) else Color(0xFF137B45)
     ThemePalette.PURPLE -> if (darkTheme) Color(0xFFC18AFF) else Color(0xFF7933C5)
+    ThemePalette.PINK -> if (darkTheme) Color(0xFFFF8FB1) else Color(0xFFB52B65)
+    ThemePalette.TEAL -> if (darkTheme) Color(0xFF62D6CC) else Color(0xFF007B75)
+    ThemePalette.GOLD -> if (darkTheme) Color(0xFFE4C76A) else Color(0xFF826100)
+    ThemePalette.MONOCHROME -> if (darkTheme) Color(0xFFF2F2F2) else Color(0xFF202124)
 }

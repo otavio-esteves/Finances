@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -80,12 +82,12 @@ internal fun buildChartSlices(
     val head = expenses.take(maxSlots)
     val tail = expenses.drop(maxSlots)
 
-    val headSlices = head.mapIndexed { index, summary ->
+    val headSlices = head.map { summary ->
         CategoryChartSlice(
             label = summary.category.name,
             amount = summary.totalAmount,
             fraction = (summary.totalAmount.cents / totalCents).toFloat(),
-            color = palette[index]
+            color = palette[((summary.category.id % palette.size + palette.size) % palette.size).toInt()]
         )
     }
 
@@ -145,7 +147,7 @@ fun CategoryUsageChart(
             centerCaption = "em gastos",
             modifier = chartModifier
         )
-        if (style == CategoryChartStyle.PIE || centerAmount != fullAmount) {
+        if (style == CategoryChartStyle.PIE || centerAmount != fullAmount || LocalDensity.current.fontScale > 1.2f) {
             Text(
                 text = "Total: $fullAmount",
                 style = MaterialTheme.typography.bodySmall,
@@ -234,11 +236,12 @@ private fun DonutRing(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = centerLabel,
+                text = if (LocalDensity.current.fontScale > 1.2f) "Total" else centerLabel,
                 style = if (centerLabel.length > 10) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = centerCaption,
@@ -271,8 +274,11 @@ private fun DonutLegend(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = slice.label,
+                    modifier = Modifier.weight(1f, fill = false),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(

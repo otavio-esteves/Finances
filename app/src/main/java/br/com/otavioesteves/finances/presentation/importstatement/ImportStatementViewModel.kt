@@ -16,12 +16,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -32,6 +34,7 @@ import br.com.otavioesteves.finances.utils.MoneyFormatter
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
+import java.util.concurrent.atomic.AtomicLong
 
 class ImportStatementViewModel(
     private val importStatement: ImportStatementUseCase,
@@ -44,6 +47,7 @@ class ImportStatementViewModel(
 ) : ViewModel() {
 
     private var loadJob: Job? = null
+    private val loadRevision = AtomicLong()
     private var validationJob: Job? = null
     private var validationRevision = 0
     private data class PendingFile(val name: String, val kind: StatementKind, val openStream: () -> InputStream)
@@ -66,26 +70,49 @@ class ImportStatementViewModel(
 
     private fun startReading(file: PendingFile, password: String? = null) {
         if ((_uiState.value as? ImportStatementUiState.ReviewingSuggestions)?.isConfirming == true) return
+        val revision = loadRevision.incrementAndGet()
         loadJob?.cancel()
         validationJob?.cancel()
         validationRevision++
         pendingFile = file
         val (fileName, kind, openStream) = file
-        _uiState.value = ImportStatementUiState.Loading
+        _uiState.value = ImportStatementUiState.Loading(fileName)
         loadJob = viewModelScope.launch {
+            val requestContext = currentCoroutineContext()
+            fun showStage(stage: ImportProcessingStage, done: Int = 0, total: Int? = null) {
+                _uiState.update { current ->
+                    if (loadRevision.get() == revision && requestContext.isActive && current is ImportStatementUiState.Loading) {
+                        ImportStatementUiState.Loading(fileName, stage, done, total)
+                    } else current
+                }
+            }
             try {
                 val content = withContext(ioDispatcher) { readBounded(openStream()) }
+                showStage(ImportProcessingStage.EXTRACTING)
                 val entries = withContext(cpuDispatcher) { importStatement(fileName, content, kind, password) }
+                requestContext.ensureActive()
+                if (loadRevision.get() != revision) return@launch
                 if (entries.isEmpty()) {
                     _uiState.value = ImportStatementUiState.Error(
                         "Nenhuma transação encontrada neste arquivo."
                     )
                     return@launch
                 }
-
-                val potentialOverlapCount = findPotentialOverlaps(entries)
-                val suggestions = withContext(cpuDispatcher) { synthesizeStatement(entries) }
+                showStage(ImportProcessingStage.CHECKING_OVERLAPS)
+                val potentialOverlapCount = withContext(cpuDispatcher) { findPotentialOverlaps(entries) }
+                showStage(ImportProcessingStage.CATEGORIZING, total = entries.size)
+                val suggestions = withContext(cpuDispatcher) {
+                    synthesizeStatement(entries) { done, total ->
+                        // The final callback can precede a failed result. Only the review represents completion.
+                        if (total == entries.size && done in 0 until total) {
+                            showStage(ImportProcessingStage.CATEGORIZING, done, total)
+                        }
+                    }
+                }
+                showStage(ImportProcessingStage.PREPARING_REVIEW)
                 val categories = categoriesRepository.getCategories().first()
+                requestContext.ensureActive()
+                if (loadRevision.get() != revision) return@launch
                 pendingFile = null
 
                 _uiState.value = ImportStatementUiState.ReviewingSuggestions(
@@ -96,11 +123,13 @@ class ImportStatementViewModel(
                 )
             } catch (e: StatementPasswordRequiredException) {
                 currentCoroutineContext().ensureActive()
+                if (loadRevision.get() != revision) return@launch
                 _uiState.value = ImportStatementUiState.NeedsPassword(fileName, if (e.incorrectPassword) e.message else null)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
+                if (loadRevision.get() != revision) return@launch
                 _uiState.value = ImportStatementUiState.Error(
                     e.message ?: "Não foi possível ler o extrato."
                 )
@@ -203,6 +232,7 @@ class ImportStatementViewModel(
 
     fun onStartOver() {
         if ((_uiState.value as? ImportStatementUiState.ReviewingSuggestions)?.isConfirming == true) return
+        loadRevision.incrementAndGet()
         loadJob?.cancel()
         validationJob?.cancel()
         validationRevision++

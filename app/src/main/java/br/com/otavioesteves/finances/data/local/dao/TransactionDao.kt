@@ -33,6 +33,13 @@ interface TransactionDao {
     fun getMonthlyBalance(startDate: String, endDate: String): Flow<Long?>
 
     @Query("""
+        SELECT SUM(CASE WHEN type = 'INCOME' THEN amountCents
+            WHEN type = 'EXPENSE' THEN -amountCents ELSE 0 END)
+        FROM transactions WHERE date >= :startDate AND date <= :endDate
+    """)
+    suspend fun getBalanceSnapshot(startDate: String, endDate: String): Long?
+
+    @Query("""
         SELECT CAST(substr(date, 6, 2) AS INTEGER) AS month, categoryId,
             SUM(CASE WHEN type = 'EXPENSE' THEN amountCents ELSE 0 END) AS expenseCents,
             SUM(CASE WHEN type = 'EXPENSE' THEN 1 ELSE 0 END) AS expenseCount,

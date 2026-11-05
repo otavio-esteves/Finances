@@ -25,16 +25,28 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.heightIn
+import br.com.otavioesteves.finances.ui.theme.categoryAccent
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import br.com.otavioesteves.finances.ui.components.FinanceGlassIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -48,13 +60,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +74,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.presentation.AppViewModelProvider
 import br.com.otavioesteves.finances.presentation.addtransaction.AddTransactionViewModel
+import java.time.Instant
+import java.time.ZoneOffset
+import br.com.otavioesteves.finances.utils.DateFormatter
+import br.com.otavioesteves.finances.ui.components.transactionIconOption
 import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
 import br.com.otavioesteves.finances.ui.components.FinanceCard
 import br.com.otavioesteves.finances.ui.components.SectionTitle
@@ -82,6 +98,56 @@ fun AddTransactionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val isEditMode = viewModel.isEditMode
     val scrollState = rememberScrollState()
+
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var showIconChoices by rememberSaveable { mutableStateOf(false) }
+    if (uiState.showCategoryCreation) {
+        var name by rememberSaveable { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = viewModel::dismissCreateCategory,
+            title = { Text("Nova categoria") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(when (uiState.type) {
+                        TransactionType.EXPENSE -> "Categoria de despesa"
+                        TransactionType.INCOME -> "Categoria de receita"
+                        TransactionType.TRANSFER -> "Categoria de transferência"
+                    }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(value = name, onValueChange = { name = it },
+                        label = { Text("Nome da categoria") }, singleLine = true,
+                        enabled = !uiState.isCreatingCategory, isError = uiState.categoryCreationError != null,
+                        supportingText = uiState.categoryCreationError?.let { { Text(it) } },
+                        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.createCategory(name) }, enabled = !uiState.isCreatingCategory) {
+                    Text(if (uiState.isCreatingCategory) "Salvando…" else "Criar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissCreateCategory, enabled = !uiState.isCreatingCategory) { Text("Cancelar") }
+            }
+        )
+    }
+    if (showDatePicker) {
+        val picker = rememberDatePickerState(
+            initialSelectedDateMillis = uiState.date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            yearRange = 1..9999
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    picker.selectedDateMillis?.let {
+                        viewModel.onDateChange(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate())
+                    }
+                    showDatePicker = false
+                }, enabled = picker.selectedDateMillis != null) { Text("Aplicar data") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancelar") } }
+        ) { DatePicker(state = picker) }
+    }
 
     LaunchedEffect(uiState.isSaveSuccessful) {
         if (uiState.isSaveSuccessful) {
@@ -120,7 +186,7 @@ fun AddTransactionScreen(
                 colors = financeTopAppBarColors(scrollState.value == 0),
                 title = { Text(if (isEditMode) "Editar transação" else "Novo lançamento") },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    FinanceGlassIconButton(onClick = onBackClick) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Voltar"
@@ -129,7 +195,7 @@ fun AddTransactionScreen(
                 },
                 actions = {
                     if (isEditMode && !uiState.isLoading && !uiState.isSaving && !uiState.isSaveSuccessful) {
-                        IconButton(onClick = viewModel::onDeleteRequest) {
+                        FinanceGlassIconButton(onClick = viewModel::onDeleteRequest) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
                                 contentDescription = "Excluir",
@@ -196,6 +262,14 @@ fun AddTransactionScreen(
                         shape = MaterialTheme.shapes.small
                     )
 
+                    FormSelectionField(
+                        label = "Data",
+                        value = DateFormatter.format(uiState.date),
+                        icon = Icons.Filled.CalendarToday,
+                        enabled = !uiState.isSaving,
+                        onClick = { showDatePicker = true }
+                    )
+
                     // Type
                     Column {
                         SectionTitle(title = "Tipo")
@@ -223,6 +297,10 @@ fun AddTransactionScreen(
                             onValueChange = {},
                             readOnly = true,
                             label = { Text("Categoria") },
+                            leadingIcon = uiState.selectedCategory?.let { category -> {
+                                Icon(transactionIcon(category.name, uiState.type), contentDescription = null,
+                                    tint = categoryAccent(category.id))
+                            } },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                             isError = uiState.categoryError != null,
@@ -239,22 +317,39 @@ fun AddTransactionScreen(
                             uiState.categories.filter { it.type.name == uiState.type.name }.forEach { category ->
                                 DropdownMenuItem(
                                     text = { Text(category.name) },
+                                    leadingIcon = {
+                                        Icon(transactionIcon(category.name, uiState.type), contentDescription = null,
+                                            tint = categoryAccent(category.id))
+                                    },
                                     onClick = {
                                         viewModel.onCategoryChange(category)
                                         expanded = false
                                     }
                                 )
                             }
+                            DropdownMenuItem(
+                                text = { Text("Nova categoria", color = MaterialTheme.colorScheme.primary) },
+                                leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary) },
+                                onClick = {
+                                    expanded = false
+                                    viewModel.showCreateCategory()
+                                }
+                            )
                         }
                     }
 
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SectionTitle(title = "Ícone da transação")
-                        Text(
-                            "Escolha um ícone ou deixe o app identificar pelo lançamento.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        FormSelectionField(
+                            label = "Ícone",
+                            value = transactionIconOption(uiState.iconKey)?.label ?: "Automático",
+                            icon = transactionIcon(uiState.selectedCategory?.name, uiState.type,
+                                uiState.description, uiState.iconKey),
+                            expanded = showIconChoices,
+                            enabled = !uiState.isSaving,
+                            onClick = { showIconChoices = !showIconChoices }
                         )
+                        if (showIconChoices) {
                         IconChoice(
                             option = null,
                             selected = uiState.iconKey == null,
@@ -282,6 +377,7 @@ fun AddTransactionScreen(
                                 }
                                 repeat(3 - options.size) { Box(Modifier.weight(1f)) }
                             }
+                        }
                         }
                     }
 
@@ -316,6 +412,37 @@ fun AddTransactionScreen(
 }
 
 @Composable
+private fun FormSelectionField(
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    expanded: Boolean = false
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.small,
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, style = MaterialTheme.typography.bodyLarge)
+            }
+            Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
 private fun IconChoice(
     option: TransactionIconOption?,
     selected: Boolean,
@@ -325,7 +452,8 @@ private fun IconChoice(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val background = option?.color ?: MaterialTheme.colorScheme.surfaceVariant
+    val accent = MaterialTheme.colorScheme.primary
+    val background = accent.copy(alpha = if (selected) 0.18f else 0.08f)
     val label = option?.label ?: "Automático"
     Column(
         modifier = modifier
@@ -343,7 +471,7 @@ private fun IconChoice(
         Icon(
             imageVector = option?.image ?: transactionIcon(categoryName, type, description),
             contentDescription = label,
-            tint = if (background.luminance() > 0.179f) Color.Black else Color.White,
+            tint = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
@@ -373,7 +501,11 @@ private fun TypeChoice(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            if (type == TransactionType.INCOME) Icons.Filled.SouthWest else Icons.Filled.NorthEast,
+            when (type) {
+                TransactionType.INCOME -> Icons.Filled.SouthWest
+                TransactionType.EXPENSE -> Icons.Filled.NorthEast
+                TransactionType.TRANSFER -> Icons.Filled.SwapHoriz
+            },
             contentDescription = null,
             tint = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -65,9 +65,19 @@ class ChatViewModelTest {
 
     private class FakeChatRepository : ChatRepository {
         val history = MutableStateFlow<List<ChatMessage>>(emptyList())
+        var failNextUserWrite = false
+        var failNextAssistantWrite = false
 
         override fun getMessages(): Flow<List<ChatMessage>> = history
         override suspend fun addMessage(message: ChatMessage) {
+            if (message.role == ChatRole.USER && failNextUserWrite) {
+                failNextUserWrite = false
+                error("User write failed")
+            }
+            if (message.role == ChatRole.ASSISTANT && failNextAssistantWrite) {
+                failNextAssistantWrite = false
+                error("Assistant write failed")
+            }
             history.value = history.value + message
         }
     }
@@ -102,10 +112,10 @@ class ChatViewModelTest {
         val sendChatMessage = SendChatMessageUseCase(
             localAiRepository,
             chatRepository,
-            GetMonthlyBalanceUseCase(FakeTransactionsRepository()),
-            GetCategorySummariesUseCase(FakeCategoriesRepository()),
+            br.com.otavioesteves.finances.domain.repository.FinancialContextRepository { period ->
+                FinancialContext(period, Money.Zero, emptyList())
+            },
             fakeDateProvider,
-            FakeCategoriesRepository(),
             workerDispatcher = testDispatcher
         )
 
@@ -180,6 +190,73 @@ class ChatViewModelTest {
         assertTrue(viewModel.errorState.value != null)
         viewModel.clearError()
         assertEquals(null, viewModel.errorState.value)
+    }
+
+    @Test
+    fun `retry after inference failure reuses the saved question but later identical sends stay distinct`() = runTest {
+        val question = "Faça um resumo das categorias."
+        localAiRepository.shouldFail = true
+        viewModel.onDraftChange(question)
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(ChatRole.USER), chatRepository.history.value.map { it.role })
+
+        localAiRepository.shouldFail = false
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), chatRepository.history.value.map { it.role })
+
+        viewModel.onDraftChange(question)
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT, ChatRole.USER, ChatRole.ASSISTANT),
+            chatRepository.history.value.map { it.role })
+    }
+
+    @Test
+    fun `retry after reply write failure saves the generated reply without generating or adding question again`() = runTest {
+        chatRepository.failNextAssistantWrite = true
+        viewModel.onDraftChange("Faça um resumo das categorias.")
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, localAiRepository.callCount)
+        assertEquals(listOf(ChatRole.USER), chatRepository.history.value.map { it.role })
+
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, localAiRepository.callCount)
+        assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), chatRepository.history.value.map { it.role })
+        assertEquals("resposta 1", chatRepository.history.value.last().content)
+    }
+
+    @Test
+    fun `retry after question write failure still saves the question`() = runTest {
+        chatRepository.failNextUserWrite = true
+        viewModel.onDraftChange("Faça um resumo das categorias.")
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(chatRepository.history.value.isEmpty())
+        assertEquals(0, localAiRepository.callCount)
+
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), chatRepository.history.value.map { it.role })
+    }
+
+    @Test
+    fun `editing a failed question starts a separate send even when changed back to the old text`() = runTest {
+        val question = "Faça um resumo das categorias."
+        localAiRepository.shouldFail = true
+        viewModel.onDraftChange(question)
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onDraftChange("Outra pergunta")
+        viewModel.onDraftChange(question)
+        localAiRepository.shouldFail = false
+        viewModel.sendMessage()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(ChatRole.USER, ChatRole.USER, ChatRole.ASSISTANT), chatRepository.history.value.map { it.role })
     }
 
     @Test

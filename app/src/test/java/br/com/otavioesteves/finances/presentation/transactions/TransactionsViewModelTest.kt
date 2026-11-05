@@ -11,10 +11,13 @@ import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -26,6 +29,8 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import br.com.otavioesteves.finances.utils.ExportFormat
 import org.junit.Before
 import org.junit.Test
 import java.time.LocalDate
@@ -59,8 +64,8 @@ class TransactionsViewModelTest {
         override suspend fun updateTransaction(transaction: Transaction) {}
     }
 
-    private class FakeCategoriesRepository : CategoriesRepository {
-        override fun getCategories(): Flow<List<Category>> = flowOf(emptyList())
+    private class FakeCategoriesRepository(var categories: List<Category> = emptyList()) : CategoriesRepository {
+        override fun getCategories(): Flow<List<Category>> = flowOf(categories)
         override fun getCategorySummaries(period: MonthPeriod): Flow<List<CategorySummary>> = flowOf(emptyList())
     }
 
@@ -213,14 +218,90 @@ class TransactionsViewModelTest {
         org.junit.Assert.assertSame(originalItem, viewModel.uiState.value.transactions.single())
     }
 
-    private fun createViewModel(repository: FakeTransactionsRepository): TransactionsViewModel {
+    @Test
+    fun `export queries transactions and category names without a UI subscriber`() = runTest {
+        val transaction = createFakeTransaction(8).copy(description = "Compra recente")
+        val repository = FakeTransactionsRepository().apply { transactions = listOf(transaction) }
+        val categories = FakeCategoriesRepository(listOf(Category(1, "Alimentação",
+            br.com.otavioesteves.finances.domain.model.CategoryType.EXPENSE)))
+        val viewModel = createViewModel(repository, categories)
+
+        val csv = viewModel.getExportData(ExportFormat.CSV, fakeMonthPeriod)
+
+        assertTrue(viewModel.uiState.value.isLoading)
+        assertTrue(csv.contains("Compra recente"))
+        assertTrue(csv.contains("Alimentação"))
+    }
+
+    @Test
+    fun `export refreshes data after the screen collectors have stopped`() = runTest {
+        val repository = FakeTransactionsRepository().apply { transactions = listOf(createFakeTransaction(1)) }
+        val viewModel = createViewModel(repository)
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+        testDispatcher.scheduler.runCurrent()
+        collector.cancel()
+        testDispatcher.scheduler.advanceTimeBy(5_001)
+        testDispatcher.scheduler.runCurrent()
+        repository.transactions = listOf(createFakeTransaction(2).copy(description = "Atualizada no banco"))
+
+        val csv = viewModel.getExportData(ExportFormat.CSV, fakeMonthPeriod)
+
+        assertEquals(1L, viewModel.uiState.value.transactions.single().transaction.id)
+        assertTrue(csv.contains("Atualizada no banco"))
+    }
+
+    @Test
+    fun `export waits for the requested month even if the selected month changes`() = runTest {
+        val requested = fakeMonthPeriod.previousMonth()
+        val rows = CompletableDeferred<List<Transaction>>()
+        val repository = FakeTransactionsRepository().apply {
+            transactions = listOf(createFakeTransaction(1).copy(description = "Outro mês"))
+            monthlyFlows[requested] = flow { emit(rows.await()) }
+        }
+        val viewModel = createViewModel(repository)
+        val export = async { viewModel.getExportData(ExportFormat.CSV, requested) }
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(!export.isCompleted)
+        viewModel.onMonthSelected(fakeMonthPeriod.nextMonth())
+        rows.complete(listOf(createFakeTransaction(2).copy(description = "Mês solicitado")))
+
+        val csv = export.await()
+
+        assertTrue(csv.contains("Mês solicitado"))
+        assertTrue(!csv.contains("Outro mês"))
+        assertEquals(fakeMonthPeriod.nextMonth(), viewModel.selectedMonthPeriod.value)
+    }
+
+    private fun createViewModel(repository: FakeTransactionsRepository,
+        categories: FakeCategoriesRepository = FakeCategoriesRepository(),
+        savedState: androidx.lifecycle.SavedStateHandle = androidx.lifecycle.SavedStateHandle()): TransactionsViewModel {
         return TransactionsViewModel(
             getTransactionsByMonth = GetTransactionsByMonthUseCase(repository),
             deleteTransaction = DeleteTransactionUseCase(repository),
-            categoriesRepository = FakeCategoriesRepository(),
+            categoriesRepository = categories,
             dateProvider = fakeDateProvider,
-            mappingDispatcher = testDispatcher
+            mappingDispatcher = testDispatcher,
+            savedStateHandle = savedState
         )
+    }
+
+    @Test
+    fun `history month survives recreation and initial route does not overwrite later selection`() = runTest {
+        val repository = FakeTransactionsRepository()
+        val handle = androidx.lifecycle.SavedStateHandle()
+        val first = createViewModel(repository, savedState = handle)
+        val routePeriod = MonthPeriod(2025, 5)
+        val selected = routePeriod.nextMonth()
+        first.initializeMonthPeriod(routePeriod)
+        assertEquals(routePeriod, first.selectedMonthPeriod.value)
+        first.onMonthSelected(selected)
+        first.initializeMonthPeriod(routePeriod)
+        assertEquals(selected, first.selectedMonthPeriod.value)
+
+        val restoredHandle = androidx.lifecycle.SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) })
+        val restored = createViewModel(repository, savedState = restoredHandle)
+        restored.initializeMonthPeriod(routePeriod)
+        assertEquals(selected, restored.selectedMonthPeriod.value)
     }
 
     private fun createFakeTransaction(id: Long) = Transaction(

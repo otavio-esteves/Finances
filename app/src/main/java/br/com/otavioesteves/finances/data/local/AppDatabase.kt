@@ -17,8 +17,7 @@ import br.com.otavioesteves.finances.data.local.entity.StatementImportEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
 import br.com.otavioesteves.finances.domain.model.CategoryType
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 
 @Database(
     entities = [
@@ -32,6 +31,12 @@ import kotlinx.coroutines.launch
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
+    private val datasetRevision = AtomicLong()
+
+    val dataRevision: Long get() = datasetRevision.get()
+
+    /** Called inside the restoring transaction so guarded chat writes serialize with the replacement. */
+    internal fun markDataRestored() { datasetRevision.incrementAndGet() }
 
     abstract fun categoryDao(): CategoryDao
     abstract fun transactionDao(): TransactionDao
@@ -119,7 +124,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "finances_database"
                 )
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
-                    .addCallback(AppDatabaseCallback(scope))
+                    .addCallback(DefaultCategoriesCallback())
                     .build()
                 INSTANCE = instance
                 instance
@@ -127,34 +132,47 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    private class AppDatabaseCallback(
-        private val scope: CoroutineScope
-    ) : RoomDatabase.Callback() {
-
+    /** Runs on Room's opening thread, before the first DAO query can observe the database. */
+    internal class DefaultCategoriesCallback : RoomDatabase.Callback() {
         override fun onCreate(db: SupportSQLiteDatabase) {
-            super.onCreate(db)
-            INSTANCE?.let { database ->
-                scope.launch(Dispatchers.IO) {
-                    populateDatabase(database.categoryDao())
-                }
+            DEFAULT_CATEGORIES.forEach { category ->
+                db.execSQL("INSERT INTO categories (name, type) VALUES (?, ?)", arrayOf(category.name, category.type.name))
             }
         }
 
-        suspend fun populateDatabase(categoryDao: CategoryDao) {
-            if (categoryDao.getCategoriesCount() == 0) {
-                val defaultCategories = listOf(
-                    CategoryEntity(name = "Alimentação", type = CategoryType.EXPENSE),
-                    CategoryEntity(name = "Transporte", type = CategoryType.EXPENSE),
-                    CategoryEntity(name = "Moradia", type = CategoryType.EXPENSE),
-                    CategoryEntity(name = "Lazer", type = CategoryType.EXPENSE),
-                    CategoryEntity(name = "Saúde", type = CategoryType.EXPENSE),
-                    CategoryEntity(name = "Salário", type = CategoryType.INCOME),
-                    CategoryEntity(name = "Investimentos", type = CategoryType.INCOME),
-                    CategoryEntity(name = "Outros", type = CategoryType.EXPENSE),
-                    CategoryEntity(name = "Transferência", type = CategoryType.TRANSFER)
-                )
-                categoryDao.insertCategories(defaultCategories)
+        override fun onOpen(db: SupportSQLiteDatabase) {
+            // Repair databases restored by older app versions without usable category types.
+            db.beginTransaction()
+            try {
+                ESSENTIAL_CATEGORIES.forEach { category ->
+                    db.execSQL(
+                        "INSERT INTO categories (name, type) SELECT ?, ? WHERE NOT EXISTS " +
+                            "(SELECT 1 FROM categories WHERE type = ?)",
+                        arrayOf(category.name, category.type.name, category.type.name)
+                    )
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
             }
         }
     }
 }
+
+internal val DEFAULT_CATEGORIES = listOf(
+    CategoryEntity(name = "Alimentação", type = CategoryType.EXPENSE),
+    CategoryEntity(name = "Transporte", type = CategoryType.EXPENSE),
+    CategoryEntity(name = "Moradia", type = CategoryType.EXPENSE),
+    CategoryEntity(name = "Lazer", type = CategoryType.EXPENSE),
+    CategoryEntity(name = "Saúde", type = CategoryType.EXPENSE),
+    CategoryEntity(name = "Salário", type = CategoryType.INCOME),
+    CategoryEntity(name = "Investimentos", type = CategoryType.INCOME),
+    CategoryEntity(name = "Outros", type = CategoryType.EXPENSE),
+    CategoryEntity(name = "Transferência", type = CategoryType.TRANSFER)
+)
+
+internal val ESSENTIAL_CATEGORIES = listOf(
+    CategoryEntity(name = "Outros", type = CategoryType.EXPENSE),
+    CategoryEntity(name = "Salário", type = CategoryType.INCOME),
+    CategoryEntity(name = "Transferência", type = CategoryType.TRANSFER)
+)

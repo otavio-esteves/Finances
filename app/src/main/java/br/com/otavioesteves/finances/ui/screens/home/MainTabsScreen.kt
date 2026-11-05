@@ -30,15 +30,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.PieChart
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -66,11 +58,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.otavioesteves.finances.domain.model.MonthPeriod
+import br.com.otavioesteves.finances.ui.components.LocalFinanceGlassState
 import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.ui.navigation.FinancesBottomBar
 import br.com.otavioesteves.finances.ui.navigation.MainTab
 import br.com.otavioesteves.finances.ui.screens.categories.CategoriesScreen
-import br.com.otavioesteves.finances.ui.screens.chat.ChatScreen
 import br.com.otavioesteves.finances.ui.screens.charts.ChartsScreen
 import br.com.otavioesteves.finances.ui.screens.dashboard.DashboardScreen
 import br.com.otavioesteves.finances.ui.screens.settings.SettingsScreen
@@ -83,16 +76,15 @@ import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.remember
 import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 
-private enum class Section { MAIN, CATEGORIES, SETTINGS }
+private enum class Section { MAIN, SETTINGS }
 
-/** Four primary pages share the swipeable surface. */
+/** Primary pages share the swipeable surface. */
 @Composable
 fun MainTabsScreen(
-    onAddTransactionClick: () -> Unit,
-    onHistoryClick: () -> Unit,
+    onHistoryClick: (MonthPeriod) -> Unit,
     onTransactionClick: (Transaction) -> Unit,
     onImportStatementClick: () -> Unit,
-    onCategoryClick: (CategorySummary) -> Unit,
+    onCategoryClick: (CategorySummary, MonthPeriod) -> Unit,
     onAiModelClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -130,13 +122,7 @@ fun MainTabsScreen(
         }
     }
 
-    fun openRoute(action: () -> Unit) {
-        scope.launch {
-            drawerState.close()
-            action()
-        }
-    }
-
+    CompositionLocalProvider(LocalFinanceGlassState provides hazeState) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = drawerState.isOpen,
@@ -151,51 +137,9 @@ fun MainTabsScreen(
                         .fillMaxHeight()
                         .padding(horizontal = 18.dp, vertical = 24.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 36.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(FinancesThemeTokens.colors.heroSurface),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(23.dp))
-                        }
-                        Column {
-                            Text("Finances", style = MaterialTheme.typography.titleLarge)
-                            Text("Seu espaço financeiro", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-
+                    Text("Finances", style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(start = 14.dp, bottom = 32.dp))
                     Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                        DrawerLabel("VISÃO GERAL")
-                        DrawerMenuItem("Início", Icons.Filled.Home,
-                            section == Section.MAIN && settledPage == MainTab.HOME.ordinal) { showTab(MainTab.HOME) }
-                        DrawerMenuItem("Gráficos", Icons.Filled.BarChart,
-                            section == Section.MAIN && settledPage == MainTab.CHARTS.ordinal) { showTab(MainTab.CHARTS) }
-                        DrawerMenuItem("Transações", Icons.AutoMirrored.Outlined.ReceiptLong,
-                            section == Section.MAIN && settledPage == MainTab.TRANSACTIONS.ordinal) { showTab(MainTab.TRANSACTIONS) }
-                        DrawerMenuItem("Chat", Icons.AutoMirrored.Filled.Chat,
-                            section == Section.MAIN && settledPage == MainTab.CHAT.ordinal) { showTab(MainTab.CHAT) }
-                        DrawerMenuItem("Categorias", Icons.Filled.PieChart, section == Section.CATEGORIES) {
-                            showSection(Section.CATEGORIES)
-                        }
-                        DrawerMenuItem("Histórico", Icons.AutoMirrored.Outlined.ReceiptLong, false) {
-                            openRoute(onHistoryClick)
-                        }
-
-                        Spacer(Modifier.height(28.dp))
-                        DrawerLabel("AÇÕES")
-                        DrawerMenuItem("Importar extrato", Icons.Filled.UploadFile, false) {
-                            openRoute(onImportStatementClick)
-                        }
-                        DrawerMenuItem("Novo lançamento", Icons.Filled.Add, false) {
-                            openRoute(onAddTransactionClick)
-                        }
-
-                        Spacer(Modifier.height(28.dp))
-                        DrawerLabel("PREFERÊNCIAS")
                         DrawerMenuItem("Configurações", Icons.Filled.Settings, section == Section.SETTINGS) {
                             showSection(Section.SETTINGS)
                         }
@@ -233,24 +177,25 @@ fun MainTabsScreen(
                                 when (MainTab.entries[page]) {
                                     MainTab.HOME -> DashboardScreen(
                                         onHistoryClick = onHistoryClick,
+                                        onTransactionClick = onTransactionClick,
                                         hazeState = hazeState
                                     )
                                     MainTab.CHARTS -> ChartsScreen(
                                         modifier = Modifier.fillMaxSize()
                                     )
+                                    MainTab.CATEGORIES -> CategoriesScreen(
+                                        onCategoryClick = onCategoryClick,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
                                     MainTab.TRANSACTIONS -> TransactionsScreen(
                                         onBackClick = { showTab(MainTab.HOME) },
                                         onTransactionClick = onTransactionClick,
-                                        embeddedInTabs = true
+                                        embeddedInTabs = true,
+                                        hazeState = hazeState
                                     )
-                                    MainTab.CHAT -> ChatScreen()
                                 }
                             }
                         }
-                        Section.CATEGORIES -> CategoriesScreen(
-                            onCategoryClick = onCategoryClick,
-                            modifier = Modifier.fillMaxSize().hazeSource(hazeState)
-                        )
                         Section.SETTINGS -> SettingsScreen(
                             onAiModelClick = onAiModelClick,
                             modifier = Modifier.fillMaxSize().hazeSource(hazeState)
@@ -258,7 +203,7 @@ fun MainTabsScreen(
                     }
                 }
                 FinancesBottomBar(
-                    selectedTab = if (section == Section.MAIN) MainTab.entries[settledPage] else null,
+                    selectedTab = if (section == Section.MAIN) MainTab.entries.getOrNull(settledPage) else null,
                     onTabSelected = ::showTab,
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onImportClick = onImportStatementClick,
@@ -270,6 +215,7 @@ fun MainTabsScreen(
                 )
             }
         }
+    }
     }
 }
 
@@ -286,16 +232,6 @@ private fun ActivePage(active: Boolean, content: @Composable () -> Unit) {
     }
     SideEffect { owner.setActive(active) }
     CompositionLocalProvider(LocalLifecycleOwner provides owner, content = content)
-}
-
-@Composable
-private fun DrawerLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.4.sp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 14.dp, bottom = 9.dp)
-    )
 }
 
 @Composable

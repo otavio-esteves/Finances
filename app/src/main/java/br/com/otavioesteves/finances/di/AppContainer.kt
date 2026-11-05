@@ -40,6 +40,7 @@ import br.com.otavioesteves.finances.domain.usecase.SynthesizeStatementUseCase
 import kotlinx.coroutines.CoroutineScope
 
 interface AppContainer {
+    val selectedMonth: br.com.otavioesteves.finances.domain.state.SelectedMonthState
     val categoriesRepository: CategoriesRepository
     val transactionsRepository: TransactionsRepository
     val addTransactionUseCase: AddTransactionUseCase
@@ -75,6 +76,16 @@ class DefaultAppContainer(
         DefaultDateProvider()
     }
     
+    override val selectedMonth by lazy {
+        val preferences = context.getSharedPreferences("selected_month", Context.MODE_PRIVATE)
+        val initial = preferences.getString("period", null)?.let {
+            runCatching { br.com.otavioesteves.finances.domain.model.MonthPeriod.from(java.time.YearMonth.parse(it)) }.getOrNull()
+        } ?: dateProvider.getCurrentMonthPeriod()
+        br.com.otavioesteves.finances.domain.state.SelectedMonthState(initial) { period ->
+            preferences.edit().putString("period", period.toYearMonth().toString()).apply()
+        }
+    }
+
     private val database: AppDatabase by lazy {
         AppDatabase.getDatabase(context, applicationScope)
     }
@@ -182,7 +193,7 @@ class DefaultAppContainer(
     }
 
     override val chatRepository: ChatRepository by lazy {
-        RoomChatRepository(database.chatMessageDao())
+        RoomChatRepository(database)
     }
 
     override val statementImportRepository: StatementImportRepository by lazy {
@@ -205,10 +216,8 @@ class DefaultAppContainer(
         SendChatMessageUseCase(
             localAiRepository,
             chatRepository,
-            getMonthlyBalanceUseCase,
-            getCategorySummariesUseCase,
-            dateProvider,
-            categoriesRepository
+            br.com.otavioesteves.finances.data.repository.RoomFinancialContextRepository(database),
+            dateProvider
         )
     }
 

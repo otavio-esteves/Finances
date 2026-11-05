@@ -1,22 +1,23 @@
 package br.com.otavioesteves.finances.data.ai
 
 import android.content.Context
+import android.os.StatFs
 import br.com.otavioesteves.finances.domain.ai.AiError
 import br.com.otavioesteves.finances.domain.ai.AiEngineState
 import br.com.otavioesteves.finances.domain.ai.InstalledModel
 import br.com.otavioesteves.finances.domain.ai.LocalAiEngine
 import br.com.otavioesteves.finances.domain.ai.ModelImporter
 import br.com.otavioesteves.finances.domain.ai.ModelSource
+import br.com.otavioesteves.finances.domain.ai.DeviceCapabilityPolicy
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.io.InputStream
-import java.security.DigestInputStream
-import java.security.MessageDigest
-import java.util.Locale
 
 /**
  * [LocalAiEngine] backed by a model the user imported manually via SAF
@@ -61,13 +62,15 @@ class ImportedModelLocalAiEngine(
             val tempFile = File(modelsDir, "candidate.litertlm")
             val previousState = _state.value
             try {
-                modelsDir.mkdirs()
-                val digest = MessageDigest.getInstance("SHA-256")
-                openStream().use { input ->
-                    DigestInputStream(input, digest).use { digestStream ->
-                        tempFile.outputStream().use { output -> digestStream.copyTo(output) }
-                    }
-                }
+                check(modelsDir.isDirectory || modelsDir.mkdirs()) { "Não foi possível preparar a pasta do modelo." }
+                val coroutineContext = currentCoroutineContext()
+                val sha256 = writeModelCandidate(
+                    candidate = tempFile,
+                    openStream = openStream,
+                    availableBytes = { StatFs(modelsDir.path).availableBytes },
+                    reservedBytes = DeviceCapabilityPolicy.MIN_FREE_STORAGE_BYTES,
+                    checkCancelled = { coroutineContext.ensureActive() }
+                )
 
                 if (!isPlausibleBundle(tempFile)) {
                     tempFile.delete()
@@ -79,13 +82,17 @@ class ImportedModelLocalAiEngine(
                     )
                 }
 
+                coroutineContext.ensureActive()
+                require(StatFs(modelsDir.path).availableBytes >= DeviceCapabilityPolicy.MIN_FREE_STORAGE_BYTES) {
+                    "Espaço insuficiente para carregar o modelo. Libere espaço e tente novamente."
+                }
                 validateBundle(tempFile)
+                coroutineContext.ensureActive()
 
                 if (!tempFile.renameTo(modelFile)) {
                     throw IllegalStateException("Não foi possível substituir o modelo instalado")
                 }
 
-                val sha256 = digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it) }
                 val verified = sha256 in KNOWN_MODEL_HASHES
 
                 prefs.edit()

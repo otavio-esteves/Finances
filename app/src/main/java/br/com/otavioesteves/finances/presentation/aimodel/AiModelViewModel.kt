@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import java.io.InputStream
 
 data class AiModelUiState(
@@ -54,9 +55,16 @@ class AiModelViewModel(
         isImporting.value = true
         errorMessage.value = null
         viewModelScope.launch {
-            modelImporter.importModel(displayName, openStream)
-                .onFailure { errorMessage.value = "Não foi possível importar o modelo selecionado." }
-            isImporting.value = false
+            try {
+                modelImporter.importModel(displayName, openStream)
+                    .onFailure { errorMessage.value = it.message ?: "Não foi possível importar o modelo selecionado." }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                errorMessage.value = failure.message ?: "Não foi possível importar o modelo selecionado."
+            } finally {
+                isImporting.value = false
+            }
         }
     }
 

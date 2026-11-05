@@ -89,11 +89,6 @@ class FinancesVisualCaptureTest {
             composeRule.onAllNodesWithText("Validação", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         capture("transactions", args.getString("captureLabel") ?: "current")
-        composeRule.onNodeWithContentDescription("Chat").performClick()
-        composeRule.waitUntil(15_000) {
-            composeRule.onAllNodesWithText("Conversa de validação 500").fetchSemanticsNodes().isNotEmpty()
-        }
-        capture("chat", args.getString("captureLabel") ?: "current")
         composeRule.onNodeWithContentDescription("Gráficos").performClick()
         composeRule.waitUntil(15_000) {
             composeRule.onAllNodesWithText("Alimentação").fetchSemanticsNodes().isNotEmpty()

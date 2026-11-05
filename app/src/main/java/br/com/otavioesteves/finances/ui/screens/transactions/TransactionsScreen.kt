@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,8 +16,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -28,12 +25,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,12 +40,18 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CenterAlignedTopAppBar
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import br.com.otavioesteves.finances.ui.components.LocalFinanceGlassState
+import br.com.otavioesteves.finances.ui.components.FinanceGlassIconButton
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -62,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.otavioesteves.finances.domain.model.Transaction
+import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.presentation.AppViewModelProvider
 import br.com.otavioesteves.finances.presentation.transactions.TransactionsUiState
 import br.com.otavioesteves.finances.presentation.transactions.TransactionsViewModel
@@ -74,6 +78,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.YearMonth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,21 +86,33 @@ fun TransactionsScreen(
     onBackClick: () -> Unit,
     onTransactionClick: (Transaction) -> Unit,
     embeddedInTabs: Boolean = false,
+    initialMonthPeriod: MonthPeriod? = null,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val loadedState by viewModel.uiState.collectAsStateWithLifecycle()
+    val monthPeriod by viewModel.selectedMonthPeriod.collectAsStateWithLifecycle()
+    val uiState = if (loadedState.monthPeriod == monthPeriod) loadedState else TransactionsUiState(monthPeriod = monthPeriod, isLoading = true)
+    val inheritedBackdrop = LocalFinanceGlassState.current
+    val backdropState = hazeState ?: inheritedBackdrop ?: remember { HazeState() }
+    LaunchedEffect(initialMonthPeriod) {
+        viewModel.initializeMonthPeriod(initialMonthPeriod)
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showMenu by remember { mutableStateOf(false) }
+    var pendingExportMonth by rememberSaveable { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val isAtTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 } }
 
     fun exportTo(uri: Uri, format: ExportFormat) {
+        val period = pendingExportMonth?.let { MonthPeriod.from(YearMonth.parse(it)) } ?: return
+        pendingExportMonth = null
         scope.launch {
             try {
-                val data = withContext(Dispatchers.Default) { viewModel.getExportData(format) }
+                val data = viewModel.getExportData(format, period)
                 withContext(Dispatchers.IO) {
                     val stream = context.contentResolver.openOutputStream(uri)
                         ?: throw IllegalStateException("Não foi possível abrir o destino do arquivo.")
@@ -113,12 +130,14 @@ fun TransactionsScreen(
         contract = ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
         uri?.let { exportTo(it, ExportFormat.CSV) }
+        if (uri == null) pendingExportMonth = null
     }
 
     val jsonLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let { exportTo(it, ExportFormat.JSON) }
+        if (uri == null) pendingExportMonth = null
     }
 
     LaunchedEffect(uiState.error) {
@@ -146,15 +165,16 @@ fun TransactionsScreen(
         )
     }
 
+    CompositionLocalProvider(LocalFinanceGlassState provides backdropState) {
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
         topBar = {
             CenterAlignedTopAppBar(
                 colors = financeTopAppBarColors(isAtTop),
-                title = { Text("Histórico", modifier = Modifier.testTag("transactions_title")) },
+                title = { Text(if (embeddedInTabs) "Transações" else "Histórico", modifier = Modifier.testTag("transactions_title")) },
                 navigationIcon = {
                     if (!embeddedInTabs) {
-                        IconButton(onClick = onBackClick) {
+                        FinanceGlassIconButton(onClick = onBackClick) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Voltar"
@@ -163,7 +183,7 @@ fun TransactionsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showMenu = !showMenu }) {
+                    FinanceGlassIconButton(onClick = { showMenu = !showMenu }) {
                         Icon(imageVector = Icons.Default.MoreVert, contentDescription = "Mais opções")
                     }
                     DropdownMenu(
@@ -174,14 +194,18 @@ fun TransactionsScreen(
                             text = { Text("Exportar CSV") },
                             onClick = {
                                 showMenu = false
-                                csvLauncher.launch("finances_${uiState.monthPeriod.year}_${uiState.monthPeriod.month}.csv")
+                                val period = viewModel.selectedMonthPeriod.value
+                                pendingExportMonth = period.toYearMonth().toString()
+                                csvLauncher.launch("finances_${period.year}_${period.month}.csv")
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Exportar JSON") },
                             onClick = {
                                 showMenu = false
-                                jsonLauncher.launch("finances_${uiState.monthPeriod.year}_${uiState.monthPeriod.month}.json")
+                                val period = viewModel.selectedMonthPeriod.value
+                                pendingExportMonth = period.toYearMonth().toString()
+                                jsonLauncher.launch("finances_${period.year}_${period.month}.json")
                             }
                         )
                     }
@@ -200,8 +224,9 @@ fun TransactionsScreen(
             listState = listState,
             scaffoldPadding = paddingValues,
             embeddedInTabs = embeddedInTabs,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().then(if (hazeState == null && inheritedBackdrop == null) Modifier.hazeSource(backdropState) else Modifier)
         )
+    }
     }
 }
 
@@ -218,7 +243,7 @@ private fun TransactionsContent(
     modifier: Modifier = Modifier
 ) {
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-        if (embeddedInTabs) 112.dp else 24.dp
+        if (embeddedInTabs) 128.dp else 24.dp
     val layoutDirection = LocalLayoutDirection.current
     LazyColumn(
         state = listState,
@@ -259,6 +284,7 @@ private fun TransactionsContent(
                     categoryName = item.category?.name,
                     formattedAmount = item.formattedAmount,
                     formattedDate = item.formattedDate,
+                    uniformHeight = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(shape)
@@ -267,16 +293,40 @@ private fun TransactionsContent(
                         .clickable { onTransactionClick(item.transaction) }
                         .padding(horizontal = 14.dp),
                     trailing = {
-                        IconButton(onClick = { onDeleteTransaction(item.transaction) }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Excluir transação",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        TransactionActions(
+                            transaction = item.transaction,
+                            onEdit = { onTransactionClick(item.transaction) },
+                            onDelete = { onDeleteTransaction(item.transaction) }
+                        )
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TransactionActions(transaction: Transaction, onEdit: () -> Unit, onDelete: () -> Unit) {
+    var expanded by remember(transaction.id) { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "Mais ações para ${transaction.description}",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Editar transação") },
+                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                onClick = { expanded = false; onEdit() }
+            )
+            DropdownMenuItem(
+                text = { Text("Excluir transação", color = MaterialTheme.colorScheme.error) },
+                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                onClick = { expanded = false; onDelete() }
+            )
         }
     }
 }
