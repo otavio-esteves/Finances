@@ -8,7 +8,7 @@ O processamento e os dados financeiros ficam no aparelho. A revisão das categor
 
 1. **Receber a fatura ou o extrato.** A pessoa indica se o arquivo é uma fatura ou um extrato e o seleciona no seletor do Android. O parser aceita **CSV, OFX e PDFs digitais ou digitalizados** no formato data completa, descrição e valor, inclusive quando um lançamento ocupa até seis linhas consecutivas. Em CSV de fatura, valores positivos são compras e negativos são estornos; em CSV de extrato, o sinal segue débito e crédito. Datas abreviadas e meses por nome são aceitos quando o próprio documento informa um período, ano ou referência mensal inequívoca; páginas digitalizadas usam OCR local com modelo em português incluído no APK. PDFs com senha permitem informar a senha somente para aquela leitura. A revisão permite corrigir descrição, data e valor, e exige conferência explícita quando houve OCR.
 2. **Organizar automaticamente.** O app extrai os lançamentos e sugere categorias. Quando há um modelo LiteRT-LM importado e disponível, tenta usá-lo; caso contrário, usa regras locais. A pessoa revisa e pode corrigir cada sugestão antes de confirmar a importação.
-3. **Entender os gastos.** A Início mostra o saldo do mês, a composição por categoria e transações recentes. A visão de categorias e os filtros de mês ajudam a localizar os maiores gastos. **Insights escritos e proativos** ainda são uma meta do produto, não uma função pronta.
+3. **Entender os gastos.** A Início mostra o saldo do mês, a composição por categoria e transações recentes. A visão de categorias e os filtros de mês ajudam a localizar os maiores gastos. A Início também apresenta comparações numéricas de despesas por categoria com o mês anterior; análises abertas em linguagem natural continuam sendo uma meta.
 
 ```text
 Arquivo CSV/OFX/PDF → extração → sugestão de categoria → revisão → transações locais
@@ -36,7 +36,7 @@ Na página Gráficos, a ação **Adicionar exemplos** insere 60 lançamentos fic
 
 1. Validar os layouts reais anonimizados de **Nubank, PicPay, Banco do Brasil, Caixa e Inter**, ampliando o corpus de regressão. OCR local, senha, tabelas posicionadas e colunas de débito/crédito já estão implementados; os testes atuais representam famílias de layout, não certificam todos os formatos dessas instituições.
 2. Medir e melhorar a categorização automática, inclusive o tratamento de lançamentos incertos e duplicatas em faturas parcialmente sobrepostas.
-3. Gerar **insights proativos** a partir dos dados confirmados, como categorias com maior peso e mudanças entre períodos, com números verificáveis no histórico.
+3. Ampliar as comparações mensais determinísticas já implementadas com novos insights a partir dos dados confirmados, sempre com números verificáveis no histórico.
 4. Concluir a distribuição do modelo no flavor `play` e validar a experiência de ponta a ponta em aparelhos reais. Os flavors `play` e `standalone` existem, mas ainda têm o mesmo comportamento; o asset pack não foi integrado.
 
 O [plano do motor local](docs/PLANO_MOTOR_IA_LOCAL.md) detalha as decisões e pendências de IA. A [arquitetura](docs/ARCHITECTURE.md) descreve os fluxos e contratos implementados.
@@ -73,6 +73,15 @@ UI Compose → ViewModels → casos de uso e contratos de domínio ← Room, par
 - **Backup/exportação manual em JSON ou CSV não é criptografado pelo app.** A proteção do arquivo no destino escolhido cabe ao usuário.
 - O banco Room não tem criptografia adicional nem bloqueio interno por PIN/biometria. Um aparelho desbloqueado permite acesso ao app.
 - Um modelo importado pelo usuário é carregado por um runtime nativo. A inicialização detecta algumas incompatibilidades, mas não garante qualidade de inferência nem segurança do bundle; use arquivos de origem confiável.
+
+## Correções, importações e lembretes
+
+- Ao corrigir uma categoria ou tipo e confirmar a importação, o app memoriza a escolha para a mesma descrição e tipo de entrada. A comparação ignora caixa, acentos e espaços repetidos, mas preserva números e pontuação. Só os lançamentos sem memória seguem para a IA/regras. Editar a categoria de uma transação salva também atualiza a memória. Correções de valor/data, sozinhas, não ensinam uma categoria.
+- Em Configurações, **Histórico de importações → Desfazer importação** remove atomicamente as transações ainda vinculadas ao lote, inclusive as editadas. Outros lotes e lançamentos manuais são preservados. O arquivo pode ser importado novamente; a memória das correções permanece. Importações anteriores à versão 8 do banco não têm vínculos e não podem ser desfeitas automaticamente. A opção **Apagar memória das correções** não apaga transações.
+- Na revisão, **Identificar conta e conferir total** permite identificar a conta/cartão e informar o total de despesas do documento. A diferença exige conferência explícita antes de salvar. Este campo não extrai automaticamente o total da fatura: não use saldo, pagamentos ou transferências. A identificação também pode ser editada nos lançamentos e aparece no histórico; não representa conexão bancária nem saldo individual de conta.
+- A Início compara as despesas registradas por categoria com o mês anterior e oferece acesso aos lançamentos. Não presume gasto zero quando não há histórico. Meses incompletos são identificados como uma limitação da comparação.
+- Os lembretes locais dizem **Já faturou esse mês?** no último dia de cada mês e no dia 05, às 9h do aparelho. Configurações → **Lembretes de faturas** permite desativá-los. Android 13 ou superior solicita permissão; sem permissão, nenhuma notificação é enviada. O agendamento é refeito após reiniciar, atualizar o app ou alterar hora/fuso; o Android pode atrasar o horário por economia de bateria. Não exige internet nem permissão de alarmes exatos.
+- O banco usa schema 8, com migração que preserva os dados. O backup JSON v4 preserva memória, identificação e vínculos de importação; backups v1–v3 continuam aceitos. A preferência de notificações pertence à instalação, não ao backup financeiro.
 
 ## Desenvolvimento
 
@@ -115,7 +124,7 @@ O botão **Ver transações**, abaixo das transações recentes da Início, abre
 A abertura do app tem uma transição breve e os controles de navegação compartilham o estilo de vidro. A barra inferior cresceu aproximadamente 15%, com ajuste proporcional para telas estreitas. Os cards do histórico usam uma coluna financeira consistente, altura mínima adaptada à fonte e menu secundário de ações; valores extensos podem expandir o card para preservar a leitura.
 
 
-A [auditoria de design](docs/ARCHITECTURE.md#auditoria-de-design-e-feedback-de-processamento) registra os problemas e as correções por tela. Durante a importação, a tela mostra apenas um título curto e uma barra de progresso, determinada quando há contagem de lançamentos categorizados; voltar cancela o processamento. O formulário usa campos retangulares para data e ícone, com prévia do símbolo selecionado e cores da paleta ativa. O seletor de categoria inclui **Nova categoria**, que cria e seleciona uma categoria do tipo do lançamento sem perder os dados preenchidos. As categorias têm cores suaves e estáveis nos cards, detalhes, ícones de transações e gráficos; abrem seus lançamentos no mês selecionado. O seletor de mês tem largura ajustada ao texto.
+A [auditoria de design](docs/ARCHITECTURE.md#auditoria-de-design-e-feedback-de-processamento) registra os problemas e as correções por tela. Durante a importação, a tela mostra a etapa atual, uma animação contínua de atividade e o tempo decorrido. Na categorização, a contagem e a barra refletem os lançamentos concluídos; enquanto o primeiro lote aguarda resposta, a barra permanece indeterminada. O avanço medido é suavizado e a animação continua entre lotes; voltar cancela o processamento. O formulário usa campos retangulares para data e ícone, com prévia do símbolo selecionado e cores da paleta ativa. O seletor de categoria inclui **Nova categoria**, que cria e seleciona uma categoria do tipo do lançamento sem perder os dados preenchidos. As categorias têm cores suaves e estáveis nos cards, detalhes, ícones de transações e gráficos; abrem seus lançamentos no mês selecionado. O seletor de mês tem largura ajustada ao texto.
 
 O card **Visão do mês** usa as cores da paleta ativa, incluindo gradiente, borda, sombra e contraste do texto, em temas claro e escuro.
 
