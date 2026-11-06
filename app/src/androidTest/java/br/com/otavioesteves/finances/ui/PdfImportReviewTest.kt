@@ -1,5 +1,6 @@
 package br.com.otavioesteves.finances.ui
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -18,8 +19,10 @@ import br.com.otavioesteves.finances.domain.model.*
 import br.com.otavioesteves.finances.domain.repository.*
 import br.com.otavioesteves.finances.domain.usecase.*
 import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementUiState
+import br.com.otavioesteves.finances.presentation.importstatement.ImportProcessingStage
 import br.com.otavioesteves.finances.presentation.importstatement.ImportStatementViewModel
 import br.com.otavioesteves.finances.ui.screens.importstatement.ImportStatementScreen
+import br.com.otavioesteves.finances.ui.screens.importstatement.LoadingContent
 import br.com.otavioesteves.finances.ui.theme.FinancesTheme
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +41,30 @@ class PdfImportReviewTest {
     @After fun clear() { rule.runOnIdle { store.clear() } }
 
     @Test
+    fun pendingFirstBatchShowsActivityUntilMeasuredProgressArrives() {
+        val loading = mutableStateOf(
+            ImportStatementUiState.Loading(
+                "fatura.pdf",
+                ImportProcessingStage.CATEGORIZING,
+                totalEntries = 2
+            )
+        )
+        rule.setContent {
+            FinancesTheme {
+                LoadingContent(loading.value)
+            }
+        }
+        rule.onNodeWithTag("import_activity").assertIsDisplayed()
+        rule.onNodeWithTag("import_progress_indeterminate").assertIsDisplayed()
+        rule.onNodeWithTag("import_progress_measured").assertDoesNotExist()
+        rule.onNodeWithText("0 de 2 transações categorizadas").assertIsDisplayed()
+        rule.runOnIdle { loading.value = loading.value.copy(processedEntries = 1) }
+        rule.onNodeWithTag("import_activity").assertIsDisplayed()
+        rule.onNodeWithTag("import_progress_measured").assertIsDisplayed()
+        rule.onNodeWithText("1 de 2 transações categorizadas").assertIsDisplayed()
+    }
+
+    @Test
     fun processingShowsMeasuredProgressAndCanBeCancelled() {
         val gate = CompletableDeferred<Unit>()
         val (vm, saved) = viewModel(scanned = false, processingGate = gate)
@@ -45,7 +72,9 @@ class PdfImportReviewTest {
         rule.runOnIdle { vm.onFileSelected("fatura-em-processamento.pdf", byteArrayOf(1)) }
         rule.waitUntil(10_000) { (vm.uiState.value as? ImportStatementUiState.Loading)?.progress == 0.5f }
         rule.onNodeWithTag("import_progress_measured").assertIsDisplayed()
-        rule.onNodeWithText("Processando…").assertIsDisplayed()
+        rule.onNodeWithText("Organizando categorias…").assertIsDisplayed()
+        rule.onNodeWithTag("import_activity").assertIsDisplayed()
+        rule.onNodeWithText("1 de 2 transações categorizadas").assertIsDisplayed()
         rule.onNodeWithText("1 de 2 lançamentos · 50% desta etapa").assertDoesNotExist()
         rule.onNodeWithText("fatura-em-processamento.pdf").assertDoesNotExist()
         rule.onNodeWithContentDescription("Voltar").performClick()

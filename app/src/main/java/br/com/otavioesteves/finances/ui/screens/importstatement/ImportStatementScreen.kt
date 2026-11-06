@@ -3,6 +3,9 @@ package br.com.otavioesteves.finances.ui.screens.importstatement
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.os.SystemClock
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +31,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.RadioButton
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
@@ -93,6 +98,7 @@ import br.com.otavioesteves.finances.ui.components.PrimaryActionButton
 import br.com.otavioesteves.finances.ui.components.financeTopAppBarColors
 import br.com.otavioesteves.finances.utils.DateFormatter
 import br.com.otavioesteves.finances.utils.MoneyFormatter
+import kotlinx.coroutines.delay
 import br.com.otavioesteves.finances.utils.queryDisplayName
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -255,31 +261,75 @@ private fun StatementKindChoice(
 }
 
 @Composable
-private fun LoadingContent(
+internal fun LoadingContent(
     state: ImportStatementUiState.Loading,
     modifier: Modifier = Modifier
 ) {
-    val title = when (state.stage) {
-        ImportProcessingStage.READING, ImportProcessingStage.EXTRACTING -> "Importando…"
-        ImportProcessingStage.CHECKING_OVERLAPS, ImportProcessingStage.CATEGORIZING,
-        ImportProcessingStage.PREPARING_REVIEW -> "Processando…"
+    var elapsedSeconds by remember(state.fileName) { mutableStateOf(0L) }
+    LaunchedEffect(state.fileName) {
+        val startedAt = SystemClock.elapsedRealtime()
+        while (true) {
+            delay(1_000)
+            elapsedSeconds = (SystemClock.elapsedRealtime() - startedAt) / 1_000
+        }
     }
+    val title = when (state.stage) {
+        ImportProcessingStage.READING -> "Abrindo arquivo…"
+        ImportProcessingStage.EXTRACTING -> "Lendo transações…"
+        ImportProcessingStage.CHECKING_OVERLAPS -> "Conferindo transações…"
+        ImportProcessingStage.CATEGORIZING -> "Organizando categorias…"
+        ImportProcessingStage.PREPARING_REVIEW -> "Preparando sua revisão…"
+    }
+    val progress = state.progress
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress ?: 0f, animationSpec = tween(450), label = "importProgress"
+    )
     Column(
         modifier = modifier.fillMaxSize().navigationBarsPadding().padding(32.dp)
             .testTag("import_processing"),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // This animation represents activity, including while a whole AI batch is pending.
+        // The separate bar below represents only completed work, never elapsed time.
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(88.dp)) {
+            CircularProgressIndicator(
+                modifier = Modifier.fillMaxSize().testTag("import_activity"),
+                strokeWidth = 3.dp
+            )
+            Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+        }
         Text(title, style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        val progress = state.progress
-        if (progress == null) {
+        if (progress == null || state.processedEntries == 0) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth().testTag("import_progress_indeterminate"))
         } else {
-            LinearProgressIndicator(progress = { progress },
+            LinearProgressIndicator(progress = { animatedProgress },
                 modifier = Modifier.fillMaxWidth().testTag("import_progress_measured"))
         }
+        if (state.stage == ImportProcessingStage.CATEGORIZING && state.totalEntries != null) {
+            Text(
+                "${state.processedEntries} de ${state.totalEntries} transações categorizadas",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+            )
+        }
+        Text(
+            if (elapsedSeconds < 15) "Seus dados ficam no aparelho."
+            else "Ainda trabalhando. Você poderá revisar tudo ao concluir.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            "Tempo decorrido: ${elapsedSeconds / 60}min ${elapsedSeconds % 60}s",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
