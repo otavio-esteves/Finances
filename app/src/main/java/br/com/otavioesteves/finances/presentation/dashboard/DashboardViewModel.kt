@@ -36,13 +36,16 @@ class DashboardViewModel(
             getMonthlyBalance(period),
             getTransactionsByMonth(period, RECENT_TRANSACTIONS_LIMIT),
             getCategorySummaries(period),
-            categoriesRepository.getCategories()
-        ) { monthlyBalance, transactions, categorySummaries, categories ->
+            categoriesRepository.getCategories(),
+            if (period.year == 1 && period.month == 1) kotlinx.coroutines.flow.flowOf(emptyList())
+            else getCategorySummaries(period.previousMonth())
+        ) { monthlyBalance, transactions, categorySummaries, categories, previousSummaries ->
             val categoryMap = categories.associateBy { it.id }
             DashboardUiState(
                 monthPeriod = period,
                 monthlyBalance = monthlyBalance,
                 categorySummaries = categorySummaries,
+                comparisons = br.com.otavioesteves.finances.domain.model.compareExpenses(categorySummaries, previousSummaries),
                 recentTransactions = transactions
                     .map { transaction ->
                         TransactionItem(transaction = transaction, category = categoryMap[transaction.categoryId])

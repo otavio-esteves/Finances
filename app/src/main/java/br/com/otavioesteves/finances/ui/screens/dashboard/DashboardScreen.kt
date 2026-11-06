@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -61,6 +62,7 @@ import dev.chrisbanes.haze.HazeState
 fun DashboardScreen(
     onHistoryClick: (MonthPeriod) -> Unit,
     onTransactionClick: (Transaction) -> Unit = {},
+    onCategoryClick: (CategorySummary, MonthPeriod) -> Unit = { _, _ -> },
     hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory)
@@ -73,6 +75,7 @@ fun DashboardScreen(
         state = uiState,
         onHistoryClick = { onHistoryClick(uiState.monthPeriod) },
         onTransactionClick = onTransactionClick,
+        onCategoryClick = onCategoryClick,
         onPreviousMonthClick = { viewModel.onMonthSelected(uiState.monthPeriod.previousMonth()) },
         onNextMonthClick = { viewModel.onMonthSelected(uiState.monthPeriod.nextMonth()) },
         hazeState = hazeState,
@@ -87,6 +90,7 @@ private fun DashboardContent(
     onPreviousMonthClick: () -> Unit,
     onNextMonthClick: () -> Unit,
     onTransactionClick: (Transaction) -> Unit = {},
+    onCategoryClick: (CategorySummary, MonthPeriod) -> Unit = { _, _ -> },
     hazeState: HazeState? = null,
     modifier: Modifier = Modifier
 ) {
@@ -107,6 +111,23 @@ private fun DashboardContent(
             )
 
             BalanceHero(balance = state.monthlyBalance)
+            if (state.comparisons.isNotEmpty()) FinanceCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Em relação ao mês anterior", style = MaterialTheme.typography.titleMedium)
+                    Text("Comparação dos lançamentos registrados nos dois meses. O mês atual pode estar incompleto.",
+                        style = MaterialTheme.typography.bodySmall)
+                    state.comparisons.forEach { change ->
+                        val direction = if (change.difference.isPositive()) "a mais" else "a menos"
+                        val amount = MoneyFormatter.format(Money.fromCents(kotlin.math.abs(change.difference.cents)))
+                        Text("${change.category.name}: $amount $direction", style = MaterialTheme.typography.bodyLarge)
+                        Text("Anterior: ${MoneyFormatter.format(change.previous)} · Selecionado: ${MoneyFormatter.format(change.current)}",
+                            style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { onCategoryClick(CategorySummary(change.category, change.current), state.monthPeriod) }) {
+                            Text("Conferir lançamentos de ${change.category.name}")
+                        }
+                    }
+                }
+            }
 
             FinanceCard(modifier = Modifier.fillMaxWidth()) {
                 Column(

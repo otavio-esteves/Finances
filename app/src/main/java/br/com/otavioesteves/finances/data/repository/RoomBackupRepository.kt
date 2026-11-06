@@ -34,11 +34,13 @@ class RoomBackupRepository(
                 type = it.type,
                 notes = it.notes,
                 origin = it.origin,
-                iconKey = it.iconKey
+                iconKey = it.iconKey,
+                importId = it.importId,
+                sourceLabel = it.sourceLabel
             )
         }
         val statementImports = database.statementImportDao().getAllImportsForBackup().map {
-            StatementImportExportModel(it.id, it.fileName, it.importedAt.toString(), it.transactionCount, it.fingerprint)
+            StatementImportExportModel(it.id, it.fileName, it.importedAt.toString(), it.transactionCount, it.fingerprint, it.sourceLabel, it.canUndo)
         }
         val chatMessages = database.chatMessageDao().getAllMessagesForBackup().map {
             ChatMessageExportModel(it.id, it.role, it.content, it.createdAt.toString())
@@ -47,7 +49,10 @@ class RoomBackupRepository(
             categories = categories,
             transactions = transactions,
             statementImports = statementImports,
-            chatMessages = chatMessages
+            chatMessages = chatMessages,
+            categoryMemories = database.categoryMemoryDao().getAll().map {
+                br.com.otavioesteves.finances.domain.model.CategoryMemoryExportModel(it.descriptionKey, it.inputType, it.categoryId)
+            }
         )
     }
 
@@ -79,6 +84,15 @@ class RoomBackupRepository(
                 "Backup inválido: importações duplicadas"
             }
 
+            val importIds = backup.statementImports.map { it.id }.toSet()
+            require(backup.transactions.all { it.importId == null || (it.importId in importIds && it.origin == br.com.otavioesteves.finances.domain.model.TransactionOrigin.IMPORTED) }) {
+                "Backup inválido: vínculo de importação inexistente"
+            }
+            require(backup.categoryMemories.all { it.categoryId in categoryIds && it.descriptionKey.isNotBlank() } &&
+                backup.categoryMemories.map { it.descriptionKey to it.inputType }.distinct().size == backup.categoryMemories.size) {
+                "Backup inválido: memória de categorias inválida"
+            }
+            database.categoryMemoryDao().clear()
             database.transactionDao().deleteAll()
             database.categoryDao().deleteAll()
             database.statementImportDao().deleteAll()
@@ -102,15 +116,20 @@ class RoomBackupRepository(
                     type = it.type,
                     notes = it.notes,
                     origin = it.origin,
-                    iconKey = it.iconKey
+                    iconKey = it.iconKey,
+                    importId = it.importId,
+                    sourceLabel = it.sourceLabel
                 )
             }
             database.transactionDao().insertTransactions(transactions)
             database.statementImportDao().insertImports(backup.statementImports.map {
-                StatementImportEntity(it.id, it.fileName, LocalDateTime.parse(it.importedAt), it.transactionCount, it.fingerprint)
+                StatementImportEntity(it.id, it.fileName, LocalDateTime.parse(it.importedAt), it.transactionCount, it.fingerprint, it.sourceLabel, it.canUndo)
             })
             database.chatMessageDao().insertMessages(backup.chatMessages.map {
                 ChatMessageEntity(it.id, it.role, it.content, LocalDateTime.parse(it.createdAt))
+            })
+            database.categoryMemoryDao().remember(backup.categoryMemories.map {
+                br.com.otavioesteves.finances.data.local.entity.CategoryMemoryEntity(it.descriptionKey, it.inputType, it.categoryId)
             })
             database.markDataRestored()
         }

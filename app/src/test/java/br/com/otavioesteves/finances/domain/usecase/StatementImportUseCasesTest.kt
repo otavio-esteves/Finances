@@ -145,7 +145,7 @@ class StatementImportUseCasesTest {
         assertEquals(category.id, persisted.categoryId)
         assertEquals(1, statementImportRepository.addedImports.size)
         assertEquals(
-            ImportedStatement(id = 0, fileName = "extrato.csv", importedAt = importedAt, transactionCount = 1),
+            ImportedStatement(id = 0, fileName = "extrato.csv", importedAt = importedAt, transactionCount = 1, canUndo = true),
             result
         )
         assertEquals(result, statementImportRepository.addedImports.single())

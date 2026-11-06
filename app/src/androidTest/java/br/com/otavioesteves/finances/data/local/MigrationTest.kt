@@ -14,6 +14,24 @@ import java.io.IOException
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
 
+    @Test
+    fun migrate7To8KeepsOldTransactionsUnlinkedAndCreatesMemory() {
+        helper.createDatabase(testDbName, 7).apply {
+            execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Outros', 'EXPENSE')")
+            execSQL("INSERT INTO statement_imports (id, fileName, importedAt, transactionCount) VALUES (1, 'antigo.csv', '2026-11-01T09:00:00', 1)")
+            execSQL("INSERT INTO transactions (id, description, amountCents, categoryId, date, type, notes, origin) VALUES (1, 'Mercado', 1000, 1, '2026-11-01', 'EXPENSE', NULL, 'IMPORTED')")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(testDbName, 8, true, AppDatabase.MIGRATION_7_8)
+        db.query("SELECT importId, sourceLabel, amountCents FROM transactions WHERE id = 1").use {
+            assertTrue(it.moveToFirst()); assertTrue(it.isNull(0)); assertTrue(it.isNull(1)); assertEquals(1000L, it.getLong(2))
+        }
+        db.query("SELECT canUndo FROM statement_imports WHERE id = 1").use {
+            assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0))
+        }
+        db.execSQL("INSERT INTO category_memories (descriptionKey, inputType, categoryId) VALUES ('mercado', 'EXPENSE', 1)")
+    }
+
     private val testDbName = "migration-test-db"
 
     @get:Rule

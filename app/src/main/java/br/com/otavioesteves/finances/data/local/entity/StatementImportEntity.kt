@@ -12,5 +12,7 @@ data class StatementImportEntity(
     val fileName: String,
     val importedAt: LocalDateTime,
     val transactionCount: Int,
-    val fingerprint: String? = null
+    val fingerprint: String? = null,
+    val sourceLabel: String? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0") val canUndo: Boolean = false
 )

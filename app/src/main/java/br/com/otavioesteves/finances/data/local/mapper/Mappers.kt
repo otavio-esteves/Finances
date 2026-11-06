@@ -45,7 +45,9 @@ fun TransactionEntity.toDomain(): Transaction {
         type = this.type,
         notes = this.notes,
         origin = this.origin,
-        iconKey = this.iconKey
+        iconKey = this.iconKey,
+        importId = this.importId,
+        sourceLabel = this.sourceLabel
     )
 }
 
@@ -59,7 +61,9 @@ fun Transaction.toEntity(): TransactionEntity {
         type = this.type,
         notes = this.notes,
         origin = this.origin,
-        iconKey = this.iconKey
+        iconKey = this.iconKey,
+        importId = this.importId,
+        sourceLabel = this.sourceLabel
     )
 }
 
@@ -68,7 +72,9 @@ fun StatementImportEntity.toDomain(): ImportedStatement {
         id = this.id,
         fileName = this.fileName,
         importedAt = this.importedAt,
-        transactionCount = this.transactionCount
+        transactionCount = this.transactionCount,
+        sourceLabel = this.sourceLabel,
+        canUndo = this.canUndo
     )
 }
 
@@ -77,7 +83,9 @@ fun ImportedStatement.toEntity(): StatementImportEntity {
         id = this.id,
         fileName = this.fileName,
         importedAt = this.importedAt,
-        transactionCount = this.transactionCount
+        transactionCount = this.transactionCount,
+        sourceLabel = this.sourceLabel,
+        canUndo = this.canUndo
     )
 }
 

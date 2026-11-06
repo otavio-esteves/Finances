@@ -64,7 +64,7 @@ class AppearanceSettingsTest {
             composeRule.onNodeWithContentDescription("Abrir menu").performClick()
             composeRule.onNodeWithText("Configurações").performScrollTo().performClick()
             ThemeMode.entries.forEach { mode ->
-                composeRule.onNodeWithText("Tema").performClick()
+                composeRule.onNodeWithText("Tema").performScrollTo().performClick()
                 composeRule.onNode(hasText(mode.label) and hasAnyAncestor(isDialog())).performClick()
                 composeRule.onNodeWithText(mode.label).assertIsDisplayed()
                 composeRule.runOnIdle {
@@ -72,7 +72,7 @@ class AppearanceSettingsTest {
                 }
             }
             ThemePalette.entries.forEach { palette ->
-                composeRule.onNodeWithText("Paleta de cores").performClick()
+                composeRule.onNodeWithText("Paleta de cores").performScrollTo().performClick()
                 composeRule.onNode(hasText(palette.label) and hasAnyAncestor(isDialog())).performScrollTo().performClick()
                 composeRule.onNodeWithText(palette.label).assertIsDisplayed()
                 composeRule.runOnIdle {

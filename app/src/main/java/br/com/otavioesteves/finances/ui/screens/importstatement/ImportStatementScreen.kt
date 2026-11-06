@@ -168,6 +168,9 @@ fun ImportStatementScreen(
                     onOverlapAcknowledged = viewModel::onOverlapAcknowledged,
                     onOcrAcknowledged = viewModel::onOcrAcknowledged,
                     onEntryEdited = viewModel::onEntryEdited,
+                    onSourceLabelChanged = viewModel::onSourceLabelChanged,
+                    onExpectedTotalChanged = viewModel::onExpectedTotalChanged,
+                    onDifferenceAcknowledged = viewModel::onDifferenceAcknowledged,
                     onConfirmClick = viewModel::onConfirmImport,
                     onCancelClick = viewModel::onStartOver,
                     onScrollTopChange = { isAtTop = it }
@@ -380,6 +383,9 @@ private fun ReviewContent(
     onOverlapAcknowledged: (Boolean) -> Unit,
     onOcrAcknowledged: (Boolean) -> Unit,
     onEntryEdited: (Int, String, String, String) -> String?,
+    onSourceLabelChanged: (String) -> Unit,
+    onExpectedTotalChanged: (String) -> Unit,
+    onDifferenceAcknowledged: (Boolean) -> Unit,
     onConfirmClick: () -> Unit,
     onCancelClick: () -> Unit,
     onScrollTopChange: (Boolean) -> Unit,
@@ -427,6 +433,9 @@ private fun ReviewContent(
             contentPadding = PaddingValues(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                ImportReviewChecks(state, onSourceLabelChanged, onExpectedTotalChanged, onDifferenceAcknowledged)
+            }
             itemsIndexed(state.suggestions) { index: Int, suggestion: CategorySuggestion ->
                 SuggestionRow(
                     suggestion = suggestion,
@@ -500,6 +509,10 @@ private fun SuggestionRow(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (suggestion.source == br.com.otavioesteves.finances.domain.model.SuggestionSource.MEMORY) {
+                Text("Categoria lembrada da sua correção", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary)
+            }
             TextButton(onClick = { showEditor = true }, enabled = enabled) { Text("Corrigir dados") }
             Row(
                 modifier = Modifier.fillMaxWidth(),

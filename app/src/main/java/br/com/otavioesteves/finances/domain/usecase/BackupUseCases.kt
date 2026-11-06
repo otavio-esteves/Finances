@@ -19,7 +19,7 @@ class RestoreBackupUseCase(private val repository: BackupRepository) {
         if (backup.categories.isEmpty() && backup.transactions.isNotEmpty()) {
             throw IllegalArgumentException("Backup inválido: transações sem categorias")
         }
-        require(backup.version in 1..3) { "Versão de backup não suportada: ${backup.version}" }
+        require(backup.version in 1..4) { "Versão de backup não suportada: ${backup.version}" }
         repository.restoreBackup(backup)
     }
 }

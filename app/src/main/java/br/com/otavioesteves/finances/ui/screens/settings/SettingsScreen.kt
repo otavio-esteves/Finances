@@ -92,6 +92,7 @@ fun SettingsScreen(
     val themeMode by themePreferences.mode.collectAsStateWithLifecycle()
     val themePalette by themePreferences.palette.collectAsStateWithLifecycle()
     val allowScreenshots by themePreferences.allowScreenshots.collectAsStateWithLifecycle()
+    var showHistory by rememberSaveable { mutableStateOf(false) }
     var showThemePicker by rememberSaveable { mutableStateOf(false) }
     var showPalettePicker by rememberSaveable { mutableStateOf(false) }
     val scrollState = rememberScrollState()
@@ -195,6 +196,8 @@ fun SettingsScreen(
         )
     }
 
+    ImportHistoryDialogs(viewModel, showHistory) { showHistory = false }
+
     Scaffold(
         modifier = modifier,
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -223,6 +226,8 @@ fun SettingsScreen(
                     .padding(start = 20.dp, end = 20.dp, top = paddingValues.calculateTopPadding() + 20.dp, bottom = 128.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+                NotificationSettingsCard()
+                ImportManagementCard(viewModel) { showHistory = true }
                 FinanceCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
                         Text(

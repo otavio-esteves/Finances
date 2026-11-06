@@ -15,6 +15,7 @@ data class AddTransactionUiState(
     val date: LocalDate = LocalDate.now(),
     val dateError: String? = null,
     val notes: String = "",
+    val sourceLabel: String = "",
     val iconKey: String? = null,
     val categories: List<Category> = emptyList(),
     val isSaveSuccessful: Boolean = false,

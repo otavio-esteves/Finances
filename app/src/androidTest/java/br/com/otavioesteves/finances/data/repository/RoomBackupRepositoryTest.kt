@@ -87,7 +87,7 @@ class RoomBackupRepositoryTest {
             )
             repository.restoreBackup(backup)
 
-            assertEquals(3, backup.version)
+            assertEquals(4, backup.version)
             assertEquals(TransactionOrigin.IMPORTED, database.transactionDao().getAllTransactions().single().origin)
             assertEquals("market", database.transactionDao().getAllTransactions().single().iconKey)
             assertEquals("fingerprint", database.statementImportDao().getAllImportsForBackup().single().fingerprint)

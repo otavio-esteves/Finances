@@ -30,6 +30,10 @@ import br.com.otavioesteves.finances.ui.navigation.FinancesNavHost
 import br.com.otavioesteves.finances.ui.theme.FinancesTheme
 
 class MainActivity : ComponentActivity() {
+    private val notificationPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted -> (application as MainApplication).invoiceReminders.setEnabled(granted) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -42,6 +46,11 @@ class MainActivity : ComponentActivity() {
         // Keep window security in the Activity lifecycle, independent of Compose frame scheduling.
         lifecycleScope.launch {
             preferences.allowScreenshots.collect { applyScreenshotPreference(it) }
+        }
+        val reminders = (application as MainApplication).invoiceReminders
+        if (Build.VERSION.SDK_INT >= 33 && !reminders.permissionAsked && reminders.enabled.value) {
+            reminders.markPermissionAsked()
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
         val animateLaunch = savedInstanceState == null
 

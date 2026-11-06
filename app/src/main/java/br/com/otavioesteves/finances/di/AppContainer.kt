@@ -40,6 +40,7 @@ import br.com.otavioesteves.finances.domain.usecase.SynthesizeStatementUseCase
 import kotlinx.coroutines.CoroutineScope
 
 interface AppContainer {
+    val categoryMemoryRepository: br.com.otavioesteves.finances.domain.repository.CategoryMemoryRepository
     val selectedMonth: br.com.otavioesteves.finances.domain.state.SelectedMonthState
     val categoriesRepository: CategoriesRepository
     val transactionsRepository: TransactionsRepository
@@ -95,7 +96,7 @@ class DefaultAppContainer(
     }
 
     override val transactionsRepository: TransactionsRepository by lazy {
-        RoomTransactionsRepository(database.transactionDao())
+        RoomTransactionsRepository(database.transactionDao(), database)
     }
 
     override val addTransactionUseCase: AddTransactionUseCase by lazy {
@@ -184,12 +185,16 @@ class DefaultAppContainer(
         )
     }
 
+    override val categoryMemoryRepository by lazy {
+        br.com.otavioesteves.finances.data.repository.RoomCategoryMemoryRepository(database.categoryMemoryDao())
+    }
+
     override val transactionCategorizer: TransactionCategorizer by lazy {
-        EngineAwareTransactionCategorizer(
+        br.com.otavioesteves.finances.data.ai.RememberingTransactionCategorizer(EngineAwareTransactionCategorizer(
             localAiEngine = localAiEngine,
             aiCategorizer = liteRtTransactionCategorizer,
             ruleBasedCategorizer = ruleBasedLocalAi
-        )
+        ), categoryMemoryRepository)
     }
 
     override val chatRepository: ChatRepository by lazy {

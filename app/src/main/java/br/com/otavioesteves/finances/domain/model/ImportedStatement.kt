@@ -6,7 +6,9 @@ data class ImportedStatement(
     val id: Long,
     val fileName: String,
     val importedAt: LocalDateTime,
-    val transactionCount: Int
+    val transactionCount: Int,
+    val sourceLabel: String? = null,
+    val canUndo: Boolean = false
 ) {
     init {
         require(id >= 0) { "id must be positive or zero" }

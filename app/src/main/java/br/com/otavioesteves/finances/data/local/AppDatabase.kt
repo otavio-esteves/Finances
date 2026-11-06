@@ -24,9 +24,10 @@ import java.util.concurrent.atomic.AtomicLong
         CategoryEntity::class,
         TransactionEntity::class,
         StatementImportEntity::class,
-        ChatMessageEntity::class
+        ChatMessageEntity::class,
+        br.com.otavioesteves.finances.data.local.entity.CategoryMemoryEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -41,6 +42,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun transactionDao(): TransactionDao
     abstract fun statementImportDao(): StatementImportDao
+    abstract fun categoryMemoryDao(): br.com.otavioesteves.finances.data.local.dao.CategoryMemoryDao
     abstract fun chatMessageDao(): ChatMessageDao
 
     companion object {
@@ -116,6 +118,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN importId INTEGER")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN sourceLabel TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_transactions_importId ON transactions (importId)")
+                db.execSQL("ALTER TABLE statement_imports ADD COLUMN sourceLabel TEXT")
+                db.execSQL("ALTER TABLE statement_imports ADD COLUMN canUndo INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE TABLE IF NOT EXISTS category_memories (descriptionKey TEXT NOT NULL, inputType TEXT NOT NULL, categoryId INTEGER NOT NULL, PRIMARY KEY(descriptionKey, inputType), FOREIGN KEY(categoryId) REFERENCES categories(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_category_memories_categoryId ON category_memories (categoryId)")
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -123,7 +137,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "finances_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .addCallback(DefaultCategoriesCallback())
                     .build()
                 INSTANCE = instance

@@ -43,10 +43,10 @@ class BackupUseCasesTest {
     }
 
     @Test
-    fun `createBackupUseCase serializes version three with icon support`() = runBlocking {
+    fun `createBackupUseCase serializes version four with import links and category memory`() = runBlocking {
         val repo = FakeBackupRepository()
         val json = CreateBackupUseCase(repo)()
-        assertEquals(true, json.contains("\"version\": 3"))
+        assertEquals(true, json.contains("\"version\": 4"))
     }
 
     @Test(expected = Exception::class)

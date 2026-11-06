@@ -12,12 +12,14 @@ import kotlinx.coroutines.launch
 class MainApplication : Application() {
     val applicationScope = CoroutineScope(SupervisorJob())
     val themePreferences by lazy { ThemePreferences(this) }
+    val invoiceReminders by lazy { br.com.otavioesteves.finances.data.notifications.InvoiceReminders(this) }
 
     lateinit var container: AppContainer
 
     override fun onCreate() {
         super.onCreate()
         container = DefaultAppContainer(this, applicationScope)
+        invoiceReminders.schedule()
     }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

@@ -19,7 +19,9 @@ data class TransactionExportModel(
     val type: TransactionType,
     val notes: String?,
     val origin: TransactionOrigin = TransactionOrigin.MANUAL,
-    val iconKey: String? = null
+    val iconKey: String? = null,
+    val importId: Long? = null,
+    val sourceLabel: String? = null
 )
 
 @Serializable
@@ -28,7 +30,9 @@ data class StatementImportExportModel(
     val fileName: String,
     val importedAt: String,
     val transactionCount: Int,
-    val fingerprint: String?
+    val fingerprint: String?,
+    val sourceLabel: String? = null,
+    val canUndo: Boolean = false
 )
 
 @Serializable
@@ -40,10 +44,14 @@ data class ChatMessageExportModel(
 )
 
 @Serializable
+data class CategoryMemoryExportModel(val descriptionKey: String, val inputType: TransactionType, val categoryId: Long)
+
+@Serializable
 data class BackupModel(
-    val version: Int = 3,
+    val version: Int = 4,
     val categories: List<CategoryExportModel>,
     val transactions: List<TransactionExportModel>,
     val statementImports: List<StatementImportExportModel> = emptyList(),
-    val chatMessages: List<ChatMessageExportModel> = emptyList()
+    val chatMessages: List<ChatMessageExportModel> = emptyList(),
+    val categoryMemories: List<CategoryMemoryExportModel> = emptyList()
 )

@@ -87,7 +87,9 @@ object AppViewModelProvider {
         initializer {
             SettingsViewModel(
                 createBackup = financesApplication().container.createBackupUseCase,
-                restoreBackup = financesApplication().container.restoreBackupUseCase
+                restoreBackup = financesApplication().container.restoreBackupUseCase,
+                importsRepository = financesApplication().container.statementImportRepository,
+                memoryRepository = financesApplication().container.categoryMemoryRepository
             )
         }
         initializer {

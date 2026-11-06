@@ -81,6 +81,7 @@ class AddTransactionViewModel(
                     selectedCategory = state.categories.find { it.id == transaction.categoryId },
                     date = transaction.date,
                     notes = transaction.notes ?: "",
+                    sourceLabel = transaction.sourceLabel ?: "",
                     iconKey = transaction.iconKey,
                     isLoading = false
                 )
@@ -154,6 +155,10 @@ class AddTransactionViewModel(
 
     fun onDateChange(date: LocalDate) {
         _uiState.update { it.copy(date = date, dateError = null) }
+    }
+
+    fun onSourceLabelChange(value: String) {
+        _uiState.update { it.copy(sourceLabel = value.take(120)) }
     }
 
     fun onNotesChange(notes: String) {
@@ -241,6 +246,7 @@ class AddTransactionViewModel(
                     date = currentState.date,
                     type = currentState.type,
                     notes = currentState.notes.trim().takeIf { it.isNotEmpty() },
+                    sourceLabel = currentState.sourceLabel.trim().takeIf { it.isNotEmpty() },
                     iconKey = currentState.iconKey
                 )
 

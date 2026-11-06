@@ -89,6 +89,7 @@ fun TransactionListRow(
                     maxLines = 1
                 )
             }
+            transaction.sourceLabel?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             AmountText(
                 amount = amountText,
                 isPositive = when (transaction.type) {

@@ -21,7 +21,7 @@ class SynthesizeStatementUseCase(
         val suggestions = transactionCategorizer.categorize(entries, knownCategories, onProgress).getOrThrow()
         val transferCategory = knownCategories.firstOrNull { it.type == CategoryType.TRANSFER }
         return suggestions.map { suggestion ->
-            if (transferCategory != null && (suggestion.entry.type == TransactionType.TRANSFER ||
+            if (suggestion.source != SuggestionSource.MEMORY && transferCategory != null && (suggestion.entry.type == TransactionType.TRANSFER ||
                 (suggestion.entry.type == TransactionType.EXPENSE &&
                     CARD_PAYMENT_DESCRIPTION.containsMatchIn(suggestion.entry.description)))
             ) {

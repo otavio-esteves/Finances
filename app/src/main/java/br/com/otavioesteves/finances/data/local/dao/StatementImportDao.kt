@@ -23,6 +23,15 @@ interface StatementImportDao {
     @Insert
     suspend fun insertImports(statementImports: List<StatementImportEntity>)
 
+    @Query("SELECT * FROM statement_imports WHERE id = :id")
+    suspend fun findById(id: Long): StatementImportEntity?
+
+    @Query("DELETE FROM statement_imports WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM transactions WHERE importId = :id")
+    suspend fun deleteImportedTransactions(id: Long)
+
     @Query("DELETE FROM statement_imports")
     suspend fun deleteAll()
 }

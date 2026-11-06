@@ -18,7 +18,7 @@ class ConfirmStatementImportUseCase(
     private val statementImportRepository: StatementImportRepository,
     private val dateProvider: DateProvider
 ) {
-    suspend operator fun invoke(fileName: String, confirmedSuggestions: List<CategorySuggestion>): ImportedStatement {
+    suspend operator fun invoke(fileName: String, confirmedSuggestions: List<CategorySuggestion>, sourceLabel: String? = null): ImportedStatement {
         require(confirmedSuggestions.isNotEmpty()) { "O extrato não contém transações." }
         val transactions = confirmedSuggestions.map { suggestion ->
             val category = requireNotNull(suggestion.suggestedCategory) {
@@ -42,11 +42,20 @@ class ConfirmStatementImportUseCase(
             id = 0,
             fileName = fileName,
             importedAt = dateProvider.getCurrentDateTime(),
-            transactionCount = confirmedSuggestions.size
+            transactionCount = confirmedSuggestions.size,
+            sourceLabel = sourceLabel?.trim()?.takeIf { it.isNotEmpty() },
+            canUndo = true
         )
         val canonicalFingerprint = fingerprint(confirmedSuggestions, canonical = true)
         val legacyFingerprint = fingerprint(confirmedSuggestions, canonical = false)
-        statementImportRepository.confirmImport(statementImport, transactions, canonicalFingerprint, legacyFingerprint)
+        val memories = confirmedSuggestions.groupBy {
+            br.com.otavioesteves.finances.domain.model.categoryMemoryKey(it.originalEntry.description) to it.originalType
+        }.filterValues { group ->
+            group.any { it.rememberCorrection } && group.map { it.suggestedCategory?.id }.distinct().size == 1
+        }.map { (key, group) -> br.com.otavioesteves.finances.domain.model.CategoryMemory(
+            key.first, key.second, requireNotNull(group.first().suggestedCategory).id
+        ) }
+        statementImportRepository.confirmReviewedImport(statementImport, transactions, canonicalFingerprint, legacyFingerprint, memories)
         return statementImport
     }
 

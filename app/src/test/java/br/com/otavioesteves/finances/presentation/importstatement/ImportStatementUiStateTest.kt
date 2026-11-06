@@ -12,6 +12,16 @@ import java.time.LocalDate
 
 class ImportStatementUiStateTest {
     @Test
+    fun mismatchingOrInvalidExpectedTotalCannotBeSilentlyConfirmed() {
+        val category = Category(1, "Outros", CategoryType.EXPENSE)
+        val suggestion = CategorySuggestion(RawStatementEntry("Mercado", Money(100), LocalDate.of(2026, 11, 1), TransactionType.EXPENSE), category, 1f)
+        val state = ImportStatementUiState.ReviewingSuggestions("fatura.csv", listOf(suggestion), listOf(category), expectedExpenseTotal = "2,00")
+        assertFalse(state.canConfirm)
+        org.junit.Assert.assertTrue(state.copy(differenceAcknowledged = true).canConfirm)
+        org.junit.Assert.assertTrue(state.copy(expectedExpenseTotal = "1,00").canConfirm)
+        assertFalse(state.copy(expectedExpenseTotal = "inválido", differenceAcknowledged = true).canConfirm)
+    }
+    @Test
     fun cannotConfirmWhenSuggestedCategoryHasWrongType() {
         val entry = RawStatementEntry("Mercado", Money.fromCents(100), LocalDate.of(2026, 1, 1), TransactionType.EXPENSE)
         val category = Category(1, "Salário", CategoryType.INCOME)

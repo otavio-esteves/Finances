@@ -8,13 +8,16 @@ import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
+import androidx.room.withTransaction
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 
 class RoomTransactionsRepository(
-    private val transactionDao: TransactionDao
+    private val transactionDao: TransactionDao,
+    private val database: br.com.otavioesteves.finances.data.local.AppDatabase? = null
 ) : TransactionsRepository {
 
     override fun getTransaction(id: Long): Flow<Transaction?> =
@@ -85,6 +88,20 @@ class RoomTransactionsRepository(
     }
 
     override suspend fun updateTransaction(transaction: Transaction) {
-        transactionDao.updateTransaction(transaction.toEntity())
+        val db = database
+        if (db == null) {
+            transactionDao.updateTransaction(transaction.toEntity())
+            return
+        }
+        db.withTransaction {
+            val original = requireNotNull(transactionDao.getTransactionById(transaction.id).first()) { "Transação não encontrada" }
+            // Ownership stays with the batch even after category, amount or description edits.
+            transactionDao.updateTransaction(transaction.toEntity().copy(importId = original.importId))
+            if (original.categoryId != transaction.categoryId || original.type != transaction.type) {
+                db.categoryMemoryDao().remember(listOf(br.com.otavioesteves.finances.data.local.entity.CategoryMemoryEntity(
+                    br.com.otavioesteves.finances.domain.model.categoryMemoryKey(original.description), original.type, transaction.categoryId
+                )))
+            }
+        }
     }
 }

@@ -9,5 +9,6 @@ data class DashboardUiState(
     val monthPeriod: MonthPeriod,
     val monthlyBalance: Money,
     val categorySummaries: List<CategorySummary> = emptyList(),
-    val recentTransactions: List<TransactionItem> = emptyList()
+    val recentTransactions: List<TransactionItem> = emptyList(),
+    val comparisons: List<br.com.otavioesteves.finances.domain.model.ExpenseComparison> = emptyList()
 )

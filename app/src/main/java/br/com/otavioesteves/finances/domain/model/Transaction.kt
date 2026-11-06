@@ -11,7 +11,9 @@ data class Transaction(
     val type: TransactionType,
     val notes: String? = null,
     val origin: TransactionOrigin = TransactionOrigin.MANUAL,
-    val iconKey: String? = null
+    val iconKey: String? = null,
+    val importId: Long? = null,
+    val sourceLabel: String? = null
 ) {
     init {
         require(id >= 0) { "id must be positive or zero" }

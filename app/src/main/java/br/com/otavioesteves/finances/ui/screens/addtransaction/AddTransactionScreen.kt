@@ -383,6 +383,13 @@ fun AddTransactionScreen(
 
                     // Notes
                     OutlinedTextField(
+                        value = uiState.sourceLabel,
+                        onValueChange = viewModel::onSourceLabelChange,
+                        label = { Text("Conta ou cartão (opcional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
                         value = uiState.notes,
                         onValueChange = viewModel::onNotesChange,
                         label = { Text("Observação (opcional)") },

@@ -145,7 +145,8 @@ class ImportStatementViewModel(
             this[index] = this[index].copy(
                 suggestedCategory = category,
                 confidence = 1f,
-                source = SuggestionSource.USER
+                source = SuggestionSource.USER,
+                rememberCorrection = true
             )
         }
         _uiState.value = current.copy(suggestions = updatedSuggestions)
@@ -161,10 +162,11 @@ class ImportStatementViewModel(
                 entry = this[index].entry.copy(type = type),
                 suggestedCategory = category,
                 confidence = 1f,
-                source = SuggestionSource.USER
+                source = SuggestionSource.USER,
+                rememberCorrection = true
             )
         }
-        _uiState.value = current.copy(suggestions = updated)
+        _uiState.value = current.copy(suggestions = updated, differenceAcknowledged = false)
     }
 
     fun onOverlapAcknowledged(acknowledged: Boolean) {
@@ -193,7 +195,7 @@ class ImportStatementViewModel(
         }
         validationJob?.cancel()
         val revision = ++validationRevision
-        _uiState.value = current.copy(suggestions = updated, ocrAcknowledged = false, overlapAcknowledged = false,
+        _uiState.value = current.copy(suggestions = updated, differenceAcknowledged = false, ocrAcknowledged = false, overlapAcknowledged = false,
             isCheckingOverlaps = true, validationError = null)
         validationJob = viewModelScope.launch {
             try {
@@ -211,6 +213,19 @@ class ImportStatementViewModel(
         return null
     }
 
+    fun onSourceLabelChanged(value: String) {
+        val state = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (!state.isConfirming) _uiState.value = state.copy(sourceLabel = value.take(120))
+    }
+    fun onExpectedTotalChanged(value: String) {
+        val state = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (!state.isConfirming) _uiState.value = state.copy(expectedExpenseTotal = value.take(24), differenceAcknowledged = false)
+    }
+    fun onDifferenceAcknowledged(value: Boolean) {
+        val state = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (!state.isConfirming) _uiState.value = state.copy(differenceAcknowledged = value)
+    }
+
     fun onConfirmImport() {
         val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
         if (!current.canConfirm) return
@@ -218,7 +233,7 @@ class ImportStatementViewModel(
         _uiState.value = current.copy(isConfirming = true)
         viewModelScope.launch {
             try {
-                val result = withContext(cpuDispatcher) { confirmStatementImport(current.fileName, current.suggestions) }
+                val result = withContext(cpuDispatcher) { confirmStatementImport(current.fileName, current.suggestions, current.sourceLabel) }
                 _uiState.value = ImportStatementUiState.Success(result.transactionCount)
             } catch (e: CancellationException) {
                 throw e
