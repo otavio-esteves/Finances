@@ -76,12 +76,15 @@ UI Compose → ViewModels → casos de uso e contratos de domínio ← Room, par
 
 ## Correções, importações e lembretes
 
+- A revisão oferece filtros **Todos**, **Sem categoria**, **Sugestão incerta**, **Possível duplicata** e **Excluídos**. Em **Selecionar lançamentos**, marque itens ou selecione os visíveis e aplique uma categoria em lote; a seleção precisa reunir lançamentos do mesmo tipo. Trocar de filtro limpa a seleção. Sugestões com confiança abaixo de 75% são sinalizadas para conferência; essa indicação não representa uma precisão medida do modelo.
+- Cada possível duplicata mostra o lançamento do arquivo ao lado dos registros correspondentes no histórico, incluindo data, valor, tipo, categoria e identificação disponível. **Excluir** retira apenas aquela linha da importação; **Reincluir** desfaz a escolha antes de salvar. Os totais e as exigências de categoria/OCR consideram os itens incluídos, e manter possíveis duplicatas exige confirmação. O lote continua identificado pelo conjunto completo extraído do arquivo, inclusive as linhas excluídas, para evitar uma nova importação acidental do mesmo lote. As correções dos itens excluídos não são memorizadas.
+- A Início apresenta **Resultado registrado no mês**, receitas e despesas, calculados a partir dos lançamentos disponíveis. Esse resultado pode abranger apenas parte da movimentação. Quando ainda não há transações em todo o banco, a tela explica o fluxo e oferece **Importar primeira fatura ou extrato**; meses vazios de quem já tem histórico oferecem uma nova importação sem repetir a apresentação inicial.
 - Ao corrigir uma categoria ou tipo e confirmar a importação, o app memoriza a escolha para a mesma descrição e tipo de entrada. A comparação ignora caixa, acentos e espaços repetidos, mas preserva números e pontuação. Só os lançamentos sem memória seguem para a IA/regras. Editar a categoria de uma transação salva também atualiza a memória. Correções de valor/data, sozinhas, não ensinam uma categoria.
 - Em Configurações, **Histórico de importações → Desfazer importação** remove atomicamente as transações ainda vinculadas ao lote, inclusive as editadas. Outros lotes e lançamentos manuais são preservados. O arquivo pode ser importado novamente; a memória das correções permanece. Importações anteriores à versão 8 do banco não têm vínculos e não podem ser desfeitas automaticamente. A opção **Apagar memória das correções** não apaga transações.
 - Na revisão, **Identificar conta e conferir total** permite identificar a conta/cartão e informar o total de despesas do documento. A diferença exige conferência explícita antes de salvar. Este campo não extrai automaticamente o total da fatura: não use saldo, pagamentos ou transferências. A identificação também pode ser editada nos lançamentos e aparece no histórico; não representa conexão bancária nem saldo individual de conta.
 - A Início compara as despesas registradas por categoria com o mês anterior e oferece acesso aos lançamentos. Não presume gasto zero quando não há histórico. Meses incompletos são identificados como uma limitação da comparação.
 - Os lembretes locais dizem **Já faturou esse mês?** no último dia de cada mês e no dia 05, às 9h do aparelho. Configurações → **Lembretes de faturas** permite desativá-los. Android 13 ou superior solicita permissão; sem permissão, nenhuma notificação é enviada. O agendamento é refeito após reiniciar, atualizar o app ou alterar hora/fuso; o Android pode atrasar o horário por economia de bateria. Não exige internet nem permissão de alarmes exatos.
-- O banco usa schema 8, com migração que preserva os dados. O backup JSON v4 preserva memória, identificação e vínculos de importação; backups v1–v3 continuam aceitos. A preferência de notificações pertence à instalação, não ao backup financeiro.
+- O banco usa schema 9, com migração que preserva os dados. O backup JSON v5 preserva memória, identificação, vínculos de importação e a chave original de categorização de cada lançamento; backups v1–v4 continuam aceitos. A preferência de notificações pertence à instalação, não ao backup financeiro.
 
 ## Desenvolvimento
 
@@ -101,16 +104,20 @@ JAVA_HOME=/opt/android-studio/jbr ./gradlew testStandaloneDebugUnitTest
 
 Esse caminho depende da instalação local; não o fixe nas configurações compartilhadas do Gradle. No Android Studio, selecione o mesmo JDK em **Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK**.
 
-O CI também executa `connectedStandaloneDebugAndroidTest` em um emulador API 35. O APK de debug fica em `app/build/outputs/apk/standalone/debug/`. As versões efetivas de Kotlin, KSP, Room e LiteRT-LM estão em [`gradle/libs.versions.toml`](gradle/libs.versions.toml); consulte esse arquivo antes de atualizar dependências ou a documentação.
+O CI também compila a release com `assembleStandaloneRelease` e executa `connectedStandaloneDebugAndroidTest` em um emulador API 35. O APK de debug fica em `app/build/outputs/apk/standalone/debug/`. As versões efetivas de Kotlin, KSP, Room e LiteRT-LM estão em [`gradle/libs.versions.toml`](gradle/libs.versions.toml); consulte esse arquivo antes de atualizar dependências ou a documentação.
 
 Os testes JVM cobrem modelos, casos de uso, parsers, ViewModels e roteamento entre IA e regras. A [validação de otimização](docs/VALIDACAO_OTIMIZACAO.md) registra os cenários sintéticos e os limites das medições. Testes instrumentados cobrem migração Room e a permissão de rede. **Isso ainda não comprova qualidade de categorização, respostas do modelo, compatibilidade de faturas PDF reais ou desempenho do motor em aparelhos reais.**
 
 ### Consistência de importação e backup
 
+CSVs devem ter uma única coluna identificável de data, descrição e valor, e cada linha precisa ter a mesma quantidade de campos do cabeçalho. Colunas extras sem ambiguidade são aceitas; valores decimais ou descrições contendo o separador devem estar entre aspas. OFX respeita o charset do cabeçalho SGML ou da declaração XML; texto com bytes inválidos para a codificação é recusado, sem substituir caracteres silenciosamente.
+
 Datas brasileiras são validadas estritamente, incluindo anos bissextos. Valores zero são aceitos na importação e na restauração; o tipo determina o sinal financeiro e a magnitude armazenada nunca pode ser negativa. A impressão digital v2 ordena os lançamentos e preserva a multiplicidade de compras idênticas. Importações antigas com hash v1 continuam bloqueadas quando o arquivo mantém a ordem original; se forem reordenadas, dependem do aviso de sobreposição, pois os registros antigos não guardam o lote original para recalcular o hash.
 
 
 O CSV exportado pelo próprio Finances, identificado pelo cabeçalho completo com `Valor (Centavos)` e `Tipo`, pode ser reimportado preservando valor e tipo, inclusive transferências e valores zero, independentemente da seleção de extrato/fatura. A importação passa pela revisão normal e não restaura IDs, categorias ou observações do arquivo; para restauração completa, use o backup JSON. Campos de texto protegidos contra fórmulas mantêm o apóstrofo de proteção na reimportação. A exportação consulta o banco para o mês escolhido ao abrir o seletor de destino, sem depender da lista já carregada na tela.
+
+A soma das magnitudes de todos os lançamentos registrados, incluindo transferências, deve caber em um Long de centavos. O banco valida inserções, edições e lotes atomicamente; a revisão mostra erro e bloqueia a confirmação quando o lote excede esse limite. A restauração valida somas e datas antes de substituir os dados; somente anos de 1 a 9999 são aceitos.
 
 Lançamentos zerados importados ou restaurados podem ser editados mantendo o valor zero. A criação manual continua exigindo valor maior que zero.
 
