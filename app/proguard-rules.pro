@@ -17,3 +17,8 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 -keepattributes EnclosingMethod,InnerClasses
+
+# PDFBox checks for this optional codec before using it and handles its absence.
+# https://github.com/TomRoush/PdfBox-Android#reading-jpx-images
+-dontwarn com.gemalto.jp2.JP2Decoder
+-dontwarn com.gemalto.jp2.JP2Encoder

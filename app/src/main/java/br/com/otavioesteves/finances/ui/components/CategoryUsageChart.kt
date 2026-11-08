@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -253,6 +254,7 @@ private fun DonutRing(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DonutLegend(
     slices: List<CategoryChartSlice>,

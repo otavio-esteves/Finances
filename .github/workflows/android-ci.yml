@@ -34,6 +34,9 @@ jobs:
     - name: Build Debug APK
       run: ./gradlew assembleStandaloneDebug
 
+    - name: Build Release APK
+      run: ./gradlew assembleStandaloneRelease
+
     - name: Run Instrumented Tests
       uses: reactivecircus/android-emulator-runner@v2
       with:
