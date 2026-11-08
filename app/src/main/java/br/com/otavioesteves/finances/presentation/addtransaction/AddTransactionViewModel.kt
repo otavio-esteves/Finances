@@ -258,6 +258,8 @@ class AddTransactionViewModel(
                 _uiState.update { it.copy(isSaveSuccessful = true) }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: IllegalArgumentException) {
+                _uiState.update { it.copy(error = e.message ?: "Dados inválidos para salvar a transação") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Erro ao salvar transação") }
             } finally {

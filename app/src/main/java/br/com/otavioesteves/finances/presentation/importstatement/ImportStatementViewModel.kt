@@ -99,7 +99,7 @@ class ImportStatementViewModel(
                     return@launch
                 }
                 showStage(ImportProcessingStage.CHECKING_OVERLAPS)
-                val potentialOverlapCount = withContext(cpuDispatcher) { findPotentialOverlaps(entries) }
+                val overlapMatches = withContext(cpuDispatcher) { findPotentialOverlaps.findMatches(entries) }
                 showStage(ImportProcessingStage.CATEGORIZING, total = entries.size)
                 val suggestions = withContext(cpuDispatcher) {
                     synthesizeStatement(entries) { done, total ->
@@ -119,7 +119,7 @@ class ImportStatementViewModel(
                     fileName = fileName,
                     suggestions = suggestions,
                     availableCategories = categories,
-                    potentialOverlapCount = potentialOverlapCount
+                    overlapMatches = overlapMatches
                 )
             } catch (e: StatementPasswordRequiredException) {
                 currentCoroutineContext().ensureActive()
@@ -139,7 +139,7 @@ class ImportStatementViewModel(
 
     fun onCategorySelected(index: Int, category: Category) {
         val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
-        if (current.isConfirming || index !in current.suggestions.indices) return
+        if (current.isConfirming || index !in current.suggestions.indices || index in current.excludedIndices) return
         if (category !in current.availableCategories || category.type.name != current.suggestions[index].entry.type.name) return
         val updatedSuggestions = current.suggestions.toMutableList().apply {
             this[index] = this[index].copy(
@@ -149,12 +149,56 @@ class ImportStatementViewModel(
                 rememberCorrection = true
             )
         }
-        _uiState.value = current.copy(suggestions = updatedSuggestions)
+        _uiState.value = current.copy(suggestions = updatedSuggestions, selectedIndices = current.selectedIndices - index)
+    }
+
+    fun onFilterSelected(filter: ImportReviewFilter) {
+        val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (!current.isConfirming) _uiState.value = current.copy(filter = filter, selectedIndices = emptySet())
+    }
+
+    fun onSelectionModeChanged(enabled: Boolean) {
+        val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (!current.isConfirming) _uiState.value = current.copy(selectionMode = enabled, selectedIndices = emptySet())
+    }
+
+    fun onEntrySelectionChanged(index: Int, selected: Boolean) {
+        val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (current.isConfirming || !current.selectionMode || index !in current.visibleIndices || index in current.excludedIndices) return
+        _uiState.value = current.copy(selectedIndices = if (selected) current.selectedIndices + index else current.selectedIndices - index)
+    }
+
+    fun onSelectVisibleEntries() {
+        val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (current.isConfirming || !current.selectionMode) return
+        val visible = current.visibleIndices.filterNot { it in current.excludedIndices }.toSet()
+        _uiState.value = current.copy(selectedIndices = if (visible == current.selectedIndices) emptySet() else visible)
+    }
+
+    fun onBulkCategorySelected(category: Category) {
+        val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (current.isConfirming || current.selectedIndices.isEmpty() || category !in current.bulkCategories) return
+        val updated = current.suggestions.mapIndexed { index, suggestion ->
+            if (index in current.selectedIndices && index !in current.excludedIndices) suggestion.copy(
+                suggestedCategory = category, confidence = 1f, source = SuggestionSource.USER, rememberCorrection = true
+            ) else suggestion
+        }
+        _uiState.value = current.copy(suggestions = updated, selectedIndices = emptySet(), selectionMode = false)
+    }
+
+    fun onEntryExcluded(index: Int, excluded: Boolean) {
+        val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
+        if (current.isConfirming || index !in current.suggestions.indices) return
+        _uiState.value = current.copy(
+            excludedIndices = if (excluded) current.excludedIndices + index else current.excludedIndices - index,
+            selectedIndices = current.selectedIndices - index,
+            overlapAcknowledged = false, differenceAcknowledged = false, ocrAcknowledged = false
+        )
     }
 
     fun onTypeSelected(index: Int, type: TransactionType) {
         val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return
-        if (current.isConfirming || index !in current.suggestions.indices) return
+        if (current.isConfirming || index !in current.suggestions.indices || index in current.excludedIndices) return
         val categoryType = CategoryType.valueOf(type.name)
         val category = current.availableCategories.firstOrNull { it.type == categoryType } ?: return
         val updated = current.suggestions.toMutableList().apply {
@@ -166,7 +210,7 @@ class ImportStatementViewModel(
                 rememberCorrection = true
             )
         }
-        _uiState.value = current.copy(suggestions = updated, differenceAcknowledged = false)
+        _uiState.value = current.copy(suggestions = updated, differenceAcknowledged = false, selectedIndices = current.selectedIndices - index)
     }
 
     fun onOverlapAcknowledged(acknowledged: Boolean) {
@@ -181,28 +225,27 @@ class ImportStatementViewModel(
 
     fun onEntryEdited(index: Int, description: String, amount: String, date: String): String? {
         val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return "Revisão indisponível."
-        if (current.isConfirming || index !in current.suggestions.indices) return "Revisão indisponível."
+        if (current.isConfirming || index !in current.suggestions.indices || index in current.excludedIndices) return "Revisão indisponível."
         if (description.isBlank()) return "Informe uma descrição."
         val money = MoneyFormatter.parse(amount)?.takeUnless { it.isNegative() } ?: return "Informe um valor válido, sem sinal."
         val parsedDate = runCatching {
             LocalDate.parse(date.trim(), DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT))
-        }.getOrNull() ?: return "Informe uma data válida no formato dd/MM/aaaa."
+        }.getOrNull()?.takeIf { it.year in 1..9999 } ?: return "Informe uma data válida no formato dd/MM/aaaa, com ano entre 1 e 9999."
         val updated = current.suggestions.toMutableList().apply {
             this[index] = this[index].copy(
-                entry = this[index].entry.copy(description = description.trim(), amount = money, date = parsedDate),
-                confidence = 1f, source = SuggestionSource.USER
+                entry = this[index].entry.copy(description = description.trim(), amount = money, date = parsedDate)
             )
         }
         validationJob?.cancel()
         val revision = ++validationRevision
         _uiState.value = current.copy(suggestions = updated, differenceAcknowledged = false, ocrAcknowledged = false, overlapAcknowledged = false,
-            isCheckingOverlaps = true, validationError = null)
+            isCheckingOverlaps = true, validationError = null, selectedIndices = current.selectedIndices - index)
         validationJob = viewModelScope.launch {
             try {
-                val overlaps = withContext(cpuDispatcher) { findPotentialOverlaps(updated.map { it.entry }) }
+                val overlaps = withContext(cpuDispatcher) { findPotentialOverlaps.findMatches(updated.map { it.entry }) }
                 val latest = _uiState.value as? ImportStatementUiState.ReviewingSuggestions
                 if (revision == validationRevision && latest != null) _uiState.value = latest.copy(
-                    potentialOverlapCount = overlaps, isCheckingOverlaps = false)
+                    overlapMatches = overlaps, isCheckingOverlaps = false)
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 val latest = _uiState.value as? ImportStatementUiState.ReviewingSuggestions
@@ -233,7 +276,10 @@ class ImportStatementViewModel(
         _uiState.value = current.copy(isConfirming = true)
         viewModelScope.launch {
             try {
-                val result = withContext(cpuDispatcher) { confirmStatementImport(current.fileName, current.suggestions, current.sourceLabel) }
+                val result = withContext(cpuDispatcher) {
+                    confirmStatementImport(current.fileName, current.includedSuggestions, current.sourceLabel,
+                        fingerprintSuggestions = current.suggestions)
+                }
                 _uiState.value = ImportStatementUiState.Success(result.transactionCount)
             } catch (e: CancellationException) {
                 throw e

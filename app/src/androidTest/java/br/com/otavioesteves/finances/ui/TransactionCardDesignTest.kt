@@ -102,6 +102,7 @@ class TransactionCardDesignTest {
     @Test
     fun secondaryMenuKeepsEditAvailableAndRequiresConfirmationBeforeDeletion() {
         val repository = object : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
             val rows = MutableStateFlow(listOf(transaction))
             @Volatile var deletedId: Long? = null
             override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(transaction)

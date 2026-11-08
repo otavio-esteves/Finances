@@ -32,5 +32,7 @@ data class TransactionEntity(
     val origin: TransactionOrigin = TransactionOrigin.MANUAL,
     val iconKey: String? = null,
     val importId: Long? = null,
-    val sourceLabel: String? = null
+    val sourceLabel: String? = null,
+    val categoryMemoryDescriptionKey: String? = null,
+    val categoryMemoryInputType: TransactionType? = null
 )

@@ -17,6 +17,89 @@ class CsvOfxStatementParserTest {
     private val parser = CsvOfxStatementParser()
 
     @Test
+    fun parse_csv_rejectsAmbiguousColumnsAndRowsWithExtraOrMissingFields() {
+        for (csv in listOf(
+            "Data;Descrição;Valor original;Valor em reais\n01/11/2026;Compra;100,00;580,00",
+            "Data;Data de pagamento;Descrição;Valor\n01/11/2026;02/11/2026;Compra;-10,00",
+            "Data;Descrição;Histórico;Valor\n01/11/2026;Compra;Outra descrição;-10,00",
+            "Data,Descrição,Valor\n01/11/2026,Mercado,-150,75",
+            "Data;Descrição;Valor;Conta\n01/11/2026;Mercado;-150,75"
+        )) {
+            assertThrows(csv, IllegalArgumentException::class.java) { runBlocking { parser.parse("a.csv", csv.toByteArray()) } }
+        }
+    }
+
+    @Test
+    fun parse_csv_preservesQuotedDecimalsAndAcceptsUnrelatedExtraColumns() = runBlocking {
+        val csv = "Data,Descrição,Valor,Conta\n01/11/2026,\"Mercado, Central\",\"-150,75\",Principal"
+        val entry = parser.parse("a.csv", csv.toByteArray()).single()
+        assertEquals(15075L, entry.amount.cents)
+        assertEquals("Mercado, Central", entry.description)
+    }
+
+    @Test
+    fun parse_csv_rejectsMisplacedQuotesInsteadOfDroppingDescriptionCharacters() {
+        for (row in listOf("01/11/2026;Mer\"cado\";-10,00", "01/11/2026;\"Mercado\"outro;-10,00")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("a.csv", ("Data;Descrição;Valor\n" + row).toByteArray()) }
+            }
+        }
+    }
+
+    @Test
+    fun parse_ofx_honorsLegacyAndXmlEncodingDeclarations() = runBlocking {
+        val body = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-15.00<MEMO>Alimentação</STMTTRN></BANKTRANLIST></OFX>"
+        for ((declaration, charset) in listOf(
+            "OFXHEADER:100\r\nENCODING:USASCII\r\nCHARSET:1252\r\n\r\n" to "windows-1252",
+            "OFXHEADER:100\nENCODING:USASCII\nCHARSET:ISO-8859-1\n\n" to "ISO-8859-1",
+            "OFXHEADER:100\nENCODING:UNICODE\nCHARSET:NONE\n\n" to "UTF-8",
+            "<?xml version=\"1.0\" encoding=\"windows-1252\"?>" to "windows-1252"
+        )) {
+            val bytes = (declaration + body).toByteArray(java.nio.charset.Charset.forName(charset))
+            assertEquals("Alimentação", parser.parse("a.ofx", bytes).single().description)
+        }
+        assertEquals("Alimentação", parser.parse("a.ofx", body.toByteArray(Charsets.UTF_16)).single().description)
+    }
+
+    @Test
+    fun parse_rejectsMalformedBytesAndUnsupportedCharsetsWithoutReplacementCharacters() {
+        val invalidUtf8 = "Data;Descrição;Valor\n01/11/2026;".toByteArray() + byteArrayOf(0xc3.toByte()) + ";-10,00".toByteArray()
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { parser.parse("a.csv", invalidUtf8) } }
+        val ofx = "OFXHEADER:100\nENCODING:USASCII\nCHARSET:unknown-charset\n\n<OFX>"
+        assertThrows(IllegalArgumentException::class.java) { runBlocking { parser.parse("a.ofx", ofx.toByteArray()) } }
+    }
+
+    @Test
+    fun parse_ofx_usesNameWhenMemoIsEmpty() = runBlocking {
+        val ofx = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-15.00<NAME>Mercado<MEMO>\n</STMTTRN></BANKTRANLIST></OFX>"
+        assertEquals("Mercado", parser.parse("a.ofx", ofx.toByteArray()).single().description)
+    }
+
+    @Test
+    fun parse_ofx_rejectsConflictingOrRepeatedEncodingHeaders() {
+        for (header in listOf("ENCODING:UNICODE\nCHARSET:1252", "CHARSET:1252\nCHARSET:UTF-8", "ENCODING:UTF-8\nENCODING:USASCII")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("a.ofx", ("OFXHEADER:100\n$header\n\n<OFX>").toByteArray()) }
+            }
+        }
+    }
+
+    @Test
+    fun parse_csv_recognizesAccentedHistoryHeader() = runBlocking {
+        val entry = parser.parse("a.csv", "Data;Histórico;Valor\n01/11/2026;Mercado;-10,00".toByteArray()).single()
+        assertEquals("Mercado", entry.description)
+    }
+
+    @Test
+    fun parse_csv_rejectsDatesOutsideTheSelectableCalendar() {
+        for (date in listOf("0000-01-01", "+10000-01-01")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("a.csv", "Data;Descrição;Valor\n$date;Compra;-10,00".toByteArray()) }
+            }
+        }
+    }
+
+    @Test
     fun parse_nativeExport_preservesAmountsTypesDatesAndQuotedDescriptionsForEitherStatementKind() = runBlocking {
         val date = LocalDate.of(2026, 11, 1)
         val transactions = listOf(

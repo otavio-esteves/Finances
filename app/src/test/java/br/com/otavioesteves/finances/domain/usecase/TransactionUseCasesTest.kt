@@ -102,6 +102,7 @@ class TransactionUseCasesTest {
     private class FakeTransactionsRepository(
         initialTransactions: List<Transaction> = emptyList()
     ) : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
         private val transactions = MutableStateFlow(initialTransactions)
 
         override fun getTransaction(id: Long): Flow<Transaction?> =

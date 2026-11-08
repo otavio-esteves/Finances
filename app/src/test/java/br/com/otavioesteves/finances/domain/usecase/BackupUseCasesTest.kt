@@ -43,10 +43,24 @@ class BackupUseCasesTest {
     }
 
     @Test
-    fun `createBackupUseCase serializes version four with import links and category memory`() = runBlocking {
+    fun `createBackupUseCase serializes version five with original categorization keys`() = runBlocking {
         val repo = FakeBackupRepository()
         val json = CreateBackupUseCase(repo)()
-        assertEquals(true, json.contains("\"version\": 4"))
+        assertEquals(true, json.contains("\"version\": 5"))
+        assertEquals(true, json.contains("\"categoryMemoryInputType\": null"))
+    }
+
+    @Test
+    fun `restoreBackupUseCase accepts every supported version and rejects future versions`() = runBlocking<Unit> {
+        val repo = FakeBackupRepository()
+        val restore = RestoreBackupUseCase(repo)
+        for (version in 1..5) {
+            restore("""{"version":$version,"categories":[],"transactions":[]}""")
+            assertEquals(version, repo.savedBackup?.version)
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { restore("""{"version":6,"categories":[],"transactions":[]}""") }
+        }
     }
 
     @Test(expected = Exception::class)

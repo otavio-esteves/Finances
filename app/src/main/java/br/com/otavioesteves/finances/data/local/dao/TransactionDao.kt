@@ -7,10 +7,16 @@ import androidx.room.Query
 import androidx.room.Update
 import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionMonthAggregateEntity
+import br.com.otavioesteves.finances.data.local.entity.TransactionAmountSnapshot
+import br.com.otavioesteves.finances.data.local.mapper.toDomain
+import br.com.otavioesteves.finances.domain.model.checkedMagnitudeTotal
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
+    @Query("SELECT EXISTS(SELECT 1 FROM transactions)")
+    fun hasTransactions(): Flow<Boolean>
+
     @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
     fun getTransactionById(id: Long): Flow<TransactionEntity?>
 
@@ -52,11 +58,23 @@ interface TransactionDao {
     """)
     fun getAnnualSummary(startDate: String, endDate: String, trackedNote: String?): Flow<List<TransactionMonthAggregateEntity>>
 
+    @androidx.room.Transaction
+    suspend fun insertTransaction(transaction: TransactionEntity) {
+        validateReplacement(listOf(transaction))
+        insertTransactionUnchecked(transaction)
+    }
+
+    @androidx.room.Transaction
+    suspend fun updateTransaction(transaction: TransactionEntity) {
+        validateReplacement(listOf(transaction))
+        updateTransactionUnchecked(transaction)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertTransaction(transaction: TransactionEntity)
+    suspend fun insertTransactionUnchecked(transaction: TransactionEntity)
 
     @Update
-    suspend fun updateTransaction(transaction: TransactionEntity)
+    suspend fun updateTransactionUnchecked(transaction: TransactionEntity)
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteTransactionById(id: Long)
@@ -67,6 +85,25 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions")
     suspend fun getAllTransactions(): List<TransactionEntity>
 
+    @androidx.room.Transaction
+    suspend fun insertTransactions(transactions: List<TransactionEntity>) {
+        validateReplacement(transactions)
+        insertTransactionsUnchecked(transactions)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertTransactions(transactions: List<TransactionEntity>)
+    suspend fun insertTransactionsUnchecked(transactions: List<TransactionEntity>)
+
+    @Query("SELECT id, amountCents FROM transactions")
+    suspend fun getAmountSnapshots(): List<TransactionAmountSnapshot>
+
+    // Called only by transactional wrappers so concurrent writes cannot both spend the same budget.
+    private suspend fun validateReplacement(transactions: List<TransactionEntity>) {
+        transactions.forEach { it.toDomain() }
+        val replacingIds = transactions.filter { it.id > 0 }.map { it.id }
+        require(replacingIds.distinct().size == replacingIds.size) { "Transações repetidas no mesmo lote." }
+        val idSet = replacingIds.toSet()
+        checkedMagnitudeTotal(getAmountSnapshots().asSequence().filterNot { it.id in idSet }.map { it.amountCents } +
+            transactions.asSequence().map { it.amountCents })
+    }
 }

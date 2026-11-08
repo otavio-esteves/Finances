@@ -16,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -41,6 +42,8 @@ class DashboardViewModelTest {
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
+        val hasAny = MutableStateFlow(false)
+        override fun hasTransactions(): Flow<Boolean> = hasAny
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         var requestedRecentLimit: Int? = null
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
@@ -68,6 +71,40 @@ class DashboardViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `first use depends on the entire database and reacts to adding or removing transactions`() = runTest {
+        val repository = FakeTransactionsRepository()
+        val viewModel = DashboardViewModel(
+            GetMonthlyBalanceUseCase(repository), GetTransactionsByMonthUseCase(repository),
+            GetCategorySummariesUseCase(FakeCategoriesRepository()), FakeCategoriesRepository(), fakeDateProvider
+        )
+        assertEquals(null, viewModel.uiState.value.hasAnyTransactions)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(false, viewModel.uiState.value.hasAnyTransactions)
+        repository.hasAny.value = true
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(true, viewModel.uiState.value.hasAnyTransactions)
+        viewModel.onMonthSelected(MonthPeriod(2020, 1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(true, viewModel.uiState.value.hasAnyTransactions)
+        repository.hasAny.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(false, viewModel.uiState.value.hasAnyTransactions)
+    }
+
+    @Test
+    fun `monthly components include income and expenses and leave transfers out`() {
+        val state = DashboardUiState(fakeMonthPeriod, Money(2000), categorySummaries = listOf(
+            CategorySummary(Category(1, "Salário", br.com.otavioesteves.finances.domain.model.CategoryType.INCOME), Money(3000)),
+            CategorySummary(Category(2, "Mercado", br.com.otavioesteves.finances.domain.model.CategoryType.EXPENSE), Money(700)),
+            CategorySummary(Category(3, "Transporte", br.com.otavioesteves.finances.domain.model.CategoryType.EXPENSE), Money(300)),
+            CategorySummary(Category(4, "Transferência", br.com.otavioesteves.finances.domain.model.CategoryType.TRANSFER), Money(5000))
+        ))
+        assertEquals(Money(3000), state.monthlyIncome)
+        assertEquals(Money(1000), state.monthlyExpenses)
     }
 
     @Test

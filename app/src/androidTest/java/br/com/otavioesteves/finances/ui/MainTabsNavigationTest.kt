@@ -30,6 +30,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.utils.formatMonthPeriod
 import br.com.otavioesteves.finances.MainActivity
+import br.com.otavioesteves.finances.MainApplication
+import br.com.otavioesteves.finances.domain.model.CategoryType
+import br.com.otavioesteves.finances.domain.model.Money
+import br.com.otavioesteves.finances.domain.model.Transaction
+import br.com.otavioesteves.finances.domain.model.TransactionType
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Before
 import org.junit.Test
@@ -140,20 +147,37 @@ class MainTabsNavigationTest {
 
     @Test
     fun viewTransactionsKeepsTheMonthSelectedOnHome() {
-        composeRule.onNodeWithContentDescription("Início").performClick()
         val previous = MonthPeriod.now().previousMonth()
-        composeRule.onAllNodesWithContentDescription("Mês anterior").onFirst().performClick()
-        composeRule.onNodeWithTag("dashboard_view_transactions").performScrollTo().performClick()
+        val container = (composeRule.activity.application as MainApplication).container
+        val description = "Navegação de teste ${java.util.UUID.randomUUID()}"
+        val transactionId = runBlocking {
+            val category = container.categoriesRepository.getCategories().first().first { it.type == CategoryType.EXPENSE }
+            container.transactionsRepository.addTransaction(Transaction(
+                0, description, Money(100), category.id, previous.toYearMonth().atDay(1), TransactionType.EXPENSE
+            ))
+            container.transactionsRepository.getTransactions(previous).first().single { it.description == description }.id
+        }
+        try {
+            composeRule.onNodeWithContentDescription("Início").performClick()
+            composeRule.onAllNodesWithContentDescription("Mês anterior").onFirst().performClick()
+            composeRule.waitUntil(10_000) {
+                composeRule.onAllNodesWithText(description).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("dashboard_view_transactions").performScrollTo().performClick()
 
-        composeRule.onNodeWithTag("transactions_title").assertIsDisplayed()
-        composeRule.onAllNodesWithText("${formatMonthPeriod(previous)} ${previous.year}")
-            .onFirst().assertIsDisplayed()
+            composeRule.onNodeWithTag("transactions_title").assertIsDisplayed()
+            composeRule.onAllNodesWithText("${formatMonthPeriod(previous)} ${previous.year}")
+                .onFirst().assertIsDisplayed()
+            composeRule.onNodeWithText(description).assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription("Voltar").performClick()
-        composeRule.onNodeWithTag("dashboard_view_transactions").performScrollTo().performClick()
-        composeRule.onNodeWithTag("transactions_title").assertIsDisplayed()
-        composeRule.onAllNodesWithText("${formatMonthPeriod(previous)} ${previous.year}")
-            .onFirst().assertIsDisplayed()
+            composeRule.onNodeWithContentDescription("Voltar").performClick()
+            composeRule.onNodeWithTag("dashboard_view_transactions").performScrollTo().performClick()
+            composeRule.onNodeWithTag("transactions_title").assertIsDisplayed()
+            composeRule.onAllNodesWithText("${formatMonthPeriod(previous)} ${previous.year}")
+                .onFirst().assertIsDisplayed()
+        } finally {
+            runBlocking { container.transactionsRepository.removeTransaction(transactionId) }
+        }
     }
 
     @Test

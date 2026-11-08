@@ -21,7 +21,9 @@ data class TransactionExportModel(
     val origin: TransactionOrigin = TransactionOrigin.MANUAL,
     val iconKey: String? = null,
     val importId: Long? = null,
-    val sourceLabel: String? = null
+    val sourceLabel: String? = null,
+    val categoryMemoryDescriptionKey: String? = null,
+    val categoryMemoryInputType: TransactionType? = null
 )
 
 @Serializable
@@ -48,7 +50,7 @@ data class CategoryMemoryExportModel(val descriptionKey: String, val inputType: 
 
 @Serializable
 data class BackupModel(
-    val version: Int = 4,
+    val version: Int = 5,
     val categories: List<CategoryExportModel>,
     val transactions: List<TransactionExportModel>,
     val statementImports: List<StatementImportExportModel> = emptyList(),

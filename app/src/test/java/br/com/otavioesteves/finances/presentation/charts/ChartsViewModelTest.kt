@@ -100,6 +100,7 @@ class ChartsViewModelTest {
     }
 
     private class AnnualRepository : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
         val requestedYears = mutableListOf<Int>()
         val sources = mutableMapOf<Int, MutableStateFlow<AnnualTransactionSummary>>()
         override fun getAnnualSummary(year: Int, trackedNote: String?): Flow<AnnualTransactionSummary> {

@@ -30,7 +30,7 @@ internal fun ImportReviewChecks(
             enabled = !state.isConfirming, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = state.expectedExpenseTotal, onValueChange = onTotalChanged,
             label = { Text("Total de despesas no documento (opcional)") },
-            supportingText = { Text("Informe a soma das despesas para conferir a leitura. Não use o saldo nem inclua pagamentos de fatura ou transferências.") },
+            supportingText = { Text("Compare com as despesas que serão importadas; itens excluídos ficam fora da soma. Não use o saldo nem inclua pagamentos de fatura ou transferências.") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             isError = state.expectedExpenseTotal.isNotBlank() && !state.expectedTotalValid,
             enabled = !state.isConfirming, singleLine = true, modifier = Modifier.fillMaxWidth())

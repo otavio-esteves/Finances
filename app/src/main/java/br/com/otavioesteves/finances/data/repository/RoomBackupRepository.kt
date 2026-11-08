@@ -7,6 +7,7 @@ import br.com.otavioesteves.finances.data.local.entity.CategoryEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
 import br.com.otavioesteves.finances.data.local.entity.StatementImportEntity
 import br.com.otavioesteves.finances.data.local.entity.ChatMessageEntity
+import br.com.otavioesteves.finances.data.local.mapper.toDomain
 import br.com.otavioesteves.finances.domain.model.BackupModel
 import br.com.otavioesteves.finances.domain.model.CategoryExportModel
 import br.com.otavioesteves.finances.domain.model.TransactionExportModel
@@ -36,7 +37,9 @@ class RoomBackupRepository(
                 origin = it.origin,
                 iconKey = it.iconKey,
                 importId = it.importId,
-                sourceLabel = it.sourceLabel
+                sourceLabel = it.sourceLabel,
+                categoryMemoryDescriptionKey = it.categoryMemoryDescriptionKey,
+                categoryMemoryInputType = it.categoryMemoryInputType
             )
         }
         val statementImports = database.statementImportDao().getAllImportsForBackup().map {
@@ -92,6 +95,29 @@ class RoomBackupRepository(
                 backup.categoryMemories.map { it.descriptionKey to it.inputType }.distinct().size == backup.categoryMemories.size) {
                 "Backup inválido: memória de categorias inválida"
             }
+            // Validate every date, provenance pair and aggregate before replacing existing data.
+            val transactions = backup.transactions.map {
+                TransactionEntity(
+                    id = it.id,
+                    description = it.description,
+                    amountCents = it.amountCents,
+                    categoryId = it.categoryId,
+                    date = try {
+                        LocalDate.parse(it.date)
+                    } catch (error: java.time.DateTimeException) {
+                        throw IllegalArgumentException("Backup inválido: data de transação inválida.", error)
+                    },
+                    type = it.type,
+                    notes = it.notes,
+                    origin = it.origin,
+                    iconKey = it.iconKey,
+                    importId = it.importId,
+                    sourceLabel = it.sourceLabel,
+                    categoryMemoryDescriptionKey = it.categoryMemoryDescriptionKey,
+                    categoryMemoryInputType = it.categoryMemoryInputType
+                ).also { entity -> entity.toDomain() }
+            }
+            br.com.otavioesteves.finances.domain.model.checkedMagnitudeTotal(transactions.asSequence().map { it.amountCents })
             database.categoryMemoryDao().clear()
             database.transactionDao().deleteAll()
             database.categoryDao().deleteAll()
@@ -106,21 +132,6 @@ class RoomBackupRepository(
                 ESSENTIAL_CATEGORIES.filter { required -> categories.none { it.type == required.type } }
             )
 
-            val transactions = backup.transactions.map {
-                TransactionEntity(
-                    id = it.id,
-                    description = it.description,
-                    amountCents = it.amountCents,
-                    categoryId = it.categoryId,
-                    date = LocalDate.parse(it.date),
-                    type = it.type,
-                    notes = it.notes,
-                    origin = it.origin,
-                    iconKey = it.iconKey,
-                    importId = it.importId,
-                    sourceLabel = it.sourceLabel
-                )
-            }
             database.transactionDao().insertTransactions(transactions)
             database.statementImportDao().insertImports(backup.statementImports.map {
                 StatementImportEntity(it.id, it.fileName, LocalDateTime.parse(it.importedAt), it.transactionCount, it.fingerprint, it.sourceLabel, it.canUndo)

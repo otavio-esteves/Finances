@@ -170,6 +170,7 @@ class ChartsTypesTest {
             )
         }
         val repository = object : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
             override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(data.find { it.id == id })
             override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(
                 data.filter { it.date.year == period.year && it.date.monthValue == period.month }

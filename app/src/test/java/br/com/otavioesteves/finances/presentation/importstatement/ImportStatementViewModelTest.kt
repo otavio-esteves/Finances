@@ -114,6 +114,7 @@ class ImportStatementViewModelTest {
     }
 
     private class FakeTransactionsRepository(private val transactions: List<Transaction> = emptyList()) : TransactionsRepository {
+        override fun hasTransactions(): Flow<Boolean> = flowOf(transactions.isNotEmpty())
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(
             transactions.filter { it.date.year == period.year && it.date.monthValue == period.month }
@@ -308,6 +309,7 @@ class ImportStatementViewModelTest {
         viewModel.onFileSelected("extrato.pdf", byteArrayOf(1))
         testDispatcher.scheduler.advanceUntilIdle()
         assertTrue(viewModel.onEntryEdited(0, "Compra", "20,00", "31/02/2026") != null)
+        assertTrue(viewModel.onEntryEdited(0, "Compra", "20,00", "01/01/0000") != null)
         assertTrue(viewModel.onEntryEdited(0, "Compra", "-20,00", "10/01/2026") != null)
         assertTrue(viewModel.onEntryEdited(0, " ", "20,00", "10/01/2026") != null)
         assertEquals(entry, (viewModel.uiState.value as ImportStatementUiState.ReviewingSuggestions).suggestions.single().entry)
@@ -443,6 +445,93 @@ class ImportStatementViewModelTest {
         assertEquals(TransactionType.TRANSFER, suggestion.entry.type)
         assertEquals(TransactionType.EXPENSE, suggestion.originalType)
         assertEquals(transfer, suggestion.suggestedCategory)
+    }
+
+    @Test
+    fun `correcting a date or value does not validate an uncertain category`() = runTest {
+        val vm = createViewModel(suggestions = listOf(CategorySuggestion(entry, mercado, 0.4f)))
+        vm.onFileSelected("a.csv", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        vm.onEntryEdited(0, "Compra corrigida", "20,00", "11/01/2026")
+        testDispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertEquals(listOf(0), state.indicesFor(ImportReviewFilter.UNCERTAIN))
+        assertEquals(0.4f, state.suggestions.single().confidence, 0.0001f)
+        assertTrue(!state.suggestions.single().rememberCorrection)
+    }
+
+    @Test
+    fun `excluding a historical overlap saves only included rows and reinclusion resets acknowledgment`() = runTest {
+        val other = entry.copy(description = "Outra compra", amount = Money(2000))
+        val existing = Transaction(1, entry.description, entry.amount, mercado.id, entry.date, entry.type,
+            sourceLabel = "Cartão pessoal")
+        val repository = FakeStatementImportRepository()
+        val vm = createViewModel(entries = listOf(entry, other), suggestions = listOf(
+            CategorySuggestion(entry, mercado, 0.9f), CategorySuggestion(other, transporte, 0.9f)
+        ), existingTransactions = listOf(existing), statementImportRepository = repository)
+        vm.onFileSelected("a.csv", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(existing), (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).overlapMatches[0])
+        vm.onEntryExcluded(0, true)
+        var state = vm.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertEquals(0, state.potentialOverlapCount)
+        assertEquals(Money(2000), state.expenseTotal)
+        assertTrue(state.canConfirm)
+        vm.onEntryExcluded(0, false)
+        state = vm.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertEquals(1, state.potentialOverlapCount)
+        assertTrue(!state.canConfirm)
+        vm.onEntryExcluded(0, true)
+        vm.onConfirmImport()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(other.description), repository.transactions.map { it.description })
+        assertEquals(ImportStatementUiState.Success(1), vm.uiState.value)
+    }
+
+    @Test
+    fun `bulk categorization uses stable indices after filtering and teaches only selected rows`() = runTest {
+        val entries = listOf(entry, entry.copy(description = "Outra compra"), entry.copy(description = "Terceira compra"))
+        val vm = createViewModel(entries = entries, suggestions = entries.mapIndexed { index, item ->
+            CategorySuggestion(item, if (index == 1) mercado else null, if (index == 1) 0.9f else 0.2f)
+        })
+        vm.onFileSelected("a.csv", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        vm.onFilterSelected(ImportReviewFilter.UNCATEGORIZED)
+        vm.onSelectionModeChanged(true)
+        vm.onSelectVisibleEntries()
+        assertEquals(setOf(0, 2), (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).selectedIndices)
+        vm.onBulkCategorySelected(transporte)
+        val state = vm.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertEquals(listOf(transporte, mercado, transporte), state.suggestions.map { it.suggestedCategory })
+        assertEquals(listOf(true, false, true), state.suggestions.map { it.rememberCorrection })
+        assertEquals(entries, state.suggestions.map { it.originalEntry })
+        assertTrue(state.visibleIndices.isEmpty())
+        assertTrue(state.selectedIndices.isEmpty())
+        assertTrue(state.canConfirm)
+    }
+
+    @Test
+    fun `bulk category cannot change mixed transaction types or excluded rows`() = runTest {
+        val income = Category(3, "Salário", CategoryType.INCOME)
+        val entries = listOf(entry, entry.copy(description = "Recebimento", type = TransactionType.INCOME))
+        val vm = createViewModel(entries = entries, suggestions = listOf(
+            CategorySuggestion(entries[0], mercado, 0.9f), CategorySuggestion(entries[1], income, 0.9f)
+        ), categories = listOf(mercado, transporte, income))
+        vm.onFileSelected("a.csv", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        vm.onSelectionModeChanged(true)
+        vm.onSelectVisibleEntries()
+        vm.onBulkCategorySelected(transporte)
+        assertEquals(mercado, (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).suggestions[0].suggestedCategory)
+        vm.onEntryExcluded(1, true)
+        vm.onEntrySelectionChanged(1, true)
+        vm.onBulkCategorySelected(transporte)
+        val state = vm.uiState.value as ImportStatementUiState.ReviewingSuggestions
+        assertEquals(listOf(transporte, income), state.suggestions.map { it.suggestedCategory })
+        vm.onSelectionModeChanged(true)
+        vm.onSelectVisibleEntries()
+        vm.onFilterSelected(ImportReviewFilter.EXCLUDED)
+        assertTrue((vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).selectedIndices.isEmpty())
     }
 
     @Test

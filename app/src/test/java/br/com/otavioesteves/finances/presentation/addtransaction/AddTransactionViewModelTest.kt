@@ -49,9 +49,11 @@ class AddTransactionViewModelTest {
     private class FakeTransactionsRepository(
         var transactions: List<Transaction> = emptyList()
     ) : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
         var deletedId: Long? = null
         var shouldFailDelete = false
         var shouldFailSave = false
+        var saveValidationError: String? = null
         var saveGate: CompletableDeferred<Unit>? = null
         var insertCalls = 0
         var updateCalls = 0
@@ -65,6 +67,7 @@ class AddTransactionViewModelTest {
             insertCalls++
             saveGate?.await()
             if (shouldFailSave) error("Save failed")
+            saveValidationError?.let { throw IllegalArgumentException(it) }
             transactions = transactions + transaction
         }
         override suspend fun removeTransaction(transactionId: Long) {
@@ -76,6 +79,7 @@ class AddTransactionViewModelTest {
             updateCalls++
             saveGate?.await()
             if (shouldFailSave) error("Save failed")
+            saveValidationError?.let { throw IllegalArgumentException(it) }
             transactions = transactions.map { if (it.id == transaction.id) transaction else it }
         }
     }
@@ -99,6 +103,26 @@ class AddTransactionViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `aggregate validation error explains the limit and preserves the form for retry`() = runTest {
+        val message = br.com.otavioesteves.finances.domain.model.AMOUNT_TOTAL_LIMIT_MESSAGE
+        val repository = FakeTransactionsRepository().apply { saveValidationError = message }
+        val viewModel = createViewModel(repository)
+        testDispatcher.scheduler.advanceUntilIdle()
+        fillNewTransaction(viewModel)
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(message, viewModel.uiState.value.error)
+        assertEquals("Compra", viewModel.uiState.value.description)
+        assertFalse(viewModel.uiState.value.isSaving)
+        assertFalse(viewModel.uiState.value.isSaveSuccessful)
+        repository.saveValidationError = null
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isSaveSuccessful)
+        assertEquals(1, repository.transactions.size)
     }
 
     @Test

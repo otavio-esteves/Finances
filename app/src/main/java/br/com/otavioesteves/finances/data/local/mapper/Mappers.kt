@@ -47,7 +47,9 @@ fun TransactionEntity.toDomain(): Transaction {
         origin = this.origin,
         iconKey = this.iconKey,
         importId = this.importId,
-        sourceLabel = this.sourceLabel
+        sourceLabel = this.sourceLabel,
+        categoryMemoryDescriptionKey = this.categoryMemoryDescriptionKey,
+        categoryMemoryInputType = this.categoryMemoryInputType
     )
 }
 
@@ -63,7 +65,9 @@ fun Transaction.toEntity(): TransactionEntity {
         origin = this.origin,
         iconKey = this.iconKey,
         importId = this.importId,
-        sourceLabel = this.sourceLabel
+        sourceLabel = this.sourceLabel,
+        categoryMemoryDescriptionKey = this.categoryMemoryDescriptionKey,
+        categoryMemoryInputType = this.categoryMemoryInputType
     )
 }
 

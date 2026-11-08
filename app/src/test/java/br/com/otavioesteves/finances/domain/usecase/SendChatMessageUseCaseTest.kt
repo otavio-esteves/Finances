@@ -283,6 +283,7 @@ class SendChatMessageUseCaseTest {
     }
 
     private class FakeTransactionsRepository(private val balance: Money) : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
         var requestedPeriod: MonthPeriod? = null
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())

@@ -40,6 +40,7 @@ class CategoryDetailsViewModelTest {
             ))
             var requested: MonthPeriod? = null
             val repository = object : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
                 override fun getTransaction(id: Long) = flowOf(null)
                 override fun getTransactions(period: MonthPeriod) = rows.also { requested = period }
                 override fun getMonthlyBalance(period: MonthPeriod) = flowOf(Money.Zero)

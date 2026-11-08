@@ -18,7 +18,12 @@ class ConfirmStatementImportUseCase(
     private val statementImportRepository: StatementImportRepository,
     private val dateProvider: DateProvider
 ) {
-    suspend operator fun invoke(fileName: String, confirmedSuggestions: List<CategorySuggestion>, sourceLabel: String? = null): ImportedStatement {
+    suspend operator fun invoke(
+        fileName: String,
+        confirmedSuggestions: List<CategorySuggestion>,
+        sourceLabel: String? = null,
+        fingerprintSuggestions: List<CategorySuggestion> = confirmedSuggestions
+    ): ImportedStatement {
         require(confirmedSuggestions.isNotEmpty()) { "O extrato não contém transações." }
         val transactions = confirmedSuggestions.map { suggestion ->
             val category = requireNotNull(suggestion.suggestedCategory) {
@@ -34,9 +39,12 @@ class ConfirmStatementImportUseCase(
                 categoryId = category.id,
                 date = suggestion.entry.date,
                 type = suggestion.entry.type,
-                origin = TransactionOrigin.IMPORTED
+                origin = TransactionOrigin.IMPORTED,
+                categoryMemoryDescriptionKey = br.com.otavioesteves.finances.domain.model.categoryMemoryKey(suggestion.originalEntry.description),
+                categoryMemoryInputType = suggestion.originalType
             )
         }
+        br.com.otavioesteves.finances.domain.model.checkedMagnitudeTotal(transactions.asSequence().map { it.amount.cents })
 
         val statementImport = ImportedStatement(
             id = 0,
@@ -46,8 +54,9 @@ class ConfirmStatementImportUseCase(
             sourceLabel = sourceLabel?.trim()?.takeIf { it.isNotEmpty() },
             canUndo = true
         )
-        val canonicalFingerprint = fingerprint(confirmedSuggestions, canonical = true)
-        val legacyFingerprint = fingerprint(confirmedSuggestions, canonical = false)
+        // Excluding rows changes what is saved, but the claim still identifies the entire source batch.
+        val canonicalFingerprint = fingerprint(fingerprintSuggestions, canonical = true)
+        val legacyFingerprint = fingerprint(fingerprintSuggestions, canonical = false)
         val memories = confirmedSuggestions.groupBy {
             br.com.otavioesteves.finances.domain.model.categoryMemoryKey(it.originalEntry.description) to it.originalType
         }.filterValues { group ->

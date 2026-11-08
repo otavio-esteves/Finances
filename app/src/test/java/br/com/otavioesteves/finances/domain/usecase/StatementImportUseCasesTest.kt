@@ -29,6 +29,36 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 class StatementImportUseCasesTest {
+    @Test
+    fun excludedRowsStillIdentifyTheFullSourceBatch() = runBlocking {
+        val category = Category(1, "Mercado", CategoryType.EXPENSE)
+        val first = CategorySuggestion(RawStatementEntry("Mercado", Money(100), LocalDate.of(2026, 1, 1), TransactionType.EXPENSE), category, 1f)
+        val second = CategorySuggestion(first.entry.copy(description = "Outra compra"), category, 1f)
+        val source = listOf(first, second)
+        val repository = FakeStatementImportRepository()
+        val useCase = ConfirmStatementImportUseCase(repository, FakeDateProvider(LocalDateTime.of(2026, 1, 15, 10, 0)))
+        useCase("a.csv", source)
+        useCase("a.csv", listOf(second), fingerprintSuggestions = source)
+        assertEquals(repository.fingerprints[0], repository.fingerprints[1])
+        assertEquals(1, repository.addedImports.last().transactionCount)
+        assertEquals(3, repository.addedTransactions.size)
+    }
+
+    @Test
+    fun overlapMatchesPreserveAllCandidatesAndOriginalEntryIndicesAcrossMonths() = runBlocking {
+        val entry = RawStatementEntry(" Mercado  ABC ", Money(100), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
+        val existing = Transaction(1, "mercado abc", Money(100), 1, entry.date, TransactionType.EXPENSE)
+        val otherMonth = existing.copy(id = 2, date = LocalDate.of(2025, 12, 10))
+        val anotherCandidate = existing.copy(id = 3, sourceLabel = "Outro cartão")
+        val find = FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(existing, otherMonth, anotherCandidate)))
+        val entries = listOf(entry.copy(description = "Nova compra"), entry, entry.copy(date = otherMonth.date), entry)
+        val matches = find.findMatches(entries)
+        assertEquals(setOf(1, 2, 3), matches.keys)
+        assertEquals(listOf(existing, anotherCandidate), matches[1])
+        assertEquals(listOf(otherMonth), matches[2])
+        assertEquals(matches[1], matches[3])
+        assertEquals(3, find(entries))
+    }
 
     @Test
     fun fingerprintIgnoresOrderButPreservesRepeatedPurchases() = runBlocking {
@@ -283,6 +313,7 @@ class StatementImportUseCasesTest {
     }
 
     private class FakeTransactionsRepository(private val transactions: List<Transaction> = emptyList()) : TransactionsRepository {
+        override fun hasTransactions(): Flow<Boolean> = flowOf(transactions.isNotEmpty())
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         val addedTransactions = mutableListOf<Transaction>()
 

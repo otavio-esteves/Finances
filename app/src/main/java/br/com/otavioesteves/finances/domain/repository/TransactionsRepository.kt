@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 
 interface TransactionsRepository {
+    fun hasTransactions(): Flow<Boolean>
     fun getTransaction(id: Long): Flow<Transaction?>
     fun getTransactions(period: MonthPeriod): Flow<List<Transaction>>
     fun getTransactionsForYear(year: Int): Flow<List<Transaction>> =

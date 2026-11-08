@@ -48,6 +48,7 @@ class TransactionsViewModelTest {
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         var deletedId: Long? = null
         var shouldFail = false

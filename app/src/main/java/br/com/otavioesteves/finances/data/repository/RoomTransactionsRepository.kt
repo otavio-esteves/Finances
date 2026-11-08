@@ -20,6 +20,8 @@ class RoomTransactionsRepository(
     private val database: br.com.otavioesteves.finances.data.local.AppDatabase? = null
 ) : TransactionsRepository {
 
+    override fun hasTransactions(): Flow<Boolean> = transactionDao.hasTransactions().distinctUntilChanged()
+
     override fun getTransaction(id: Long): Flow<Transaction?> =
         transactionDao.getTransactionById(id).distinctUntilChanged().map { it?.toDomain() }
 
@@ -95,11 +97,20 @@ class RoomTransactionsRepository(
         }
         db.withTransaction {
             val original = requireNotNull(transactionDao.getTransactionById(transaction.id).first()) { "Transação não encontrada" }
-            // Ownership stays with the batch even after category, amount or description edits.
-            transactionDao.updateTransaction(transaction.toEntity().copy(importId = original.importId))
-            if (original.categoryId != transaction.categoryId || original.type != transaction.type) {
+            val categoryChanged = original.categoryId != transaction.categoryId || original.type != transaction.type
+            val memoryKey = original.categoryMemoryDescriptionKey
+                ?: br.com.otavioesteves.finances.domain.model.categoryMemoryKey(original.description)
+            val inputType = original.categoryMemoryInputType ?: original.type
+            // Keep batch ownership and the first input key through every later edit.
+            transactionDao.updateTransaction(transaction.toEntity().copy(
+                importId = original.importId,
+                origin = original.origin,
+                categoryMemoryDescriptionKey = original.categoryMemoryDescriptionKey ?: memoryKey.takeIf { categoryChanged },
+                categoryMemoryInputType = original.categoryMemoryInputType ?: inputType.takeIf { categoryChanged }
+            ))
+            if (categoryChanged) {
                 db.categoryMemoryDao().remember(listOf(br.com.otavioesteves.finances.data.local.entity.CategoryMemoryEntity(
-                    br.com.otavioesteves.finances.domain.model.categoryMemoryKey(original.description), original.type, transaction.categoryId
+                    memoryKey, inputType, transaction.categoryId
                 )))
             }
         }

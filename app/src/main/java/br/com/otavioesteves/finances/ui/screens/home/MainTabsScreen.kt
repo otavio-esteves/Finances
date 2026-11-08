@@ -176,6 +176,7 @@ fun MainTabsScreen(
                             ) {
                                 when (MainTab.entries[page]) {
                                     MainTab.HOME -> DashboardScreen(
+                                        onImportStatementClick = onImportStatementClick,
                                         onCategoryClick = onCategoryClick,
                                         onHistoryClick = onHistoryClick,
                                         onTransactionClick = onTransactionClick,

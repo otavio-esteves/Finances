@@ -6,11 +6,16 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToNode
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import br.com.otavioesteves.finances.domain.DateProvider
@@ -39,6 +44,67 @@ class PdfImportReviewTest {
     @get:Rule val rule = createComposeRule()
     private val store = ViewModelStore()
     @After fun clear() { rule.runOnIdle { store.clear() } }
+
+    @Test
+    fun overflowingAmountsShowAnErrorAndExcludingAnEntryAllowsImport() {
+        val entry = RawStatementEntry("Compra", Money(Long.MAX_VALUE), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
+        val (vm, saved) = viewModel(scanned = false, entriesToImport = listOf(entry, entry.copy(description = "Outra compra")))
+        rule.setContent { FinancesTheme { ImportStatementScreen(onBackClick = {}, viewModel = vm) } }
+        rule.runOnIdle { vm.onFileSelected("limite.csv", byteArrayOf(1)) }
+        waitForReview(vm)
+        rule.onNodeWithText(AMOUNT_TOTAL_LIMIT_MESSAGE).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Confirmar Importação").assertIsNotEnabled()
+        rule.onNodeWithTag("review_entry_0").performScrollTo()
+        rule.onNode(hasText("Excluir") and hasAnyAncestor(hasTestTag("review_entry_0"))).performClick()
+        rule.onNodeWithText("Confirmar Importação").assertIsEnabled().performClick()
+        rule.waitUntil(10_000) { vm.uiState.value is ImportStatementUiState.Success }
+        assertEquals(Long.MAX_VALUE, saved.single().amount.cents)
+    }
+
+    @Test
+    fun duplicateCanBeComparedExcludedAndRestoredBeforeSavingOnlyTheOtherEntry() {
+        val entry = RawStatementEntry("Mercado", Money(1000), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
+        val existing = Transaction(9, entry.description, entry.amount, 1, entry.date, entry.type, sourceLabel = "Cartão pessoal")
+        val (vm, saved) = viewModel(scanned = false,
+            entriesToImport = listOf(entry, entry.copy(description = "Outra compra")), existingTransactions = listOf(existing))
+        rule.setContent { FinancesTheme { ImportStatementScreen(onBackClick = {}, viewModel = vm) } }
+        rule.runOnIdle { vm.onFileSelected("a.csv", byteArrayOf(1)) }
+        waitForReview(vm)
+        rule.onNodeWithTag("review_entry_0").performScrollTo()
+        rule.onNodeWithText("No histórico (1)").assertIsDisplayed()
+        captureReviewScreenshot(rule, "duplicate-comparison")
+        rule.onNodeWithText("Cartão pessoal").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("review_entry_0").performScrollTo()
+        rule.onNode(hasText("Excluir") and hasAnyAncestor(hasTestTag("review_entry_0"))).performClick()
+        rule.onNodeWithText("Confirmar Importação").assertIsEnabled()
+        rule.onNode(hasText("Reincluir") and hasAnyAncestor(hasTestTag("review_entry_0"))).performClick()
+        rule.onNodeWithText("Confirmar Importação").assertIsNotEnabled()
+        rule.onNode(hasText("Excluir") and hasAnyAncestor(hasTestTag("review_entry_0"))).performClick()
+        rule.onNodeWithText("Confirmar Importação").performClick()
+        rule.waitUntil(10_000) { vm.uiState.value is ImportStatementUiState.Success }
+        assertEquals(listOf("Outra compra"), saved.map { it.description })
+    }
+
+    @Test
+    fun uncertainFilterAndBulkCategoryUpdateTheSelectedRows() {
+        val first = RawStatementEntry("Mercado", Money(1000), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
+        val (vm, saved) = viewModel(scanned = false,
+            entriesToImport = listOf(first, first.copy(description = "Outra compra")), confidence = 0.4f)
+        rule.setContent { FinancesTheme { ImportStatementScreen(onBackClick = {}, viewModel = vm) } }
+        rule.runOnIdle { vm.onFileSelected("a.csv", byteArrayOf(1)) }
+        waitForReview(vm)
+        rule.onNodeWithTag("review_filter_UNCERTAIN").performScrollTo().performClick()
+        rule.onNodeWithText("Selecionar lançamentos").performScrollTo().performClick()
+        rule.onNodeWithText("Selecionar visíveis").performClick()
+        captureReviewScreenshot(rule, "bulk-selection")
+        rule.onNodeWithText("Categorizar selecionados").performClick()
+        rule.onNodeWithText("Categoria para 2 lançamentos").assertIsDisplayed()
+        rule.onNodeWithText("Transporte").performClick()
+        rule.onNodeWithText("Nenhum lançamento neste filtro.").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Confirmar Importação").performClick()
+        rule.waitUntil(10_000) { vm.uiState.value is ImportStatementUiState.Success }
+        assertEquals(listOf(2L, 2L), saved.map { it.categoryId })
+    }
 
     @Test
     fun pendingFirstBatchShowsActivityUntilMeasuredProgressArrives() {
@@ -93,15 +159,18 @@ class PdfImportReviewTest {
         rule.runOnIdle { viewModel.onFileSelected("digitalizado.pdf", byteArrayOf(1)) }
         waitForReview(viewModel)
         rule.onNodeWithText("Confirmar Importação").assertIsNotEnabled()
-        rule.onNode(isToggleable()).performClick()
+        rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasTestTag("review_ocr_acknowledgment"))
+        rule.onNodeWithTag("review_ocr_acknowledgment").performClick()
         rule.onNodeWithText("Confirmar Importação").assertIsEnabled()
+        rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Corrigir dados"))
         rule.onNodeWithText("Corrigir dados").performClick()
         rule.onNodeWithText("Valor sem sinal").performTextReplacement("25,90")
         rule.onNodeWithText("Data (dd/MM/aaaa)").performTextReplacement("11/01/2026")
         rule.onNodeWithText("Aplicar").performClick()
         rule.waitUntil(10_000) { (viewModel.uiState.value as? ImportStatementUiState.ReviewingSuggestions)?.isCheckingOverlaps == false }
         rule.onNodeWithText("Confirmar Importação").assertIsNotEnabled()
-        rule.onNode(isToggleable()).performClick()
+        rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasTestTag("review_ocr_acknowledgment"))
+        rule.onNodeWithTag("review_ocr_acknowledgment").performClick()
         rule.onNodeWithText("Confirmar Importação").performClick()
         rule.waitUntil(10_000) { viewModel.uiState.value is ImportStatementUiState.Success }
         assertEquals(2590L, saved.single().amount.cents)
@@ -128,18 +197,21 @@ class PdfImportReviewTest {
         rule.waitUntil(10_000) { vm.uiState.value is ImportStatementUiState.ReviewingSuggestions }
     }
     private fun viewModel(scanned: Boolean, protected: Boolean = false,
-        processingGate: CompletableDeferred<Unit>? = null): Pair<ImportStatementViewModel, MutableList<Transaction>> {
+        processingGate: CompletableDeferred<Unit>? = null,
+        entriesToImport: List<RawStatementEntry>? = null,
+        existingTransactions: List<Transaction> = emptyList(),
+        confidence: Float = 1f): Pair<ImportStatementViewModel, MutableList<Transaction>> {
         val date = LocalDate.of(2026, 1, 10)
         val entry = RawStatementEntry("Mercado", Money(1000), date, TransactionType.EXPENSE, extractedByOcr = scanned)
         val category = Category(1, "Mercado", CategoryType.EXPENSE)
         val categories = object : CategoriesRepository {
-            override fun getCategories() = flowOf(listOf(category))
+            override fun getCategories() = flowOf(listOf(category, Category(2, "Transporte", CategoryType.EXPENSE)))
             override fun getCategorySummaries(period: MonthPeriod) = flowOf(emptyList<CategorySummary>())
         }
         val parser = object : StatementParserRepository {
             override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
                 if (protected && password != "123456") throw StatementPasswordRequiredException(password != null)
-                return if (processingGate == null) listOf(entry) else listOf(entry, entry.copy(description = "Outra compra"))
+                return entriesToImport ?: if (processingGate == null) listOf(entry) else listOf(entry, entry.copy(description = "Outra compra"))
             }
         }
         val categorizer = object : TransactionCategorizer {
@@ -148,7 +220,7 @@ class PdfImportReviewTest {
                     onProgress(1, entries.size)
                     processingGate.await()
                 }
-                return Result.success(entries.map { CategorySuggestion(it, category, 1f) })
+                return Result.success(entries.map { CategorySuggestion(it, category, confidence) })
             }
         }
         val saved = mutableListOf<Transaction>()
@@ -157,8 +229,11 @@ class PdfImportReviewTest {
             override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprint: String?) { saved += transactions }
         }
         val transactions = object : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
             override fun getTransaction(id: Long) = flowOf<Transaction?>(null)
-            override fun getTransactions(period: MonthPeriod) = flowOf(emptyList<Transaction>())
+            override fun getTransactions(period: MonthPeriod) = flowOf(existingTransactions.filter {
+                it.date.year == period.year && it.date.monthValue == period.month
+            })
             override fun getMonthlyBalance(period: MonthPeriod) = flowOf(Money.Zero)
             override suspend fun addTransaction(transaction: Transaction) = Unit
             override suspend fun removeTransaction(transactionId: Long) = Unit

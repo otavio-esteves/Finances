@@ -50,6 +50,7 @@ class ChatViewModelTest {
     }
 
     private class FakeTransactionsRepository : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(emptyList())
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)

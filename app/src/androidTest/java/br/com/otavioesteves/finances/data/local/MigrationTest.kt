@@ -15,6 +15,46 @@ import java.io.IOException
 class MigrationTest {
 
     @Test
+    fun migrate8To9PreservesDataAndLeavesUnknownInputKeysNull() {
+        helper.createDatabase(testDbName, 8).apply {
+            execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Outros', 'EXPENSE')")
+            execSQL("INSERT INTO transactions (id, description, amountCents, categoryId, date, type, notes, origin) VALUES (1, 'Mercado', 1000, 1, '2026-11-01', 'EXPENSE', NULL, 'IMPORTED')")
+            execSQL("INSERT INTO category_memories (descriptionKey, inputType, categoryId) VALUES ('mercado', 'EXPENSE', 1)")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(testDbName, 9, true, AppDatabase.MIGRATION_8_9)
+        db.query("SELECT amountCents, categoryMemoryDescriptionKey, categoryMemoryInputType FROM transactions WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(1000L, it.getLong(0))
+            assertTrue(it.isNull(1))
+            assertTrue(it.isNull(2))
+        }
+        db.query("SELECT categoryId FROM category_memories WHERE descriptionKey = 'mercado'").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(1L, it.getLong(0))
+        }
+    }
+
+    @Test
+    fun migrate1Through9PreservesTransactionsAndValidatesTheCompleteSchema() {
+        helper.createDatabase(testDbName, 1).apply {
+            execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Outros', 'EXPENSE')")
+            execSQL("INSERT INTO transactions (id, description, amountCents, categoryId, date, type, notes) VALUES (1, 'Original', 1234, 1, '2026-01-01', 'EXPENSE', NULL)")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(testDbName, 9, true,
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4,
+            AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7,
+            AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9)
+        db.query("SELECT description, amountCents, origin FROM transactions WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertEquals("Original", it.getString(0))
+            assertEquals(1234L, it.getLong(1))
+            assertEquals("MANUAL", it.getString(2))
+        }
+    }
+
+    @Test
     fun migrate7To8KeepsOldTransactionsUnlinkedAndCreatesMemory() {
         helper.createDatabase(testDbName, 7).apply {
             execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Outros', 'EXPENSE')")

@@ -42,6 +42,7 @@ class SharedMonthTest {
             flowOf(listOf(CategorySummary(category, Money.fromCents(period.month.toLong()))))
     }
     private val transactions = object : TransactionsRepository {
+        override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
         override fun getTransaction(id: Long) = flowOf<Transaction?>(null)
         override fun getTransactions(period: MonthPeriod) = flowOf(listOf(Transaction(
             id = period.month.toLong(), description = period.toYearMonth().toString(),

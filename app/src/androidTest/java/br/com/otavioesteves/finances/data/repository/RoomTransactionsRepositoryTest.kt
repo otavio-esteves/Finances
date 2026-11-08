@@ -21,6 +21,25 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class RoomTransactionsRepositoryTest {
     @Test
+    fun hasTransactionsIncludesOtherYearsAndReturnsFalseAfterDeletingTheLastEntry() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java
+        ).build()
+        try {
+            val repository = RoomTransactionsRepository(database.transactionDao())
+            assertEquals(false, repository.hasTransactions().first())
+            database.categoryDao().insertCategories(listOf(CategoryEntity(id = 1, name = "Mercado", type = CategoryType.EXPENSE)))
+            database.transactionDao().insertTransaction(TransactionEntity(
+                id = 1, description = "Compra antiga", amountCents = 100, categoryId = 1,
+                date = LocalDate.of(2000, 1, 1), type = TransactionType.EXPENSE, notes = null
+            ))
+            assertEquals(true, repository.hasTransactions().first())
+            database.transactionDao().deleteAll()
+            assertEquals(false, repository.hasTransactions().first())
+        } finally { database.close() }
+    }
+
+    @Test
     fun getTransaction_findsEntryOutsideCurrentMonth() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(
             InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java

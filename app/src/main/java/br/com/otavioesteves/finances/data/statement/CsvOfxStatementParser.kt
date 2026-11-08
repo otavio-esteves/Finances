@@ -19,11 +19,10 @@ import java.util.Locale
 class CsvOfxStatementParser : StatementParserRepository {
 
     override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
-        val text = rawContent.toString(Charsets.UTF_8)
         return if (fileName.substringAfterLast('.', "").lowercase() in OFX_EXTENSIONS) {
-            parseOfx(text)
+            parseOfx(decodeStatementText(rawContent, ofx = true))
         } else {
-            parseCsv(text, kind)
+            parseCsv(decodeStatementText(rawContent, ofx = false), kind)
         }
     }
 
@@ -39,22 +38,16 @@ class CsvOfxStatementParser : StatementParserRepository {
         require(!nativeExport || (header.size == NATIVE_EXPORT_HEADERS.size && header.toSet() == NATIVE_EXPORT_HEADERS)) {
             "CSV em centavos não corresponde ao formato exportado pelo Finances"
         }
-        val dateIndex = header.indexOfFirst { it.contains("data") || it.contains("date") }
-        val descriptionIndex = header.indexOfFirst {
+        val dateIndex = uniqueColumn(header, "data") { it.contains("data") || it.contains("date") }
+        val descriptionIndex = uniqueColumn(header, "descrição") {
             it.contains("descri") || it.contains("histor") || it.contains("memo") || it.contains("description")
         }
-        val amountIndex = header.indexOfFirst { it.contains("valor") || it.contains("amount") || it.contains("value") }
-
-        require(dateIndex >= 0 && descriptionIndex >= 0 && amountIndex >= 0) {
-            "CSV não contém as colunas esperadas de data, descrição e valor"
-        }
+        val amountIndex = uniqueColumn(header, "valor") { it.contains("valor") || it.contains("amount") || it.contains("value") }
+        require(setOf(dateIndex, descriptionIndex, amountIndex).size == 3) { "Colunas ambíguas no CSV." }
 
         return rows.drop(1).map { fields ->
-            require(!nativeExport || fields.size == header.size) {
-                "Linha do CSV exportado não corresponde ao cabeçalho"
-            }
-            require(fields.size > maxOf(dateIndex, descriptionIndex, amountIndex)) {
-                "Linha CSV com menos colunas que o cabeçalho"
+            require(fields.size == header.size) {
+                "Linha CSV não corresponde ao cabeçalho. Confira o separador e coloque campos com separadores entre aspas."
             }
             val amountCents = if (nativeExport) {
                 fields[centsIndex].trim().let { raw ->
@@ -79,6 +72,15 @@ class CsvOfxStatementParser : StatementParserRepository {
         }
     }
 
+    private fun uniqueColumn(header: List<String>, label: String, matches: (String) -> Boolean): Int {
+        val candidates = header.indices.filter {
+            matches(java.text.Normalizer.normalize(header[it], java.text.Normalizer.Form.NFD).replace(HEADER_DIACRITICS, ""))
+        }
+        require(candidates.isNotEmpty()) { "CSV não contém a coluna esperada de $label." }
+        require(candidates.size == 1) { "CSV contém mais de uma coluna de $label. Use um arquivo com uma única coluna para esse campo." }
+        return candidates.single()
+    }
+
     private fun parseOfx(text: String): List<RawStatementEntry> {
         val transactionBlocks = OFX_TRANSACTION_REGEX.findAll(text).map { it.value }.toList()
         require(transactionBlocks.isNotEmpty()) { "OFX não contém nenhuma transação (STMTTRN)" }
@@ -90,7 +92,8 @@ class CsvOfxStatementParser : StatementParserRepository {
             val date = OFX_DATE_REGEX.find(block)?.groupValues?.get(1)?.trim()
                 ?: throw IllegalArgumentException("Transação OFX sem DTPOSTED válido")
             val description = OFX_MEMO_REGEX.find(block)?.groupValues?.get(1)?.trim()
-                ?: OFX_NAME_REGEX.find(block)?.groupValues?.get(1)?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: OFX_NAME_REGEX.find(block)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
                 ?: "Transação sem descrição"
 
             RawStatementEntry(
@@ -144,11 +147,17 @@ class CsvOfxStatementParser : StatementParserRepository {
         val fields = mutableListOf<String>()
         val field = StringBuilder()
         var insideQuotes = false
+        var quoteClosed = false
         var index = 0
 
-        fun finishRecord() {
+        fun finishField() {
             fields += field.toString()
             field.clear()
+            quoteClosed = false
+        }
+
+        fun finishRecord() {
+            finishField()
             records += fields.toList()
             fields.clear()
         }
@@ -160,27 +169,35 @@ class CsvOfxStatementParser : StatementParserRepository {
                     field.append('"')
                     index++
                 }
-                char == '"' -> insideQuotes = !insideQuotes
+                char == '"' && insideQuotes -> {
+                    insideQuotes = false
+                    quoteClosed = true
+                }
+                char == '"' -> {
+                    require(field.isEmpty() && !quoteClosed) { "CSV com aspas fora do início do campo." }
+                    insideQuotes = true
+                }
                 char == delimiter && !insideQuotes -> {
-                    fields += field.toString()
-                    field.clear()
+                    finishField()
                 }
                 (char == '\r' || char == '\n') && !insideQuotes -> {
                     finishRecord()
                     if (char == '\r' && text.getOrNull(index + 1) == '\n') index++
                 }
+                quoteClosed -> require(char == ' ' || char == '\t') { "CSV com texto após o fechamento das aspas." }
                 else -> field.append(char)
             }
             index++
         }
         require(!insideQuotes) { "CSV com aspas não fechadas" }
-        if (field.isNotEmpty() || fields.isNotEmpty()) finishRecord()
+        if (field.isNotEmpty() || fields.isNotEmpty() || quoteClosed) finishRecord()
         return records
     }
 
     private companion object {
         val NATIVE_EXPORT_HEADERS = setOf("id", "data", "descrição", "valor (centavos)", "tipo", "categoria", "observações")
         val UNSIGNED_CENTS = Regex("[0-9]+")
+        val HEADER_DIACRITICS = Regex("\\p{M}+")
         val OFX_EXTENSIONS = setOf("ofx", "qfx")
         val BR_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT)
         // OFX is SGML-based and closing tags (e.g. </STMTTRN>) are often omitted,
