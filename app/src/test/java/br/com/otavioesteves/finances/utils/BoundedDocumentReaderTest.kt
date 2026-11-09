@@ -30,4 +30,20 @@ class BoundedDocumentReaderTest {
     fun backupReaderPreservesUtf8() {
         assertEquals("{\"descrição\":\"ação\"}", readBackupDocument(ByteArrayInputStream("{\"descrição\":\"ação\"}".toByteArray(Charsets.UTF_8))))
     }
+
+    @Test
+    fun backupReaderRejectsInvalidOrTruncatedUtf8AndClosesTheStream() {
+        for (invalid in listOf(byteArrayOf(0xe9.toByte()), byteArrayOf(0xc3.toByte()), byteArrayOf(0xff.toByte()))) {
+            val input = TrackingStream("{\"description\":\"Caf".toByteArray() + invalid + "\"}".toByteArray())
+            val error = assertThrows(IllegalArgumentException::class.java) { readBackupDocument(input) }
+            assertTrue(error.message.orEmpty().contains("UTF-8"))
+            assertTrue(input.closed)
+        }
+    }
+
+    @Test
+    fun backupReaderPreservesAnExplicitReplacementCharacter() {
+        val json = "{\"description\":\"Café �\"}"
+        assertEquals(json, readBackupDocument(ByteArrayInputStream(json.toByteArray(Charsets.UTF_8))))
+    }
 }

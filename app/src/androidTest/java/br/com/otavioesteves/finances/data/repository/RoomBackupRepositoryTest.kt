@@ -14,6 +14,10 @@ import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.ChatRole
 import br.com.otavioesteves.finances.domain.model.TransactionOrigin
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.usecase.CreateBackupUseCase
+import br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase
+import br.com.otavioesteves.finances.utils.readBackupDocument
+import java.io.ByteArrayInputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -24,6 +28,27 @@ import java.time.LocalDateTime
 
 @RunWith(AndroidJUnit4::class)
 class RoomBackupRepositoryTest {
+    @Test
+    fun invalidUtf8BackupIsRejectedBeforeReplacingFinancialData() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java
+        ).build()
+        try {
+            database.categoryDao().insertCategories(listOf(CategoryEntity(1, "Outros", CategoryType.EXPENSE)))
+            database.transactionDao().insertTransaction(TransactionEntity(1, "Original", 100, 1,
+                LocalDate.of(2026, 11, 1), TransactionType.EXPENSE, null))
+            val repository = RoomBackupRepository(database)
+            val original = repository.createBackup()
+            val json = CreateBackupUseCase(repository)()
+            val bytes = json.toByteArray(Charsets.UTF_8)
+            bytes[json.indexOf("Original")] = 0xff.toByte()
+            assertTrue(runCatching {
+                RestoreBackupUseCase(repository)(readBackupDocument(ByteArrayInputStream(bytes)))
+            }.exceptionOrNull() is IllegalArgumentException)
+            assertEquals(original, repository.createBackup())
+        } finally { database.close() }
+    }
+
     @Test
     fun restoringEmptyOrPartialCategoriesKeepsEveryTransactionTypeUsable() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(
