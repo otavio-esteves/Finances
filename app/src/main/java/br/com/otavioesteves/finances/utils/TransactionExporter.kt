@@ -33,10 +33,10 @@ class TransactionExporter {
     }
 
     private fun toCsv(transactions: List<Transaction>, categories: Map<Long, Category>): String {
-        val header = "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações"
+        val header = "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações,Formato Finances"
         val rows = transactions.map { t ->
             val categoryName = categories[t.categoryId]?.name ?: "Desconhecida"
-            "${t.id},${t.date},${t.description.toCsvField()},${t.amount.cents},${t.type},${categoryName.toCsvField()},${(t.notes ?: "").toCsvField()}"
+            "${t.id},${t.date},${t.description.toCsvField()},${t.amount.cents},${t.type},${categoryName.toCsvField()},${(t.notes ?: "").toCsvField()},2"
         }
         return (listOf(header) + rows).joinToString("\n")
     }
@@ -60,7 +60,7 @@ class TransactionExporter {
     }
 
     private fun String.toCsvField(): String {
-        val safeValue = if (firstOrNull() in FORMULA_PREFIXES) "'$this" else this
+        val safeValue = if (firstOrNull() in FORMULA_PREFIXES || startsWith("'")) "'$this" else this
         return "\"${safeValue.replace("\"", "\"\"")}\""
     }
 

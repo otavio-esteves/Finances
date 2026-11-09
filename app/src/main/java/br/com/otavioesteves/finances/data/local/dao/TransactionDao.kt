@@ -7,7 +7,6 @@ import androidx.room.Query
 import androidx.room.Update
 import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionMonthAggregateEntity
-import br.com.otavioesteves.finances.data.local.entity.TransactionAmountSnapshot
 import br.com.otavioesteves.finances.data.local.mapper.toDomain
 import br.com.otavioesteves.finances.domain.model.checkedMagnitudeTotal
 import kotlinx.coroutines.flow.Flow
@@ -60,14 +59,17 @@ interface TransactionDao {
 
     @androidx.room.Transaction
     suspend fun insertTransaction(transaction: TransactionEntity) {
-        validateReplacement(listOf(transaction))
+        val total = validateReplacement(listOf(transaction))
         insertTransactionUnchecked(transaction)
+        saveMagnitudeTotal(total)
     }
 
     @androidx.room.Transaction
     suspend fun updateTransaction(transaction: TransactionEntity) {
-        validateReplacement(listOf(transaction))
+        if (findAmount(transaction.id) == null) return
+        val total = validateReplacement(listOf(transaction))
         updateTransactionUnchecked(transaction)
+        saveMagnitudeTotal(total)
     }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -76,34 +78,76 @@ interface TransactionDao {
     @Update
     suspend fun updateTransactionUnchecked(transaction: TransactionEntity)
 
+    @androidx.room.Transaction
+    suspend fun deleteTransactionById(id: Long) {
+        val total = magnitudeTotal()
+        val amount = findAmount(id) ?: return
+        deleteTransactionByIdUnchecked(id)
+        saveMagnitudeTotal(total - amount)
+    }
+
     @Query("DELETE FROM transactions WHERE id = :id")
-    suspend fun deleteTransactionById(id: Long)
+    suspend fun deleteTransactionByIdUnchecked(id: Long)
+
+    @androidx.room.Transaction
+    suspend fun deleteAll() {
+        deleteAllUnchecked()
+        saveMagnitudeTotal(0)
+    }
 
     @Query("DELETE FROM transactions")
-    suspend fun deleteAll()
+    suspend fun deleteAllUnchecked()
+
+    @androidx.room.Transaction
+    suspend fun deleteImportedTransactions(id: Long) {
+        val total = magnitudeTotal()
+        val removed = importedMagnitude(id) ?: 0L
+        deleteImportedTransactionsUnchecked(id)
+        saveMagnitudeTotal(total - removed)
+    }
+
+    @Query("SELECT SUM(amountCents) FROM transactions WHERE importId = :id")
+    suspend fun importedMagnitude(id: Long): Long?
+
+    @Query("DELETE FROM transactions WHERE importId = :id")
+    suspend fun deleteImportedTransactionsUnchecked(id: Long)
 
     @Query("SELECT * FROM transactions")
     suspend fun getAllTransactions(): List<TransactionEntity>
 
     @androidx.room.Transaction
     suspend fun insertTransactions(transactions: List<TransactionEntity>) {
-        validateReplacement(transactions)
+        val total = validateReplacement(transactions)
         insertTransactionsUnchecked(transactions)
+        saveMagnitudeTotal(total)
     }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransactionsUnchecked(transactions: List<TransactionEntity>)
 
-    @Query("SELECT id, amountCents FROM transactions")
-    suspend fun getAmountSnapshots(): List<TransactionAmountSnapshot>
+    @Query("SELECT amountCents FROM transactions WHERE id = :id")
+    suspend fun findAmount(id: Long): Long?
 
-    // Called only by transactional wrappers so concurrent writes cannot both spend the same budget.
-    private suspend fun validateReplacement(transactions: List<TransactionEntity>) {
+    @Query("SELECT amountCents FROM transaction_total WHERE id = 1")
+    suspend fun storedMagnitudeTotal(): Long?
+
+    @Query("SELECT COALESCE(SUM(amountCents), 0) FROM transactions")
+    suspend fun initialMagnitudeTotal(): Long
+
+    @Query("INSERT OR REPLACE INTO transaction_total (id, amountCents) VALUES (1, :total)")
+    suspend fun saveMagnitudeTotal(total: Long)
+
+    // A fresh in-memory database may not have a seed row; initialize once.
+    private suspend fun magnitudeTotal(): Long = storedMagnitudeTotal() ?: initialMagnitudeTotal().also {
+        saveMagnitudeTotal(it)
+    }
+
+    private suspend fun validateReplacement(transactions: List<TransactionEntity>): Long {
         transactions.forEach { it.toDomain() }
         val replacingIds = transactions.filter { it.id > 0 }.map { it.id }
         require(replacingIds.distinct().size == replacingIds.size) { "Transações repetidas no mesmo lote." }
-        val idSet = replacingIds.toSet()
-        checkedMagnitudeTotal(getAmountSnapshots().asSequence().filterNot { it.id in idSet }.map { it.amountCents } +
-            transactions.asSequence().map { it.amountCents })
+        var remaining = magnitudeTotal()
+        replacingIds.forEach { remaining -= findAmount(it) ?: 0L }
+        return checkedMagnitudeTotal(sequenceOf(remaining) + transactions.asSequence().map { it.amountCents }).cents
     }
 }

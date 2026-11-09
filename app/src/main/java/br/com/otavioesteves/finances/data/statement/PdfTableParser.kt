@@ -44,7 +44,8 @@ internal class PdfTableParser(
         val date = cells[dateIndex()]
         val dateOnly = DATE_WITH_TIME.matchEntire(date)?.groupValues?.get(1) ?: date
         val description = cells[descriptionIndex()]
-        if (SUMMARY.matches(normalizePdfText(description))) return true to null
+        val normalizedDescription = normalizePdfText(description)
+        if (SUMMARY.matches(normalizedDescription) && (date.isBlank() || normalizedDescription != "total")) return true to null
         if (date.isNotBlank()) {
             require(pending == null) { "Lançamento anterior incompleto na tabela PDF." }
             require(PdfDateResolver.DATE_PREFIX.matchEntire(normalizePdfText(dateOnly)) != null) { "Data inválida na tabela PDF: $date" }
@@ -67,6 +68,12 @@ internal class PdfTableParser(
             return true to null
         }
         val row = requireNotNull(pending)
+        val currency = header.indexOf("moeda")
+        require(currency < 0 || row[currency].isBlank() || row[currency].uppercase() in listOf("R$", "BRL")) {
+            "Lançamento em moeda estrangeira sem valor convertido em reais."
+        }
+        val foreign = header.indexOf("valor estrangeiro")
+        if (foreign >= 0 && row[foreign].isNotBlank()) parseAmount(row[foreign], false, false)
         val valueIndex = header.indexOf("valor")
         val amount: Pair<Long, TransactionType> = if (valueIndex >= 0) {
             if (row[valueIndex].isBlank()) return true to null
@@ -100,7 +107,7 @@ internal class PdfTableParser(
         if (balance >= 0 && row[balance].isNotBlank()) parseAmount(row[balance], false, false)
         // Preserve the original ordering of time/document/description text, including for old fingerprints.
         val descriptionText = row.indices.filter {
-            !header[it].startsWith("data") && header[it] !in listOf("valor", "debito", "credito", "saldo", "tipo", "identificador")
+            !header[it].startsWith("data") && header[it] !in listOf("valor", "debito", "credito", "saldo", "tipo", "identificador", "valor estrangeiro", "moeda")
         }.map { row[it] }.filter { it.isNotBlank() }.joinToString(" ")
         val entry = RawStatementEntry(
             description = descriptionText,
@@ -118,7 +125,7 @@ internal class PdfTableParser(
 
     companion object {
         private val DESCRIPTION = setOf("descricao", "historico", "estabelecimento", "lancamento")
-        private val SUMMARY = Regex("(?:saldo(?: anterior| atual| final| (?:do )?dia)?|total(?: da fatura| de compras)?|valor total)")
+        private val SUMMARY = Regex("(?:saldo(?: anterior| atual| final| (?:do )?dia| fatura anterior)?|total(?: da fatura(?: anterior)?| de compras| compras| para .+| do cartao.*)?|subtotal|valor total)")
         private val DATE_WITH_TIME = Regex("(\\d{1,2}[/-]\\d{1,2}[/-]\\d{4})\\s*-\\s*\\d{2}:\\d{2}(?::\\d{2})?")
         private val EXPLICIT_DIRECTION = Regex("[+\\-(]|(?:credito|debito|cr|dr|c|d)$")
     }

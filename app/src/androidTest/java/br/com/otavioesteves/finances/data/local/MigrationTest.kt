@@ -15,6 +15,20 @@ import java.io.IOException
 class MigrationTest {
 
     @Test
+    fun migrate9To10SeedsTheMagnitudeBudget() {
+        helper.createDatabase(testDbName, 9).apply {
+            execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Outros', 'EXPENSE')")
+            execSQL("INSERT INTO transactions (id, description, amountCents, categoryId, date, type, notes, origin) VALUES (1, 'Compra', 1234, 1, '2026-11-01', 'EXPENSE', NULL, 'MANUAL')")
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(testDbName, 10, true, AppDatabase.MIGRATION_9_10)
+        db.query("SELECT amountCents FROM transaction_total WHERE id = 1").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(1234L, it.getLong(0))
+        }
+    }
+
+    @Test
     fun migrate8To9PreservesDataAndLeavesUnknownInputKeysNull() {
         helper.createDatabase(testDbName, 8).apply {
             execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Outros', 'EXPENSE')")

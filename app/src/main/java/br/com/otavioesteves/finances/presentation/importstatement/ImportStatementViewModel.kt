@@ -50,17 +50,17 @@ class ImportStatementViewModel(
     private val loadRevision = AtomicLong()
     private var validationJob: Job? = null
     private var validationRevision = 0
-    private data class PendingFile(val name: String, val kind: StatementKind, val openStream: () -> InputStream)
+    private data class PendingFile(val name: String, val kind: StatementKind, val openStream: () -> InputStream, val referenceYear: Int?)
     private var pendingFile: PendingFile? = null
 
     private val _uiState = MutableStateFlow<ImportStatementUiState>(ImportStatementUiState.Idle)
     val uiState: StateFlow<ImportStatementUiState> = _uiState.asStateFlow()
 
-    fun onFileSelected(fileName: String, content: ByteArray, kind: StatementKind = StatementKind.BANK_STATEMENT) =
-        onFileSelected(fileName, kind) { ByteArrayInputStream(content) }
+    fun onFileSelected(fileName: String, content: ByteArray, kind: StatementKind = StatementKind.BANK_STATEMENT, referenceYear: Int? = null) =
+        onFileSelected(fileName, kind, referenceYear) { ByteArrayInputStream(content) }
 
-    fun onFileSelected(fileName: String, kind: StatementKind = StatementKind.BANK_STATEMENT, openStream: () -> InputStream) {
-        startReading(PendingFile(fileName, kind, openStream))
+    fun onFileSelected(fileName: String, kind: StatementKind = StatementKind.BANK_STATEMENT, referenceYear: Int? = null, openStream: () -> InputStream) {
+        startReading(PendingFile(fileName, kind, openStream, referenceYear))
     }
 
     fun onPasswordSubmitted(password: String) {
@@ -75,7 +75,7 @@ class ImportStatementViewModel(
         validationJob?.cancel()
         validationRevision++
         pendingFile = file
-        val (fileName, kind, openStream) = file
+        val (fileName, kind, openStream, referenceYear) = file
         _uiState.value = ImportStatementUiState.Loading(fileName)
         loadJob = viewModelScope.launch {
             val requestContext = currentCoroutineContext()
@@ -89,7 +89,7 @@ class ImportStatementViewModel(
             try {
                 val content = withContext(ioDispatcher) { readBounded(openStream()) }
                 showStage(ImportProcessingStage.EXTRACTING)
-                val entries = withContext(cpuDispatcher) { importStatement(fileName, content, kind, password) }
+                val entries = withContext(cpuDispatcher) { importStatement(fileName, content, kind, password, referenceYear) }
                 requestContext.ensureActive()
                 if (loadRevision.get() != revision) return@launch
                 if (entries.isEmpty()) {
@@ -119,7 +119,8 @@ class ImportStatementViewModel(
                     fileName = fileName,
                     suggestions = suggestions,
                     availableCategories = categories,
-                    overlapMatches = overlapMatches
+                    overlapMatches = overlapMatches,
+                    referenceYear = referenceYear
                 )
             } catch (e: StatementPasswordRequiredException) {
                 currentCoroutineContext().ensureActive()

@@ -21,13 +21,14 @@ import java.util.concurrent.atomic.AtomicLong
 
 @Database(
     entities = [
+        br.com.otavioesteves.finances.data.local.entity.TransactionTotalEntity::class,
         CategoryEntity::class,
         TransactionEntity::class,
         StatementImportEntity::class,
         ChatMessageEntity::class,
         br.com.otavioesteves.finances.data.local.entity.CategoryMemoryEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -138,6 +139,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS transaction_total (id INTEGER NOT NULL, amountCents INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("INSERT INTO transaction_total (id, amountCents) SELECT 1, COALESCE(SUM(amountCents), 0) FROM transactions")
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -145,7 +153,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "finances_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .addCallback(DefaultCategoriesCallback())
                     .build()
                 INSTANCE = instance

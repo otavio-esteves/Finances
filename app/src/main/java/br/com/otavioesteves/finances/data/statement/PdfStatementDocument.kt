@@ -32,6 +32,8 @@ internal class PdfStatementDocument(original: String) {
             val body = lines.drop(transactionStart + 1)
                 .takeWhile { !normalizePdfText(it).startsWith("em cumprimento a regulacao") }
                 .filterNot { EMISSION.containsMatchIn(normalizePdfText(it)) }
+                // These exact section totals belong to this identified bill layout, not purchases.
+                .filterNot { NAMED_BILL_SECTION_TOTAL.matches(normalizePdfText(it)) }
             "Fatura\nPeríodo: $start a $end\n" + body.joinToString("\n")
         } else if ("picpay" in normalized && "transacoes nacionais" in normalized &&
             "subtotal dos lancamentos" in normalized
@@ -48,6 +50,8 @@ internal class PdfStatementDocument(original: String) {
             lines.dropWhile { !isBeneficiaryTableHeader(it) }.joinToString("\n")
         } else original
     }
+
+    fun isMovementSummary(line: String): Boolean = unsignedCredits && normalizePdfText(line) in summaryLines
 
     fun validateTotals(entries: List<RawStatementEntry>) {
         if (!unsignedCredits) return
@@ -67,5 +71,6 @@ internal class PdfStatementDocument(original: String) {
         private val TRANSACTIONS = Regex("^transacoes\\s+de\\s+(\\d{1,2}\\s+[a-z]{3})\\s+a\\s+(\\d{1,2}\\s+[a-z]{3})$")
         private val EMISSION = Regex("\\bemissao e envio\\s+(\\d{1,2}\\s+[a-z]{3}\\s+\\d{4})\\b")
         private val CLOSING = Regex("\\bfechamento:\\s*(\\d{1,2}/\\d{1,2}/\\d{4})\\b")
+        private val NAMED_BILL_SECTION_TOTAL = Regex("(?:cartao titular|cartao adicional|pagamentos)\\s+[+-]?\\s*(?:r\\$\\s*)?[+-]?[\\d.]+,\\d{2}")
     }
 }

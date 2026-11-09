@@ -10,6 +10,15 @@ class PdfTableParserTest {
     private val parser = PdfStatementParser { "" }
 
     @Test
+    fun datedMerchantTotalIsPreservedWhileBalancesAndUndatedSummariesAreSkipped() {
+        val entries = parser.parseText("Fatura\nData\tDescrição\tValor\n" +
+            "01/11/2026\tTotal\t50,00\n02/11/2026\tSaldo\t20,00\n" +
+            "\tTotal\t50,00\n03/11/2026\tTotal da fatura\t50,00", StatementKind.CARD_BILL)
+        assertEquals(listOf("Total"), entries.map { it.description })
+        assertEquals(listOf(5000L), entries.map { it.amount.cents })
+    }
+
+    @Test
     fun explicitDebitCreditCellsPreserveEmptyColumnsAndExcludeBalances() {
         val entries = parser.parseText("Ano: 2026\nData\tHistórico\tDébito\tCrédito\tSaldo\n" +
             "10/01\tPix Farmácia\t20,00\t\t980,00\n11/01\tSalário\t0,00\t3.000,00\t3.980,00")
@@ -76,11 +85,11 @@ class PdfTableParserTest {
     }
 
     @Test
-    fun strictOcrParsingRefusesUnmatchedMonetaryRows() {
+    fun parsingRefusesUnmatchedMonetaryRows() {
         assertThrows(IllegalArgumentException::class.java) {
-            parser.parseText("10/01/2026 Compra -20,00\nData ilegível Farmácia -30,00", strictUnmatchedMoney = true)
+            parser.parseText("10/01/2026 Compra -20,00\nData ilegível Farmácia -30,00")
         }
         assertEquals(1, parser.parseText("Fatura\n10/01/2026 Compra 20,00\nTotal da fatura 20,00",
-            StatementKind.CARD_BILL, strictUnmatchedMoney = true).size)
+            StatementKind.CARD_BILL).size)
     }
 }

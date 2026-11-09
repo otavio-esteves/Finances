@@ -6,6 +6,7 @@ import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.ImportedStatement
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionOrigin
+import br.com.otavioesteves.finances.domain.model.statementSourceKey
 import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
 import java.nio.ByteBuffer
 import java.security.MessageDigest
@@ -55,8 +56,8 @@ class ConfirmStatementImportUseCase(
             canUndo = true
         )
         // Excluding rows changes what is saved, but the claim still identifies the entire source batch.
-        val canonicalFingerprint = fingerprint(fingerprintSuggestions, canonical = true)
-        val legacyFingerprint = fingerprint(fingerprintSuggestions, canonical = false)
+        val canonicalFingerprint = fingerprint(fingerprintSuggestions, version = 3, sourceLabel = sourceLabel)
+        val legacyFingerprints = listOf(2, 1).map { fingerprint(fingerprintSuggestions, version = it) }
         val memories = confirmedSuggestions.groupBy {
             br.com.otavioesteves.finances.domain.model.categoryMemoryKey(it.originalEntry.description) to it.originalType
         }.filterValues { group ->
@@ -64,25 +65,27 @@ class ConfirmStatementImportUseCase(
         }.map { (key, group) -> br.com.otavioesteves.finances.domain.model.CategoryMemory(
             key.first, key.second, requireNotNull(group.first().suggestedCategory).id
         ) }
-        statementImportRepository.confirmReviewedImport(statementImport, transactions, canonicalFingerprint, legacyFingerprint, memories)
+        statementImportRepository.confirmReviewedImport(statementImport, transactions, canonicalFingerprint, legacyFingerprints, memories)
         return statementImport
     }
 
-    private fun fingerprint(suggestions: List<CategorySuggestion>, canonical: Boolean): String {
+    private fun fingerprint(suggestions: List<CategorySuggestion>, version: Int, sourceLabel: String? = null): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        digest.update((if (canonical) "finances-statement-v2" else "finances-statement-v1").toByteArray(Charsets.UTF_8))
+        digest.update("finances-statement-v$version".toByteArray(Charsets.UTF_8))
+        fun updateField(field: String) {
+            val bytes = field.toByteArray(Charsets.UTF_8)
+            digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+            digest.update(bytes)
+        }
+        if (version >= 3) updateField(statementSourceKey(sourceLabel))
         // Sort without distinct(): two identical purchases must remain two entries.
-        val ordered = if (canonical) suggestions.sortedWith(
+        val ordered = if (version >= 2) suggestions.sortedWith(
             compareBy({ it.originalEntry.date }, { it.originalType.name }, { it.originalEntry.amount.cents }, { it.originalEntry.description })
         ) else suggestions
         ordered.forEach { suggestion ->
             val entry = suggestion.originalEntry
             listOf(entry.date.toString(), suggestion.originalType.name, entry.amount.cents.toString(), entry.description)
-                .forEach { field ->
-                    val bytes = field.toByteArray(Charsets.UTF_8)
-                    digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
-                    digest.update(bytes)
-                }
+                .forEach(::updateField)
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }

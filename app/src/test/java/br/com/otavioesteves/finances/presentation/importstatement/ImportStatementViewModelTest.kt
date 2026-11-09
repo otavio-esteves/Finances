@@ -67,11 +67,13 @@ class ImportStatementViewModelTest {
         private val failure: Exception? = null
     ) : StatementParserRepository {
         var lastKind: StatementKind? = null
+        var lastReferenceYear: Int? = null
         var expectedPassword: String? = null
         val passwords = mutableListOf<String?>()
 
-        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
+        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?, referenceYear: Int?): List<RawStatementEntry> {
             lastKind = kind
+            lastReferenceYear = referenceYear
             passwords += password
             if (expectedPassword != null && password != expectedPassword) throw StatementPasswordRequiredException(password != null)
             failure?.let { throw it }
@@ -105,7 +107,7 @@ class ImportStatementViewModelTest {
             statementImport: ImportedStatement,
             transactions: List<Transaction>,
             fingerprint: String,
-            legacyFingerprint: String?
+            legacyFingerprints: List<String>
         ) {
             confirmGate?.await()
             imports += statementImport
@@ -128,6 +130,19 @@ class ImportStatementViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
+    }
+
+    @Test
+    fun explicitReferenceYearSurvivesPasswordRetryAndRemainsVisibleInReview() = runTest {
+        val parser = FakeStatementParserRepository(listOf(entry)).apply { expectedPassword = "secret" }
+        val vm = createViewModel(parserRepository = parser)
+        vm.onFileSelected("fatura.pdf", byteArrayOf(1), StatementKind.CARD_BILL, referenceYear = 2025)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is ImportStatementUiState.NeedsPassword)
+        vm.onPasswordSubmitted("secret")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(2025, parser.lastReferenceYear)
+        assertEquals(2025, (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).referenceYear)
     }
 
     @After

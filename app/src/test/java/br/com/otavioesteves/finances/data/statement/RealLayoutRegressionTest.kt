@@ -82,7 +82,7 @@ class RealLayoutRegressionTest {
                 "data\tdescricao\tvalor\n" +
                 "02/01\tMercado Exemplo\t20,00\n" +
                 "03/01\tFarmácia Exemplo\t30,00\n" + subtotal
-            val entries = parser.parseText(text, StatementKind.CARD_BILL, strictUnmatchedMoney = true)
+            val entries = parser.parseText(text, StatementKind.CARD_BILL)
             assertEquals(subtotal, listOf(2000L, 3000L), entries.map { it.amount.cents })
             assertEquals(listOf(LocalDate.of(2025, 1, 2), LocalDate.of(2025, 1, 3)), entries.map { it.date })
         }

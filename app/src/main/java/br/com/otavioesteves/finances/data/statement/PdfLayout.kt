@@ -39,15 +39,20 @@ internal class PdfLayoutReconstructor {
             if (METADATA.containsMatchIn(normalized)) return@joinToString text
             if (DATE_HEADER.containsMatchIn(normalized) && DESCRIPTION.containsMatchIn(normalized) && VALUE.containsMatchIn(normalized)) {
                 val header = mutableListOf<Column>()
-                ordered.forEach { word ->
+                ordered.forEachIndexed { wordIndex, word ->
                     val label = normalizePdfText(word.text).substringBefore('(').trim(':', '.', '(', ')')
                     val kind = when {
                         label in listOf("data", "dt", "dia") -> "data"
-                        label in listOf("descricao", "historico", "estabelecimento") -> "descricao"
+                        label in listOf("descricao", "historico", "estabelecimento", "transacoes") -> "descricao"
                         label in listOf("lancamento", "lancamentos") && header.none { it.name == "descricao" } -> "descricao"
                         label in listOf("documento", "doc", "nr", "numero") -> "documento"
                         label == "hora" -> "hora"
                         label == "valor" -> "valor"
+                        label == "r$" && header.lastOrNull()?.name !in MONEY_COLUMNS -> "valor"
+                        label == "us$" && (header.lastOrNull()?.name != "valor" ||
+                            ordered.getOrNull(wordIndex - 1)?.text?.lowercase() == "r$") -> "valor estrangeiro"
+                        label in listOf("credito/debito", "debito/credito") -> "valor"
+                        label == "moeda" -> "moeda"
                         label == "debito" -> "debito"
                         label == "credito" -> "credito"
                         label == "saldo" -> "saldo"
@@ -57,8 +62,11 @@ internal class PdfLayoutReconstructor {
                     if (kind != null) header += Column(kind, word.left / width, word.right / width)
                     else if (header.isNotEmpty()) {
                         val previous = header.removeAt(header.lastIndex)
-                        val name = if (previous.name.startsWith("data") && label in listOf("movimento", "mov", "balancete"))
-                            "data $label" else previous.name
+                        val name = when {
+                            previous.name.startsWith("data") && label in listOf("movimento", "mov", "balancete") -> "data $label"
+                            previous.name == "valor" && label == "us$" -> "valor estrangeiro"
+                            else -> previous.name
+                        }
                         header += previous.copy(name = name, right = word.right / width)
                     }
                 }
@@ -92,12 +100,16 @@ internal class PdfLayoutReconstructor {
     /** Two newspaper-style purchase columns must be read independently, including a continuation above the header. */
     private fun splitCardColumns(rows: List<List<PdfWord>>, width: Float): String? {
         if (rows.none { row -> normalizePdfText(row.sortedBy { it.left }.joinToString(" ") { it.text }).let {
-                it.startsWith("data ") && "estabelecimento" in it && "valor" in it
+                it.startsWith("data ") && DESCRIPTION.containsMatchIn(it) && VALUE.containsMatchIn(it)
             } }) return null
         val dates = rows.flatten().filter { SHORT_DATE.matches(it.text) }
         val left = dates.filter { it.left < width * 0.15f }
         val right = dates.filter { it.left in width * 0.45f..width * 0.60f }
-        if (left.size < 2 || right.size < 2) return null
+        val repeatedHeader = rows.any { row ->
+            row.count { normalizePdfText(it.text) == "data" } == 2 &&
+                row.count { normalizePdfText(it.text) in listOf("descricao", "transacoes", "estabelecimento") } == 2
+        }
+        if (left.isEmpty() || right.isEmpty() || (!repeatedHeader && (left.size < 2 || right.size < 2))) return null
         val boundary = right.minOf { it.left } - right.minOf { it.height } * 0.5f
         val top = dates.minOf { it.top }
         val metadata = rows.filter { row -> row.all { it.bottom < top } }
@@ -187,13 +199,13 @@ internal class PdfLayoutReconstructor {
     }
 
     companion object {
-        private val DESCRIPTION = Regex("\\b(?:descricao|historico|estabelecimento|lancamentos?)\\b")
+        private val DESCRIPTION = Regex("\\b(?:descricao|historico|estabelecimento|transacoes|lancamentos?)\\b")
         private val DATE_HEADER = Regex("^(?:data|dt\\.?|dia)\\s+")
         private val METADATA = Regex("^(?:ano|fatura|periodo|referencia|emissao|vencimento|saldo|total|valor total|pagamento minimo|limite)\\b")
-        private val VALUE = Regex("\\b(?:valor|debito|credito)\\b")
+        private val VALUE = Regex("\\b(?:valor|debito|credito)\\b|r\\$")
         private val MONEY = Regex("(?:[+-]?R\\$\\s*)?[+(\\-]?\\d[\\d.]*,\\d{2}[)+\\-]?(?:[CD]|CR|DR)?", RegexOption.IGNORE_CASE)
-        private val MONEY_COLUMNS = setOf("valor", "debito", "credito", "saldo")
-        private val SHORT_DATE = Regex("\\d{2}/\\d{2}")
+        private val MONEY_COLUMNS = setOf("valor", "debito", "credito", "saldo", "valor estrangeiro")
+        private val SHORT_DATE = Regex("\\d{2}[/.]\\d{2}")
         private val FULL_DATE = Regex("\\d{1,2}[/-]\\d{1,2}[/-]\\d{4}")
         private val PAGE_NUMBER = Regex("(?:pagina\\s+)?\\d+\\s*(?:/|de)\\s*\\d+")
     }

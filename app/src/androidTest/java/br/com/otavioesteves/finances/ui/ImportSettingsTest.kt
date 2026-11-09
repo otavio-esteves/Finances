@@ -30,7 +30,7 @@ class ImportSettingsTest {
         val repository = object : StatementImportRepository {
             override fun getImports() = imports
             override suspend fun undoImport(importId: Long) { assertEquals(1L, importId); undone = true; imports.value = emptyList() }
-            override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprint: String?) {}
+            override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprints: List<String>) {}
         }
         val vm = viewModel(repository)
         rule.setContent { FinancesTheme { SettingsScreen(onAiModelClick = {}, viewModel = vm) } }

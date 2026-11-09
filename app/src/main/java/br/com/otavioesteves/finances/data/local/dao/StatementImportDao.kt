@@ -17,6 +17,9 @@ interface StatementImportDao {
     @Query("SELECT EXISTS(SELECT 1 FROM statement_imports WHERE fingerprint = :fingerprint)")
     suspend fun hasFingerprint(fingerprint: String): Boolean
 
+    @Query("SELECT * FROM statement_imports WHERE fingerprint IN (:fingerprints)")
+    suspend fun findByFingerprints(fingerprints: List<String>): List<StatementImportEntity>
+
     @Insert
     suspend fun insertImport(statementImport: StatementImportEntity): Long
 
@@ -28,9 +31,6 @@ interface StatementImportDao {
 
     @Query("DELETE FROM statement_imports WHERE id = :id")
     suspend fun deleteById(id: Long)
-
-    @Query("DELETE FROM transactions WHERE importId = :id")
-    suspend fun deleteImportedTransactions(id: Long)
 
     @Query("DELETE FROM statement_imports")
     suspend fun deleteAll()
