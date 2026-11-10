@@ -47,9 +47,9 @@ internal class PdfLayoutReconstructor {
                         label in listOf("lancamento", "lancamentos") && header.none { it.name == "descricao" } -> "descricao"
                         label in listOf("documento", "doc", "nr", "numero") -> "documento"
                         label == "hora" -> "hora"
-                        label == "valor" -> "valor"
+                        label == "valor" -> if (StatementCurrency.hasForeignCurrency(word.text)) "valor estrangeiro" else "valor"
                         label == "r$" && header.lastOrNull()?.name !in MONEY_COLUMNS -> "valor"
-                        label == "us$" && (header.lastOrNull()?.name != "valor" ||
+                        (label == "us$" || StatementCurrency.hasForeignCurrency(label)) && (header.lastOrNull()?.name != "valor" ||
                             ordered.getOrNull(wordIndex - 1)?.text?.lowercase() == "r$") -> "valor estrangeiro"
                         label in listOf("credito/debito", "debito/credito") -> "valor"
                         label == "moeda" -> "moeda"
@@ -64,11 +64,14 @@ internal class PdfLayoutReconstructor {
                         val previous = header.removeAt(header.lastIndex)
                         val name = when {
                             previous.name.startsWith("data") && label in listOf("movimento", "mov", "balancete") -> "data $label"
-                            previous.name == "valor" && label == "us$" -> "valor estrangeiro"
+                            previous.name == "valor" && (label == "us$" || StatementCurrency.hasForeignCurrency(label)) -> "valor estrangeiro"
                             else -> previous.name
                         }
                         header += previous.copy(name = name, right = word.right / width)
                     }
+                }
+                require(header.none { it.name == "valor estrangeiro" } || header.any { it.name in MONEY_COLUMNS && it.name != "valor estrangeiro" }) {
+                    "Tabela em moeda estrangeira sem coluna de conversão em reais."
                 }
                 val description = header.firstOrNull { it.name == "descricao" }
                 val firstMoney = header.firstOrNull { it.name in MONEY_COLUMNS }

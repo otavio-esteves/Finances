@@ -46,12 +46,15 @@ class CsvOfxStatementParser : StatementParserRepository {
             it.contains("descri") || it.contains("histor") || it.contains("memo") || it.contains("description")
         }
         val amountIndex = uniqueColumn(header, "valor") { it.contains("valor") || it.contains("amount") || it.contains("value") }
+        require(!StatementCurrency.hasForeignCurrency(header[amountIndex])) { "Coluna monetária em moeda estrangeira sem conversão em reais." }
+        val currencyIndices = header.indices.filter { header[it] in setOf("moeda", "currency", "curdef") }
         require(setOf(dateIndex, descriptionIndex, amountIndex).size == 3) { "Colunas ambíguas no CSV." }
 
         return rows.drop(1).map { fields ->
             require(fields.size == header.size) {
                 "Linha CSV não corresponde ao cabeçalho. Confira o separador e coloque campos com separadores entre aspas."
             }
+            currencyIndices.forEach { StatementCurrency.requireBrl(fields[it]) }
             val amountCents = if (nativeExport) {
                 fields[centsIndex].trim().let { raw ->
                     require(UNSIGNED_CENTS.matches(raw)) { "Valor em centavos inválido: $raw" }
@@ -88,6 +91,10 @@ class CsvOfxStatementParser : StatementParserRepository {
     }
 
     private fun parseOfx(text: String): List<RawStatementEntry> {
+        val currencyDeclarations = text.replace(Regex("<ORIGCURRENCY>.*?</ORIGCURRENCY>",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+        Regex("<(?:CURDEF|CURSYM)>\\s*([^<\\r\\n]+)", RegexOption.IGNORE_CASE).findAll(currencyDeclarations)
+            .forEach { StatementCurrency.requireBrl(it.groupValues[1]) }
         val transactionBlocks = OFX_TRANSACTION_REGEX.findAll(text).map { it.value }.toList()
         require(transactionBlocks.isNotEmpty()) { "OFX não contém nenhuma transação (STMTTRN)" }
 

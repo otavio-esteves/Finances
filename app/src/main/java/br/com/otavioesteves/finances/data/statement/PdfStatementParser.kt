@@ -11,6 +11,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.Currency
 
 /** Parses dated BRL rows, including explicit-reference short dates and labelled running-balance tables. */
 class PdfStatementParser(private val textExtractor: PdfTextExtractor) : StatementParserRepository {
@@ -61,6 +62,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                 return@forEach
             }
             if (TABLE_HEADER.containsMatchIn(normalized) && !line.contains('\t')) {
+                require(!StatementCurrency.hasForeignCurrency(normalized)) { "Cabeçalho monetário estrangeiro sem coluna inequívoca de conversão em reais." }
                 runningBalanceColumn = VALUE_BALANCE_COLUMNS.containsMatchIn(normalized)
                 return@forEach
             }
@@ -105,6 +107,9 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                 return@forEach
             }
             val description = body.substring(0, amounts.first().range.first).trim()
+            require(!FOREIGN_CURRENCY.containsMatchIn(body.replace(BRL_SYMBOL, "BRL"))) {
+                "Lançamento em moeda estrangeira sem coluna inequívoca de valor convertido em reais. Nenhum lançamento foi importado."
+            }
             if (DATED_SUMMARY_LABEL.matches(normalizePdfText(description))) {
                 pendingRow = null
                 return@forEach
@@ -174,6 +179,14 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         private const val MAX_WRAPPED_ROW_LINES = 6
         private val WHITESPACE = Regex("\\s+")
         private val ANY_MONEY = Regex("\\d[\\d.,]*[.,]\\d{2}(?:\\D|$)")
+        private val BRL_SYMBOL = Regex("(?<!\\p{L})R\\$", RegexOption.IGNORE_CASE)
+        private val FOREIGN_CURRENCY_CODES = Currency.getAvailableCurrencies().asSequence()
+            .map { it.currencyCode }.filter { it != "BRL" }.sorted().joinToString("|")
+        private val FOREIGN_CURRENCY = Regex(
+            "(?:(?<!\\p{L})(?:$FOREIGN_CURRENCY_CODES)(?!\\p{L})|\\p{Sc})\\s*[+\\-(]?\\s*\\d|" +
+                "\\d[\\d.,]*\\s*(?:(?:$FOREIGN_CURRENCY_CODES)(?!\\p{L})|\\p{Sc})",
+            RegexOption.IGNORE_CASE
+        )
         private val FULL_DATE_IN_DESCRIPTION = Regex("\\b(?:\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}|\\d{4}-\\d{2}-\\d{2})\\b")
         private val SAFE_METADATA = Regex("^(?:fatura|periodo|referencia|emissao|vencimento|saldo|total|valor total|pagamento minimo|limite|juros|encargos)\\b")
         private val CARD_BILL_HEADER = Regex("(?im)^\\s*(?:fatura|cart[aã]o de cr[eé]dito)\\b")

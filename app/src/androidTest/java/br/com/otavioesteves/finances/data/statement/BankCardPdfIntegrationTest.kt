@@ -11,6 +11,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
@@ -18,6 +19,80 @@ import java.io.ByteArrayOutputStream
 /** Complete synthetic PDFs exercise Android extraction as well as the bank section adapters. */
 @RunWith(AndroidJUnit4::class)
 class BankCardPdfIntegrationTest {
+    private fun page(vararg lines: String) = lines.mapIndexed { index, line -> Cell(40f, 740f - index * 20f, line) }
+
+    @Test fun foreignOnlyPdfHeaderCannotLoseItsCurrency() = runBlocking {
+        val parser = PdfStatementParser(PdfBoxTextExtractor(InstrumentationRegistry.getInstrumentation().targetContext))
+        for (currency in listOf("USD", "EUR", "CHF")) {
+            val content = pdf(listOf(Cell(40f,740f,"PicPay"),Cell(40f,720f,"Fechamento: 29/01/2025"),
+                Cell(40f,700f,"Transações Internacionais"),Cell(40f,680f,"Data"),Cell(130f,680f,"Descrição"),
+                Cell(370f,680f,"Valor"),Cell(430f,680f,currency),Cell(40f,650f,"03/01"),
+                Cell(130f,650f,"Loja exterior"),Cell(370f,650f,"30,00")))
+            assertTrue(currency,runCatching { parser.parse("a.pdf",content,StatementKind.CARD_BILL) }.exceptionOrNull() is IllegalArgumentException)
+        }
+    }
+    @Test fun explicitBrlMerchantTopSurvivesExtraction() = runBlocking {
+        val parser = PdfStatementParser(PdfBoxTextExtractor(InstrumentationRegistry.getInstrumentation().targetContext))
+        val entries=parser.parse("a.pdf",pdfPages(listOf(page("PicPay","Fechamento: 29/01/2025","Transações Nacionais","03/01 TOP R$ 30,00"))),StatementKind.CARD_BILL)
+        assertEquals("TOP",entries.single().description)
+        assertEquals(3000L,entries.single().amount.cents)
+    }
+    @Test fun completeFutureDateAfterClosingRejectsThePdf() = runBlocking {
+        val parser = PdfStatementParser(PdfBoxTextExtractor(InstrumentationRegistry.getInstrumentation().targetContext))
+        val content=pdfPages(listOf(page("PicPay","Fechamento: 29/01/2025","Transações Nacionais","02/01 Mercado 20,00","Parcelas a vencer","10/02/2025 Compra futura 900,00")))
+        assertTrue(runCatching { parser.parse("a.pdf",content,StatementKind.CARD_BILL) }.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test fun picpayPunctuatedInternationalHeadingDoesNotDiscardPurchases() = runBlocking {
+        val content = pdfPages(listOf(
+            page("PicPay", "Fechamento: 29/01/2025"),
+            page("Transações Internacionais:", "03/01 Loja exterior 30,00"),
+            page("Transações Nacionais:", "02/01 Mercado 20,00")
+        ))
+        val parser = PdfStatementParser(PdfBoxTextExtractor(InstrumentationRegistry.getInstrumentation().targetContext))
+        val entries = parser.parse("picpay.pdf", content, StatementKind.CARD_BILL)
+        assertEquals(listOf("Loja exterior", "Mercado"), entries.map { it.description })
+        assertEquals(listOf(3000L, 2000L), entries.map { it.amount.cents })
+    }
+
+    @Test fun picpayFutureSummaryAndCurrentPurchasesCanShareOnePage() = runBlocking {
+        val content = pdfPages(listOf(page(
+            "PicPay", "Fechamento: 29/01/2025", "Próximas faturas", "10/02/2025 Oferta 900,00",
+            "Transações Nacionais:", "Data Estabelecimento Valor (R$)", "02/01 Mercado 20,00"
+        )))
+        val parser = PdfStatementParser(PdfBoxTextExtractor(InstrumentationRegistry.getInstrumentation().targetContext))
+        val entries = parser.parse("picpay.pdf", content, StatementKind.CARD_BILL)
+        assertEquals(listOf("Mercado"), entries.map { it.description })
+        assertEquals(listOf(2000L), entries.map { it.amount.cents })
+    }
+
+    @Test fun picpayForeignCurrenciesWithoutConversionRejectTheCompletePdf() = runBlocking {
+        val parser = PdfStatementParser(PdfBoxTextExtractor(InstrumentationRegistry.getInstrumentation().targetContext))
+        for (currency in listOf("CHF", "CAD", "JPY", "ARS")) {
+            val content = pdfPages(listOf(
+                page("PicPay", "Fechamento: 29/01/2025"),
+                page("Transações Nacionais", "02/01 Mercado 20,00"),
+                page("Transações Internacionais", "03/01 Loja exterior $currency 30,00")
+            ))
+            val failure = runCatching { parser.parse("picpay.pdf", content, StatementKind.CARD_BILL) }.exceptionOrNull()
+            assertTrue(currency, failure is IllegalArgumentException)
+        }
+    }
+
+    @Test fun picpayPreservesContinuationAndInternationalPagesAfterPdfExtraction() = runBlocking {
+        val content = pdfPages(listOf(
+            page("PicPay", "Fechamento: 29/01/2025", "Simulação de parcelamento 900,00"),
+            page("Transações Nacionais", "Data Estabelecimento Valor (R$)", "02/01 Mercado 20,00", "Subtotal dos lançamentos 20,00"),
+            page("PicPay", "03/01 Farmácia 30,00"),
+            page("Transações Internacionais", "Data Estabelecimento Valor (R$)", "04/01 Loja exterior 40,00"),
+            page("Total parcelado - próximas faturas", "10/02 Oferta 900,00")
+        ))
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val entries = PdfStatementParser(PdfBoxTextExtractor(context)).parse("picpay.pdf", content, StatementKind.CARD_BILL)
+        assertEquals(listOf("Mercado", "Farmácia", "Loja exterior"), entries.map { it.description })
+        assertEquals(listOf(2000L, 3000L, 4000L), entries.map { it.amount.cents })
+    }
+
     private data class Cell(val x: Float, val y: Float, val text: String)
 
     private fun pdf(cells: List<Cell>): ByteArray = pdfPages(listOf(cells))
