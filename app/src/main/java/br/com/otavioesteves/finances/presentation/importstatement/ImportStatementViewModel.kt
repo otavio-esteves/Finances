@@ -228,6 +228,9 @@ class ImportStatementViewModel(
         val current = _uiState.value as? ImportStatementUiState.ReviewingSuggestions ?: return "Revisão indisponível."
         if (current.isConfirming || index !in current.suggestions.indices || index in current.excludedIndices) return "Revisão indisponível."
         if (description.isBlank()) return "Informe uma descrição."
+        try {
+            br.com.otavioesteves.finances.domain.model.requirePersistableText(description.trim(), "descrição")
+        } catch (error: IllegalArgumentException) { return error.message ?: "Descrição inválida." }
         val money = MoneyFormatter.parse(amount)?.takeUnless { it.isNegative() } ?: return "Informe um valor válido, sem sinal."
         val parsedDate = runCatching {
             LocalDate.parse(date.trim(), DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT))

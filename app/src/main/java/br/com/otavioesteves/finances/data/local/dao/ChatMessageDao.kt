@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import br.com.otavioesteves.finances.data.local.entity.ChatMessageEntity
 import kotlinx.coroutines.flow.Flow
+import br.com.otavioesteves.finances.domain.model.requirePersistableText
 
 @Dao
 interface ChatMessageDao {
@@ -17,11 +18,21 @@ interface ChatMessageDao {
     @Query("SELECT * FROM (SELECT * FROM chat_messages ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC")
     fun getRecentMessages(limit: Int): Flow<List<ChatMessageEntity>>
 
-    @Insert
-    suspend fun insertMessage(message: ChatMessageEntity): Long
+    suspend fun insertMessage(message: ChatMessageEntity): Long {
+        requirePersistableText(message.content, "mensagem")
+        return insertMessageUnchecked(message)
+    }
+
+    suspend fun insertMessages(messages: List<ChatMessageEntity>) {
+        messages.forEach { requirePersistableText(it.content, "mensagem") }
+        insertMessagesUnchecked(messages)
+    }
 
     @Insert
-    suspend fun insertMessages(messages: List<ChatMessageEntity>)
+    suspend fun insertMessageUnchecked(message: ChatMessageEntity): Long
+
+    @Insert
+    suspend fun insertMessagesUnchecked(messages: List<ChatMessageEntity>)
 
     @Query("DELETE FROM chat_messages")
     suspend fun deleteAll()

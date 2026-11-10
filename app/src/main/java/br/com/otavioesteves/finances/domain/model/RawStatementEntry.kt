@@ -11,6 +11,7 @@ data class RawStatementEntry(
 ) {
     init {
         require(description.isNotBlank()) { "description must not be blank" }
+        requirePersistableText(description, "descrição")
         require(!amount.isNegative()) { "amount must not be negative" }
         requireSupportedTransactionDate(date)
     }

@@ -57,7 +57,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -65,7 +64,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import br.com.otavioesteves.finances.utils.readBackupDocument
 import br.com.otavioesteves.finances.MainApplication
 import br.com.otavioesteves.finances.presentation.AppViewModelProvider
 import br.com.otavioesteves.finances.presentation.settings.SettingsViewModel
@@ -73,10 +71,6 @@ import br.com.otavioesteves.finances.ui.components.FinanceCard
 import br.com.otavioesteves.finances.ui.components.financeTopAppBarColors
 import br.com.otavioesteves.finances.ui.theme.FinancesThemeTokens
 import androidx.compose.ui.graphics.vector.ImageVector
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,7 +90,7 @@ fun SettingsScreen(
     var showThemePicker by rememberSaveable { mutableStateOf(false) }
     var showPalettePicker by rememberSaveable { mutableStateOf(false) }
     val scrollState = rememberScrollState()
-    val scope = rememberCoroutineScope()
+    val contentResolver = context.applicationContext.contentResolver
 
     if (showThemePicker) {
         AlertDialog(
@@ -138,10 +132,9 @@ fun SettingsScreen(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let {
-            viewModel.createBackupJson { json ->
-                val stream = context.contentResolver.openOutputStream(it)
+            viewModel.createBackup {
+                contentResolver.openOutputStream(it)
                     ?: throw IllegalStateException("Não foi possível abrir o destino do backup.")
-                stream.use { output -> output.write(json.toByteArray(Charsets.UTF_8)) }
             }
         }
     }
@@ -150,19 +143,9 @@ fun SettingsScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let {
-            scope.launch {
-                try {
-                    val json = withContext(Dispatchers.IO) {
-                        val stream = context.contentResolver.openInputStream(it)
-                            ?: throw IllegalStateException("Não foi possível abrir o backup.")
-                        readBackupDocument(stream)
-                    }
-                    viewModel.onRestoreRequest(json)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    snackbarHostState.showSnackbar(e.message ?: "Não foi possível ler o backup.")
-                }
+            viewModel.onRestoreRequest {
+                contentResolver.openInputStream(it)
+                    ?: throw IllegalStateException("Não foi possível abrir o backup.")
             }
         }
     }

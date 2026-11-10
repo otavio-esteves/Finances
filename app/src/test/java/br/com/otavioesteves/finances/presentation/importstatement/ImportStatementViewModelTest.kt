@@ -132,6 +132,17 @@ class ImportStatementViewModelTest {
         Dispatchers.setMain(testDispatcher)
     }
 
+    @Test fun oversizedEditReturnsErrorAndPreservesReview() = runTest {
+        val vm = createViewModel()
+        vm.onFileSelected("a.csv", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        val before = vm.uiState.value
+        assertTrue(vm.onEntryEdited(0, "a".repeat(65537), "20,00", "11/01/2026") != null)
+        assertEquals(before, vm.uiState.value)
+        assertEquals(null, vm.onEntryEdited(0, "Compra corrigida", "20,00", "11/01/2026"))
+        testDispatcher.scheduler.advanceUntilIdle()
+    }
+
     @Test
     fun explicitReferenceYearSurvivesPasswordRetryAndRemainsVisibleInReview() = runTest {
         val parser = FakeStatementParserRepository(listOf(entry)).apply { expectedPassword = "secret" }

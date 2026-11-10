@@ -9,6 +9,7 @@ import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionMonthAggregateEntity
 import br.com.otavioesteves.finances.data.local.mapper.toDomain
 import br.com.otavioesteves.finances.domain.model.checkedMagnitudeTotal
+import br.com.otavioesteves.finances.domain.model.requirePersistableText
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -143,7 +144,7 @@ interface TransactionDao {
     }
 
     private suspend fun validateReplacement(transactions: List<TransactionEntity>): Long {
-        transactions.forEach { it.toDomain() }
+        transactions.forEach { it.toDomain().requirePersistableText() }
         val replacingIds = transactions.filter { it.id > 0 }.map { it.id }
         require(replacingIds.distinct().size == replacingIds.size) { "Transações repetidas no mesmo lote." }
         var remaining = magnitudeTotal()
