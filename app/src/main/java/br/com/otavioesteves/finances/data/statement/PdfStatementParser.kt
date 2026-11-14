@@ -4,6 +4,7 @@ import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.model.isInvoicePaymentDescription
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.utils.MoneyFormatter
 import kotlinx.coroutines.currentCoroutineContext
@@ -118,7 +119,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             // Validate the balance column but never import it as a purchase or infer a transaction sign from it.
             if (runningBalanceColumn) parseAmount(amounts.last().value, isCardBill = false, requireDirection = false)
             val date = dates.resolve(dateMatch.value)
-            entries += RawStatementEntry(description, Money.fromCents(amount.first), date, amount.second)
+            entries += RawStatementEntry(description, Money.fromCents(amount.cents), date, amount.type, legacyInputType = amount.legacyType)
             pendingRow = null
         }
         if (pendingRow != null) invalidRow()
@@ -128,14 +129,17 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         }
         document.validateTotals(entries)
         return entries.map { entry ->
-            if (isCardBill && entry.type == TransactionType.INCOME && BILL_PAYMENT.containsMatchIn(normalizePdfText(entry.description)))
-                entry.copy(type = TransactionType.TRANSFER)
-            else entry
+            val oldType = entry.legacyInputType ?: entry.type
+            val oldFinalType = if (isCardBill && oldType == TransactionType.INCOME &&
+                LEGACY_BILL_PAYMENT.containsMatchIn(normalizePdfText(entry.description))) TransactionType.TRANSFER else oldType
+            val type = if (isCardBill && entry.type == TransactionType.INCOME &&
+                isInvoicePaymentDescription(entry.description, allowDatedPayment = true)) TransactionType.TRANSFER else entry.type
+            entry.copy(type = type, legacyInputType = oldFinalType.takeIf { it != type })
         }
     }
 
     /** Explicit signs and debit/credit markers must agree; conflicting notation is never silently overridden. */
-    private fun parseAmount(raw: String, isCardBill: Boolean, requireDirection: Boolean): Pair<Long, TransactionType> {
+    private fun parseAmount(raw: String, isCardBill: Boolean, requireDirection: Boolean): ParsedPdfAmount {
         var value = normalizePdfText(raw).replace(" ", "").replace("r$", "")
         val marker = MARKER_SUFFIX.find(value)?.value
         if (marker != null) value = value.dropLast(marker.length)
@@ -149,7 +153,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         val cents = MoneyFormatter.parse(value)?.cents ?: throw IllegalArgumentException("Valor inválido no PDF: $raw")
         val signedType = when {
             parentheses || sign == '-' -> if (isCardBill) TransactionType.INCOME else TransactionType.EXPENSE
-            sign == '+' -> TransactionType.INCOME
+            sign == '+' -> if (isCardBill) TransactionType.EXPENSE else TransactionType.INCOME
             else -> null
         }
         val markedType = when (marker) {
@@ -163,7 +167,9 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             !requireDirection -> TransactionType.INCOME
             else -> throw IllegalArgumentException("PDF com valor sem sinal ou indicação de débito/crédito. Use CSV/OFX ou uma fatura identificada.")
         }
-        return cents to type
+        // A marked debit with '+' was rejected by the old parser, so it has no legacy claim.
+        val legacyType = TransactionType.INCOME.takeIf { isCardBill && sign == '+' && marker == null }
+        return ParsedPdfAmount(cents, type, legacyType)
     }
 
     companion object {
@@ -180,7 +186,8 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         private val PAGE_FOOTER = Regex("(?:pagina\\s+\\d+\\s*(?:de|/)\\s*\\d+|\\d+\\s+de\\s+\\d+)")
         private val SUBTOTAL_ROW = Regex("^subtotal dos lancamentos\\s+(.+)$")
         private val SUMMARY_LABEL = Regex("(?:total(?: da fatura| de compras)?|saldo(?: anterior| atual| final| do dia)?|pagamento minimo|valor total|vencimento)")
-        private val BILL_PAYMENT = Regex("^pagamento\\s+(?:(?:de|da)\\s+fatura\\b|em\\s+\\d{1,2}\\s+[a-z]{3}\\b)")
+        // Preserve old raw directions only as aliases; all new payment decisions use the shared rule.
+        private val LEGACY_BILL_PAYMENT = Regex("^pagamento\\s+(?:(?:de|da)\\s+fatura\\b|em\\s+\\d{1,2}\\s+[a-z]{3}\\b)")
         private val MARKER_SUFFIX = Regex("(?:credito|debito|cr|dr|c|d)$")
         private val AMOUNT_TOKEN = Regex(
             "(?<!\\S)(?:[+-]\\s*)?(?:R\\$\\s*)?(?:[+-]\\s*)?(?:\\(\\s*)?\\d[\\d.]*,\\d{2}(?:\\s*\\))?(?:\\s*[+-])?(?:\\s*(?:credito|crédito|debito|débito|CR|DR|C|D))?(?=\\s|$)",
@@ -188,3 +195,5 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         )
     }
 }
+
+internal data class ParsedPdfAmount(val cents: Long, val type: TransactionType, val legacyType: TransactionType? = null)

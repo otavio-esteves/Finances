@@ -7,7 +7,7 @@ import br.com.otavioesteves.finances.domain.model.TransactionType
 /** Parses positioned cells; an empty debit cell is different from a missing/guessed column. */
 internal class PdfTableParser(
     private val dates: PdfDateResolver,
-    private val parseAmount: (String, Boolean, Boolean) -> Pair<Long, TransactionType>,
+    private val parseAmount: (String, Boolean, Boolean) -> ParsedPdfAmount,
     private val cardBill: Boolean
 ) {
     private var header = emptyList<String>()
@@ -68,7 +68,7 @@ internal class PdfTableParser(
         }
         val row = requireNotNull(pending)
         val valueIndex = header.indexOf("valor")
-        val amount: Pair<Long, TransactionType> = if (valueIndex >= 0) {
+        val amount: ParsedPdfAmount = if (valueIndex >= 0) {
             if (row[valueIndex].isBlank()) return true to null
             val marker = header.indexOf("tipo").takeIf { it >= 0 }?.let { row[it] }.orEmpty()
             parseAmount((row[valueIndex] + " " + marker).trim(), cardBill, true)
@@ -80,8 +80,8 @@ internal class PdfTableParser(
                 if (raw.isBlank() || raw == "-" || raw == "—") return null
                 val parsed = parseAmount(raw, false, false)
                 val explicit = EXPLICIT_DIRECTION.containsMatchIn(normalizePdfText(raw))
-                require(!explicit || parsed.second == type) { "O sinal não corresponde à coluna de débito/crédito." }
-                return parsed.first
+                require(!explicit || parsed.type == type) { "O sinal não corresponde à coluna de débito/crédito." }
+                return parsed.cents
             }
             val debitValue = value(debit, TransactionType.EXPENSE)
             val creditValue = value(credit, TransactionType.INCOME)
@@ -90,8 +90,8 @@ internal class PdfTableParser(
                 "Débito e crédito simultâneos no mesmo lançamento."
             }
             when {
-                debitValue != null && (debitValue > 0L || creditValue == null) -> debitValue to TransactionType.EXPENSE
-                creditValue != null -> creditValue to TransactionType.INCOME
+                debitValue != null && (debitValue > 0L || creditValue == null) -> ParsedPdfAmount(debitValue, TransactionType.EXPENSE)
+                creditValue != null -> ParsedPdfAmount(creditValue, TransactionType.INCOME)
                 else -> throw IllegalArgumentException("Tabela sem valor identificável.")
             }
         }
@@ -104,7 +104,8 @@ internal class PdfTableParser(
         }.map { row[it] }.filter { it.isNotBlank() }.joinToString(" ")
         val entry = RawStatementEntry(
             description = descriptionText,
-            amount = Money(amount.first), date = dates.resolve(DATE_WITH_TIME.matchEntire(row[dateIndex()])?.groupValues?.get(1) ?: row[dateIndex()]), type = amount.second
+            amount = Money(amount.cents), date = dates.resolve(DATE_WITH_TIME.matchEntire(row[dateIndex()])?.groupValues?.get(1) ?: row[dateIndex()]), type = amount.type,
+            legacyInputType = amount.legacyType
         )
         pending = null
         return true to entry

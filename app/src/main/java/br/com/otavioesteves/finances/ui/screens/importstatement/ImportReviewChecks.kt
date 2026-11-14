@@ -27,6 +27,7 @@ internal fun ImportReviewChecks(
         if (expanded) {
         OutlinedTextField(value = state.sourceLabel, onValueChange = onSourceChanged,
             label = { Text("Conta ou cartão (opcional)") }, placeholder = { Text("Ex.: Nubank · cartão pessoal") },
+            supportingText = { Text("Use sempre a mesma identificação para esta conta ou cartão. Contas diferentes podem ter lançamentos iguais.") },
             enabled = !state.isConfirming, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = state.expectedExpenseTotal, onValueChange = onTotalChanged,
             label = { Text("Total de despesas no documento (opcional)") },

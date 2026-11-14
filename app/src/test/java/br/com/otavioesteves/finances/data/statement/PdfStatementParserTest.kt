@@ -13,6 +13,35 @@ class PdfStatementParserTest {
     private val pdfBytes = "%PDF-1.4".toByteArray()
 
     @Test
+    fun cardBillPositiveSignsRemainExpensesAndAgreeWithDebitMarkers(): Unit = runBlocking {
+        for (amount in listOf("100,00", "+100,00", "100,00+", "R$ +100,00", "+100,00 D")) {
+            val entry = parser("01/11/2026 Mercado $amount")
+                .parse("fatura.pdf", pdfBytes, StatementKind.CARD_BILL).single()
+            assertEquals(amount, TransactionType.EXPENSE, entry.type)
+            assertEquals(10000L, entry.amount.cents)
+        }
+        val refund = parser("Fatura\n01/11/2026 Estorno loja -100,00 C")
+            .parse("fatura.pdf", pdfBytes).single()
+        assertEquals(TransactionType.INCOME, refund.type)
+        for (text in listOf("Fatura\n01/11/2026 Mercado +100,00",
+            "Fatura\ndata\tdescricao\tvalor\n01/11/2026\tMercado\t+100,00")) {
+            val entry = parser(text).parse("fatura.pdf", pdfBytes).single()
+            assertEquals(TransactionType.EXPENSE, entry.type)
+            assertEquals(TransactionType.INCOME, entry.legacyInputType)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { parser("Fatura\n01/11/2026 Mercado +100,00 C").parse("fatura.pdf", pdfBytes) }
+        }
+    }
+
+    @Test
+    fun cardPaymentIsTransferButRefundMentioningThePaymentRemainsIncome() = runBlocking {
+        val entries = parser("Fatura\n01/11/2026 Pagamento do cartão -100,00\n" +
+            "02/11/2026 Pagamento da fatura estornado -20,00").parse("fatura.pdf", pdfBytes)
+        assertEquals(listOf(TransactionType.TRANSFER, TransactionType.INCOME), entries.map { it.type })
+    }
+
+    @Test
     fun rejectsInvalidCalendarDatesAndAcceptsLeapDay() = runBlocking {
         for (date in listOf("31/02/2026", "29/02/2025", "31/04/2026")) {
             assertThrows(IllegalArgumentException::class.java) {

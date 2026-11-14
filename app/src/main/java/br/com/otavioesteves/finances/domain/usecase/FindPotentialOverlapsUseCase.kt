@@ -15,8 +15,10 @@ class FindPotentialOverlapsUseCase(private val transactionsRepository: Transacti
             .flatMap { transactionsRepository.getTransactions(it).first() }
             .groupBy { Triple(it.date, it.amount.cents, normalizeDescription(it.description)) }
         return entries.mapIndexedNotNull { index, entry ->
-            existing[Triple(entry.date, entry.amount.cents, normalizeDescription(entry.description))]
-                ?.let { index to it }
+            val matches = listOfNotNull(entry.description, entry.legacyOfxDescription).distinct().flatMap { description ->
+                existing[Triple(entry.date, entry.amount.cents, normalizeDescription(description))].orEmpty()
+            }.distinctBy { it.id }
+            matches.takeIf { it.isNotEmpty() }?.let { index to it }
         }.toMap()
     }
 

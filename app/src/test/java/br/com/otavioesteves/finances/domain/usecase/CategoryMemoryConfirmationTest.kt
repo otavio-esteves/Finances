@@ -24,7 +24,7 @@ class CategoryMemoryConfirmationTest {
         override fun getImports() = flowOf(emptyList<ImportedStatement>())
         override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprint: String?) = error("Reviewed path required")
         override suspend fun confirmReviewedImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String,
-            legacyFingerprint: String?, memories: List<CategoryMemory>) { remembered = memories; source = statementImport.sourceLabel }
+            legacyFingerprint: String?, memories: List<CategoryMemory>, additionalLegacyFingerprints: List<String>) { remembered = memories; source = statementImport.sourceLabel }
     }
     private fun suggestion() = CategorySuggestion(RawStatementEntry("CAFÉ 123", Money(1500), date.getCurrentDate(), TransactionType.EXPENSE), food, 1f)
 

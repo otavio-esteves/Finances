@@ -30,6 +30,60 @@ import java.time.LocalDateTime
 
 class StatementImportUseCasesTest {
     @Test
+    fun decodedOfxDescriptionsRetainBothLegacyFingerprintVersionsAndPartialOverlapCandidates() = runBlocking {
+        val category = Category(1, "Outros", CategoryType.EXPENSE)
+        val oldRaw = RawStatementEntry("A &amp; B", Money(1000), LocalDate.of(2026, 11, 1), TransactionType.EXPENSE)
+        val decoded = oldRaw.copy(description = "A & B", legacyOfxDescription = oldRaw.description)
+        val repo = FakeStatementImportRepository()
+        val confirm = ConfirmStatementImportUseCase(repo, FakeDateProvider(LocalDateTime.of(2026, 11, 1, 9, 0)))
+        confirm("old.ofx", listOf(CategorySuggestion(oldRaw, category, 1f)))
+        confirm("new.ofx", listOf(CategorySuggestion(decoded, category, 1f)))
+        org.junit.Assert.assertNotEquals(repo.fingerprints[0], repo.fingerprints[1])
+        assertTrue(repo.fingerprints[0] in repo.compatibilityFingerprints[1])
+        assertTrue(repo.compatibilityFingerprints[0].single() in repo.compatibilityFingerprints[1])
+        val stored = Transaction(1, oldRaw.description, oldRaw.amount, 1, oldRaw.date, oldRaw.type)
+        val matches = FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(stored, stored.copy(id = 2, description = decoded.description))))
+            .findMatches(listOf(decoded))
+        assertEquals(setOf(1L, 2L), matches.getValue(0).map { it.id }.toSet())
+    }
+
+    @Test
+    fun csvAndOfxCardPaymentsAreTransfersInBothFinancialDirections() = runBlocking {
+        val categories = listOf(Category(1, "Outros", CategoryType.EXPENSE), Category(2, "Outros", CategoryType.INCOME),
+            Category(3, "Transferência", CategoryType.TRANSFER))
+        val date = FakeDateProvider(LocalDateTime.of(2026, 11, 1, 9, 0))
+        val synthesize = SynthesizeStatementUseCase(
+            br.com.otavioesteves.finances.data.ai.RuleBasedLocalAiRepository(date), FakeCategoriesRepository(categories))
+        val parser = br.com.otavioesteves.finances.data.statement.CsvOfxStatementParser()
+        for (description in listOf("Pagamento da fatura", "PAGAMENTO DE FATURA", "Pagamento do cartão", "Pagamento\u00a0da\u00a0fatura")) {
+            for (kind in StatementKind.entries) {
+                val entries = parser.parse("a.csv", "Data;Descrição;Valor\n01/11/2026;$description;-100.00".toByteArray(), kind)
+                val result = synthesize(entries).single()
+                assertEquals(TransactionType.TRANSFER, result.entry.type)
+                assertEquals(categories[2], result.suggestedCategory)
+                assertEquals(entries.single().type, result.originalType)
+            }
+        }
+        val ofx = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>100.00<MEMO>Pagamento do cart&#227;o</STMTTRN></BANKTRANLIST></OFX>"
+        assertEquals(TransactionType.TRANSFER, synthesize(parser.parse("a.ofx", ofx.toByteArray())).single().entry.type)
+    }
+
+    @Test
+    fun paymentRecognitionPreservesRefundsAndExplicitRememberedChoices() = runBlocking {
+        val income = Category(1, "Outros", CategoryType.INCOME)
+        val transfer = Category(2, "Transferência", CategoryType.TRANSFER)
+        for ((description, source) in listOf("Estorno pagamento da fatura" to br.com.otavioesteves.finances.domain.model.SuggestionSource.RULE,
+            "Estornos do pagamento da fatura" to br.com.otavioesteves.finances.domain.model.SuggestionSource.RULE,
+            "Pagamento da fatura cancelado" to br.com.otavioesteves.finances.domain.model.SuggestionSource.RULE,
+            "Pagamento da fatura" to br.com.otavioesteves.finances.domain.model.SuggestionSource.MEMORY)) {
+            val raw = RawStatementEntry(description, Money(1000), LocalDate.of(2026, 11, 1), TransactionType.INCOME)
+            val expected = CategorySuggestion(raw, income, 1f, source)
+            val result = SynthesizeStatementUseCase(FakeTransactionCategorizer(listOf(expected)), FakeCategoriesRepository(listOf(income, transfer)))(listOf(raw))
+            assertEquals(listOf(expected), result)
+        }
+    }
+
+    @Test
     fun excludedRowsStillIdentifyTheFullSourceBatch() = runBlocking {
         val category = Category(1, "Mercado", CategoryType.EXPENSE)
         val first = CategorySuggestion(RawStatementEntry("Mercado", Money(100), LocalDate.of(2026, 1, 1), TransactionType.EXPENSE), category, 1f)
@@ -331,6 +385,13 @@ class StatementImportUseCasesTest {
         val addedImports = mutableListOf<ImportedStatement>()
         val addedTransactions = mutableListOf<Transaction>()
         val fingerprints = mutableListOf<String>()
+        val compatibilityFingerprints = mutableListOf<List<String>>()
+
+        override suspend fun confirmReviewedImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String,
+            legacyFingerprint: String?, memories: List<br.com.otavioesteves.finances.domain.model.CategoryMemory>, additionalLegacyFingerprints: List<String>) {
+            compatibilityFingerprints += listOfNotNull(legacyFingerprint) + additionalLegacyFingerprints
+            confirmImport(statementImport, transactions, fingerprint, legacyFingerprint)
+        }
 
         override fun getImports(): Flow<List<ImportedStatement>> = flowOf(addedImports)
         override suspend fun confirmImport(

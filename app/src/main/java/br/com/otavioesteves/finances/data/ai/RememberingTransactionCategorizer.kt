@@ -15,7 +15,15 @@ class RememberingTransactionCategorizer(
         val choices = memory.getMemories().associateBy { it.descriptionKey to it.inputType }
         val categoriesById = categories.associateBy { it.id }
         val remembered = entries.map { entry ->
-            choices[categoryMemoryKey(entry.description) to entry.type]?.let { categoriesById[it.categoryId] }?.let { category ->
+            val currentCategory = choices[categoryMemoryKey(entry.description) to entry.type]?.let { categoriesById[it.categoryId] }
+            val legacyCategory = choices[categoryMemoryKey(entry.legacyOfxDescription ?: entry.description) to (entry.legacyInputType ?: entry.type)]
+                ?.let { categoriesById[it.categoryId] }?.takeUnless { category ->
+                    // A category chosen under the old wrong direction must not restore that parser bug.
+                    // A legacy choice that explicitly changed the type still represents user intent.
+                    entry.legacyInputType != null && entry.legacyInputType != entry.type &&
+                        category.type.name == entry.legacyInputType.name
+                }
+            (currentCategory ?: legacyCategory)?.let { category ->
                 CategorySuggestion(entry.copy(type = TransactionType.valueOf(category.type.name)), category, 1f,
                     SuggestionSource.MEMORY, originalType = entry.type, originalEntry = entry)
             }

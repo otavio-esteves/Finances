@@ -17,6 +17,9 @@ interface StatementImportDao {
     @Query("SELECT EXISTS(SELECT 1 FROM statement_imports WHERE fingerprint = :fingerprint)")
     suspend fun hasFingerprint(fingerprint: String): Boolean
 
+    @Query("SELECT * FROM statement_imports WHERE fingerprint = :fingerprint LIMIT 1")
+    suspend fun findByFingerprint(fingerprint: String): StatementImportEntity?
+
     @Insert
     suspend fun insertImport(statementImport: StatementImportEntity): Long
 

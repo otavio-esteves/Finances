@@ -17,6 +17,39 @@ class CsvOfxStatementParserTest {
     private val parser = CsvOfxStatementParser()
 
     @Test
+    fun ofxDecodesNamedAndNumericEntitiesExactlyOnceAndMatchesCsvText() = runBlocking {
+        val memo = "Loja &amp; Filhos &lt;centro&gt; &quot;A&quot; &apos;B&apos; Caf&#233; &#x1F600; &amp;amp;"
+        val expected = "Loja & Filhos <centro> \"A\" 'B' Café 😀 &amp;"
+        val xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><OFX><BANKTRANLIST><STMTTRN>" +
+            "<DTPOSTED>20261101</DTPOSTED><TRNAMT>-10.00</TRNAMT><MEMO>$memo</MEMO>" +
+            "</STMTTRN></BANKTRANLIST></OFX>"
+        val entry = parser.parse("a.ofx", xml.toByteArray()).single()
+        assertEquals(expected, entry.description)
+        val csv = "Data;Descrição;Valor\n01/11/2026;\"${expected.replace("\"", "\"\"")}\";-10.00"
+        assertEquals(parser.parse("a.csv", csv.toByteArray()).single(), entry.copy(legacyOfxDescription = null))
+        assertEquals(memo, entry.legacyOfxDescription)
+    }
+
+    @Test
+    fun ofxKeepsBareSgmlAmpersandsAndDecodesNameWhenMemoIsEncodedWhitespace() = runBlocking {
+        val prefix = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00"
+        val suffix = "</STMTTRN></BANKTRANLIST></OFX>"
+        assertEquals("A & B", parser.parse("a.ofx", "$prefix<MEMO>A & B$suffix".toByteArray()).single().description)
+        assertEquals("A & B", parser.parse("a.ofx", "$prefix<NAME>A &amp; B<MEMO>&#32;$suffix".toByteArray()).single().description)
+    }
+
+    @Test
+    fun ofxRejectsUnknownEntitiesAndInvalidUnicodeWithoutResolvingExternalEntities() {
+        val prefix = "<!DOCTYPE OFX [<!ENTITY external SYSTEM 'file:///unreadable'>]><OFX><BANKTRANLIST>" +
+            "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>"
+        for (entity in listOf("&external;", "&unknown;", "&#0;", "&#xD800;", "&#x110000;", "&#999999999999;", "&#-1;", "&#x+41;")) {
+            assertThrows(entity, IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("a.ofx", "$prefix$entity</STMTTRN></BANKTRANLIST></OFX>".toByteArray()) }
+            }
+        }
+    }
+
+    @Test
     fun parse_csv_rejectsAmbiguousColumnsAndRowsWithExtraOrMissingFields() {
         for (csv in listOf(
             "Data;Descrição;Valor original;Valor em reais\n01/11/2026;Compra;100,00;580,00",

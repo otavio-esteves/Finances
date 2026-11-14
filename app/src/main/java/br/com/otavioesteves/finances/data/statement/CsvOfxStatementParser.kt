@@ -91,16 +91,20 @@ class CsvOfxStatementParser : StatementParserRepository {
             val amountCents = parseAmountCents(amountRaw)
             val date = OFX_DATE_REGEX.find(block)?.groupValues?.get(1)?.trim()
                 ?: throw IllegalArgumentException("Transação OFX sem DTPOSTED válido")
-            val description = OFX_MEMO_REGEX.find(block)?.groupValues?.get(1)?.trim()
+            val memo = OFX_MEMO_REGEX.find(block)?.groupValues?.get(1)?.trim()
+            val name = OFX_NAME_REGEX.find(block)?.groupValues?.get(1)?.trim()
+            val legacyDescription = memo?.takeIf { it.isNotBlank() } ?: name?.takeIf { it.isNotBlank() } ?: "Transação sem descrição"
+            val description = memo?.let(::decodeOfxTextEntities)?.trim()
                 ?.takeIf { it.isNotBlank() }
-                ?: OFX_NAME_REGEX.find(block)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
+                ?: name?.let(::decodeOfxTextEntities)?.trim()?.takeIf { it.isNotBlank() }
                 ?: "Transação sem descrição"
 
             RawStatementEntry(
                 description = description,
                 amount = Money.fromCents(if (amountCents < 0) Math.negateExact(amountCents) else amountCents),
                 date = parseOfxDate(date),
-                type = if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME
+                type = if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME,
+                legacyOfxDescription = legacyDescription.takeIf { it != description }
             )
         }
     }

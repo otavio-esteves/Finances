@@ -18,6 +18,22 @@ class RememberingTransactionCategorizerTest {
         override suspend fun getMemories() = entries.toList()
         override suspend fun clear() {}
     }
+
+    @Test fun recognizesEncodedOfxMemoriesWhileGivingCurrentDecodedCorrectionsPriority() = runTest {
+        val delegate = object : TransactionCategorizer {
+            override suspend fun categorize(entries: List<RawStatementEntry>, categories: List<Category>, onProgress: (Int, Int) -> Unit): Result<List<CategorySuggestion>> = error("Memory should resolve the description")
+        }
+        val raw = entry("A & B").copy(legacyOfxDescription = "A &amp; B")
+        val oldChoice = CategoryMemory(categoryMemoryKey("A &amp; B"), raw.type, food.id)
+        val newChoice = CategoryMemory(categoryMemoryKey("A & B"), raw.type, transfer.id)
+        for ((memories, expected) in listOf(listOf(oldChoice) to food, listOf(oldChoice, newChoice) to transfer)) {
+            val result = RememberingTransactionCategorizer(delegate, memory(*memories.toTypedArray()))
+                .categorize(listOf(raw), listOf(food, transfer)).getOrThrow().single()
+            assertEquals(expected, result.suggestedCategory)
+            assertEquals(raw, result.originalEntry)
+            assertEquals(SuggestionSource.MEMORY, result.source)
+        }
+    }
     @Test fun onlyUnknownEntriesReachInferenceAndOriginalOrderIsPreserved() = runTest {
         val delegated = mutableListOf<RawStatementEntry>()
         val delegate = object : TransactionCategorizer {
@@ -55,5 +71,35 @@ class RememberingTransactionCategorizerTest {
             RememberingTransactionCategorizer(delegate, memory()).categorize(listOf(entry("Outro")), listOf(food))
             fail("Cancellation must propagate")
         } catch (_: CancellationException) { }
+    }
+
+    @Test fun correctedPdfDirectionCanStillUseAnExplicitLegacyMemory() = runTest {
+        val raw = entry("Mercado").copy(legacyInputType = TransactionType.INCOME)
+        val delegate = object : TransactionCategorizer {
+            override suspend fun categorize(entries: List<RawStatementEntry>, categories: List<Category>, onProgress: (Int, Int) -> Unit): Result<List<CategorySuggestion>> = error("Legacy memory should resolve")
+        }
+        val choice = CategoryMemory(categoryMemoryKey(raw.description), TransactionType.INCOME, food.id)
+        val result = RememberingTransactionCategorizer(delegate, memory(choice)).categorize(listOf(raw), listOf(food)).getOrThrow().single()
+        assertEquals(food, result.suggestedCategory)
+        assertEquals(SuggestionSource.MEMORY, result.source)
+        assertEquals(raw, result.originalEntry)
+    }
+
+    @Test fun oldCategoryOnlyChoiceCannotRestoreAnIncorrectPdfIncomeDirection() = runTest {
+        val income = Category(3, "Receita", CategoryType.INCOME)
+        val raw = entry("Mercado").copy(legacyInputType = TransactionType.INCOME)
+        var delegated = 0
+        val delegate = object : TransactionCategorizer {
+            override suspend fun categorize(entries: List<RawStatementEntry>, categories: List<Category>, onProgress: (Int, Int) -> Unit): Result<List<CategorySuggestion>> {
+                delegated += entries.size
+                return Result.success(entries.map { CategorySuggestion(it, food, 0.7f) })
+            }
+        }
+        val oldChoice = CategoryMemory(categoryMemoryKey(raw.description), TransactionType.INCOME, income.id)
+        val result = RememberingTransactionCategorizer(delegate, memory(oldChoice)).categorize(listOf(raw), listOf(food, income)).getOrThrow().single()
+        assertEquals(1, delegated)
+        assertEquals(TransactionType.EXPENSE, result.entry.type)
+        assertEquals(food, result.suggestedCategory)
+        assertEquals(SuggestionSource.RULE, result.source)
     }
 }
