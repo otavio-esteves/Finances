@@ -2,6 +2,7 @@ package br.com.otavioesteves.finances.utils
 
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import br.com.otavioesteves.finances.domain.model.BackupInputStream
 
 /** Reads at most [maxBytes], closes the stream even when the document is rejected. */
 fun readBoundedDocument(input: InputStream, maxBytes: Int, tooLargeMessage: String): ByteArray {
@@ -22,8 +23,7 @@ fun readBoundedDocument(input: InputStream, maxBytes: Int, tooLargeMessage: Stri
     }
 }
 
-const val MAX_BACKUP_BYTES = 50 * 1024 * 1024
-
-fun readBackupDocument(input: InputStream): String = readBoundedDocument(
-    input, MAX_BACKUP_BYTES, "Backup muito grande. O limite é 50 MB."
-).toString(Charsets.UTF_8)
+/** Compatibility helper for callers that need text; the UI uses the streaming restore use case. */
+fun readBackupDocument(input: InputStream): String {
+    return BackupInputStream(input).reader(Charsets.UTF_8).use { it.readText() }
+}

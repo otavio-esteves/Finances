@@ -13,6 +13,7 @@ import br.com.otavioesteves.finances.domain.model.CategoryExportModel
 import br.com.otavioesteves.finances.domain.model.TransactionExportModel
 import br.com.otavioesteves.finances.domain.model.StatementImportExportModel
 import br.com.otavioesteves.finances.domain.model.ChatMessageExportModel
+import br.com.otavioesteves.finances.domain.model.requirePersistableText
 import br.com.otavioesteves.finances.domain.repository.BackupRepository
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -60,6 +61,7 @@ class RoomBackupRepository(
     }
 
     override suspend fun restoreBackup(backup: BackupModel) {
+        backup.requirePersistableText()
         database.withTransaction {
             val categoryIds = backup.categories.map { it.id }.toSet()
             require(categoryIds.size == backup.categories.size) { "Backup inválido: categorias duplicadas" }

@@ -2,6 +2,8 @@
 
 Coloque os arquivos a investigar em `samples/private/`, organizados por instituição e caso:
 
+Se não conseguir anexar o PDF na conversa, copie-o diretamente para essa pasta e informe seu caminho. O agente pode lê-lo no workspace sem um anexo e sem enviar o documento a um conversor externo.
+
 ```text
 samples/private/
   nubank/
@@ -51,7 +53,7 @@ Crie `samples/private/cases.json`, também ignorado pelo Git. Os caminhos são r
 ]
 ```
 
-Use `BANK_STATEMENT` para extratos. Os números acima são fictícios: preencha com resultados conferidos no seu documento. `count`, `expenseCents`, `incomeCents` e `transferCents` são verificações opcionais; sem elas o roteiro verifica apenas se o parser aceita o arquivo. Pagamentos de fatura reconhecidos como transferência entram em `count` e `transferCents`, sem aumentar receitas ou despesas. O roteiro não fornece senhas para PDFs com senha de abertura.
+Use `BANK_STATEMENT` para extratos. Os números acima são fictícios: preencha com resultados conferidos no seu documento. `count`, `expenseCents`, `incomeCents` e `transferCents` são verificações opcionais; sem elas o roteiro verifica apenas se o parser aceita o arquivo. O campo opcional `referenceYear` informa explicitamente o ano quando todas as compras sem ano forem daquele ano; ele não substitui referências explícitas do PDF. Pagamentos de fatura reconhecidos como transferência entram em `count` e `transferCents`, sem aumentar receitas ou despesas. O roteiro não fornece senhas para PDFs com senha de abertura.
 
 Com um emulador Android iniciado, compile e instale a versão isolada (troque o serial pelo exibido em `adb devices`):
 

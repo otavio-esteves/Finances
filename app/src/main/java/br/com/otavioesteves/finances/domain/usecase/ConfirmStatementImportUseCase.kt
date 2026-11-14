@@ -6,6 +6,7 @@ import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.ImportedStatement
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionOrigin
+import br.com.otavioesteves.finances.domain.model.statementSourceKey
 import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
 import java.nio.ByteBuffer
 import java.security.MessageDigest
@@ -55,14 +56,19 @@ class ConfirmStatementImportUseCase(
             canUndo = true
         )
         // Excluding rows changes what is saved, but the claim still identifies the entire source batch.
-        val canonicalFingerprint = fingerprint(fingerprintSuggestions, canonical = true)
-        val legacyFingerprint = fingerprint(fingerprintSuggestions, canonical = false)
-        val parserLegacyFingerprints = if (fingerprintSuggestions.any {
-            it.originalEntry.legacyOfxDescription != null || it.originalEntry.legacyInputType != null
-        }) {
-            listOf(fingerprint(fingerprintSuggestions, canonical = true, legacyInput = true),
-                fingerprint(fingerprintSuggestions, canonical = false, legacyInput = true))
-        } else emptyList()
+        val canonicalFingerprint = fingerprint(fingerprintSuggestions, version = 3, sourceLabel = sourceLabel)
+        val legacyFingerprints = buildList {
+            listOf(2, 1).forEach { add(fingerprint(fingerprintSuggestions, version = it)) }
+            if (fingerprintSuggestions.any {
+                it.originalEntry.legacyOfxDescription != null || it.originalEntry.legacyInputType != null ||
+                    it.originalEntry.legacyScopedInputType != null
+            }) {
+                listOf(3, 2, 1).forEach { version ->
+                    add(fingerprint(fingerprintSuggestions, version, sourceLabel, legacyInput = true))
+                    add(fingerprint(fingerprintSuggestions, version, sourceLabel, legacyInput = true, scopedLegacy = true))
+                }
+            }
+        }.distinct().filterNot { it == canonicalFingerprint }
         val memories = confirmedSuggestions.groupBy {
             br.com.otavioesteves.finances.domain.model.categoryMemoryKey(it.originalEntry.description) to it.originalType
         }.filterValues { group ->
@@ -70,29 +76,37 @@ class ConfirmStatementImportUseCase(
         }.map { (key, group) -> br.com.otavioesteves.finances.domain.model.CategoryMemory(
             key.first, key.second, requireNotNull(group.first().suggestedCategory).id
         ) }
-        statementImportRepository.confirmReviewedImport(statementImport, transactions, canonicalFingerprint, legacyFingerprint, memories, parserLegacyFingerprints)
+        statementImportRepository.confirmReviewedImport(statementImport, transactions, canonicalFingerprint, legacyFingerprints, memories)
         return statementImport
     }
 
-    private fun fingerprint(suggestions: List<CategorySuggestion>, canonical: Boolean, legacyInput: Boolean = false): String {
+    private fun fingerprint(
+        suggestions: List<CategorySuggestion>, version: Int, sourceLabel: String? = null,
+        legacyInput: Boolean = false, scopedLegacy: Boolean = false
+    ): String {
         fun description(suggestion: CategorySuggestion): String =
             (if (legacyInput) suggestion.originalEntry.legacyOfxDescription else null) ?: suggestion.originalEntry.description
-        fun inputType(suggestion: CategorySuggestion) =
-            (if (legacyInput) suggestion.originalEntry.legacyInputType else null) ?: suggestion.originalType
+        fun inputType(suggestion: CategorySuggestion) = when {
+            scopedLegacy -> suggestion.originalEntry.legacyScopedInputType ?: suggestion.originalType
+            legacyInput -> suggestion.originalEntry.legacyInputType ?: suggestion.originalType
+            else -> suggestion.originalType
+        }
         val digest = MessageDigest.getInstance("SHA-256")
-        digest.update((if (canonical) "finances-statement-v2" else "finances-statement-v1").toByteArray(Charsets.UTF_8))
+        digest.update("finances-statement-v$version".toByteArray(Charsets.UTF_8))
+        fun updateField(field: String) {
+            val bytes = field.toByteArray(Charsets.UTF_8)
+            digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+            digest.update(bytes)
+        }
+        if (version >= 3) updateField(statementSourceKey(sourceLabel))
         // Sort without distinct(): two identical purchases must remain two entries.
-        val ordered = if (canonical) suggestions.sortedWith(
+        val ordered = if (version >= 2) suggestions.sortedWith(
             compareBy({ it.originalEntry.date }, { inputType(it).name }, { it.originalEntry.amount.cents }, { description(it) })
         ) else suggestions
         ordered.forEach { suggestion ->
             val entry = suggestion.originalEntry
             listOf(entry.date.toString(), inputType(suggestion).name, entry.amount.cents.toString(), description(suggestion))
-                .forEach { field ->
-                    val bytes = field.toByteArray(Charsets.UTF_8)
-                    digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
-                    digest.update(bytes)
-                }
+                .forEach(::updateField)
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }

@@ -41,6 +41,38 @@ class PdfStatementParserTest {
         assertEquals(listOf(TransactionType.TRANSFER, TransactionType.INCOME), entries.map { it.type })
     }
 
+
+    @Test
+    fun refusesUndatedMonetaryRowsForBothDigitalAndScannedDocuments() {
+        for (usedOcr in listOf(false, true)) {
+            for (row in listOf("Farmácia -20,00", "Data ilegível Farmácia -20,00", "-20,00")) {
+                for (text in listOf("10/01/2026 Mercado -10,00\n$row", "$row\n10/01/2026 Mercado -10,00")) {
+                    val extractor = object : PdfTextExtractor {
+                        override fun extract(content: ByteArray) = text
+                        override fun extractWithMetadata(content: ByteArray, password: String?, checkCancelled: () -> Unit) =
+                            PdfTextExtraction(text, usedOcr)
+                    }
+                    assertThrows("OCR=$usedOcr: $text", IllegalArgumentException::class.java) {
+                        runBlocking { PdfStatementParser(extractor).parse("extrato.pdf", pdfBytes) }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun strictParsingKeepsWrappedRowsAndRecognizedFinancialMetadata() = runBlocking {
+        val entries = parser("""
+            Saldo anterior R$ 100,00
+            10/01/2026 Mercado
+            unidade centro
+            -10,00
+            Saldo final R$ 90,00
+        """.trimIndent()).parse("extrato.pdf", pdfBytes)
+        assertEquals("Mercado unidade centro", entries.single().description)
+        assertEquals(1_000L, entries.single().amount.cents)
+    }
+
     @Test
     fun rejectsInvalidCalendarDatesAndAcceptsLeapDay() = runBlocking {
         for (date in listOf("31/02/2026", "29/02/2025", "31/04/2026")) {
@@ -89,6 +121,24 @@ class PdfStatementParserTest {
         assertEquals(2, entries.size)
         assertEquals(TransactionType.EXPENSE, entries[0].type)
         assertEquals(TransactionType.INCOME, entries[1].type)
+    }
+
+    @Test
+    fun datedMerchantNamedTotalIsPreservedWithoutImportingBalanceSummaries() = runBlocking {
+        val entries = parser("Fatura\n01/11/2026 Mercado 10,00\n02/11/2026 Total 50,00\n" +
+            "03/11/2026 Saldo 60,00\nTotal da fatura 60,00\n04/11/2026 Total da fatura 60,00")
+            .parse("fatura.pdf", pdfBytes)
+        assertEquals(listOf("Mercado", "Total"), entries.map { it.description })
+        assertEquals(listOf(1000L, 5000L), entries.map { it.amount.cents })
+    }
+
+    @Test
+    fun datedBankBalancesAreNotImportedAsIncome() = runBlocking {
+        val entries = parser("Extrato\n01/11/2026 Saldo +1.000,00\n02/11/2026 Total -50,00\n" +
+            "03/11/2026 Saldo atual +950,00").parse("extrato.pdf", pdfBytes)
+        assertEquals("Total", entries.single().description)
+        assertEquals(5000L, entries.single().amount.cents)
+        assertEquals(TransactionType.EXPENSE, entries.single().type)
     }
 
     @Test

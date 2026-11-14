@@ -95,13 +95,14 @@ fun ImportStatementScreen(
     val contentResolver = context.applicationContext.contentResolver
     var isAtTop by remember { mutableStateOf(true) }
     var selectedKind by rememberSaveable { mutableStateOf(StatementKind.BANK_STATEMENT) }
+    var selectedYear by rememberSaveable { mutableStateOf<Int?>(null) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let { selectedUri ->
             val fileName = queryDisplayName(context, selectedUri) ?: "arquivo financeiro"
-            viewModel.onFileSelected(fileName, selectedKind) {
+            viewModel.onFileSelected(fileName, selectedKind, selectedYear) {
                 contentResolver.openInputStream(selectedUri)
                     ?: throw IllegalArgumentException("Não foi possível abrir o arquivo selecionado.")
             }
@@ -132,8 +133,9 @@ fun ImportStatementScreen(
             when (val state = uiState) {
                 is ImportStatementUiState.Idle -> IdleContent(
                     onAddTransactionClick = onAddTransactionClick,
-                    onSelectFileClick = { kind ->
+                    onSelectFileClick = { kind, year ->
                         selectedKind = kind
+                        selectedYear = year
                         filePickerLauncher.launch("*/*")
                     }
                 )
@@ -180,11 +182,13 @@ fun ImportStatementScreen(
 
 @Composable
 private fun IdleContent(
-    onSelectFileClick: (StatementKind) -> Unit,
+    onSelectFileClick: (StatementKind, Int?) -> Unit,
     onAddTransactionClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var kind by rememberSaveable { mutableStateOf(StatementKind.BANK_STATEMENT) }
+    var year by rememberSaveable { mutableStateOf("") }
+    val yearValid = year.isBlank() || year.toIntOrNull() in 1..9999
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .navigationBarsPadding().padding(20.dp),
@@ -203,7 +207,16 @@ private fun IdleContent(
                 }
                 Text("PDF, CSV ou OFX · até 10 MB", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                PrimaryActionButton(text = "Selecionar arquivo", onClick = { onSelectFileClick(kind) })
+                OutlinedTextField(
+                    value = year,
+                    onValueChange = { year = it.filter(Char::isDigit).take(4) },
+                    label = { Text("Ano das compras sem ano (opcional, PDF)") },
+                    supportingText = { Text("Preencha apenas se todas as compras sem ano forem do mesmo ano. Para compras de anos diferentes, use datas completas em CSV. O período explícito do PDF tem prioridade.") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true, isError = !yearValid, modifier = Modifier.fillMaxWidth()
+                )
+                PrimaryActionButton(text = "Selecionar arquivo", enabled = yearValid,
+                    onClick = { onSelectFileClick(kind, year.toIntOrNull()) })
             }
         }
         FinanceCard(modifier = Modifier.fillMaxWidth()) {

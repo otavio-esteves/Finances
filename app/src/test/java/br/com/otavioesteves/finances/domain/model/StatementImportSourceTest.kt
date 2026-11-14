@@ -4,13 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StatementImportSourceTest {
-    @Test fun equivalentLabelsKeepTheSameClaimWhileDifferentAccountsAndContentRemainIndependent() {
-        val personal = scopedStatementFingerprint("content-a", "Cartão pessoal")
-        assertEquals(personal, scopedStatementFingerprint("content-a", "  CARTAO   PESSOAL  "))
-        assertEquals(personal, scopedStatementFingerprint("content-a", "Cartão\u00a0\u00a0pessoal"))
-        assertNotEquals(personal, scopedStatementFingerprint("content-a", "Cartão conjunto"))
-        assertNotEquals(personal, scopedStatementFingerprint("content-b", "Cartão pessoal"))
-        assertNotEquals(personal, scopedStatementFingerprint("content-a", null))
-        assertEquals(scopedStatementFingerprint("content-a", null), scopedStatementFingerprint("content-a", " \t "))
+    @Test fun sourceLabelsPreservePublishedNormalizationAndKeepAccountsIndependent() {
+        val personal = statementSourceKey("Cartão pessoal")
+        assertEquals(personal, statementSourceKey("  CARTÃO   PESSOAL  "))
+        assertEquals(personal, statementSourceKey("Carta\u0303o pessoal"))
+        assertNotEquals(personal, statementSourceKey("Cartão conjunto"))
+        assertNotEquals(personal, statementSourceKey(null))
+        assertEquals(statementSourceKey(null), statementSourceKey(" \t "))
     }
 }

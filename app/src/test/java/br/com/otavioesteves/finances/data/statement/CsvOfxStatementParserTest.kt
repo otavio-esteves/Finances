@@ -49,6 +49,76 @@ class CsvOfxStatementParserTest {
         }
     }
 
+
+    @Test
+    fun ofxSeparatorsAreAlwaysDecimalAndTrailingZerosDoNotMultiplyAmounts() = runBlocking {
+        for ((raw, expectedCents) in listOf(
+            "-10.000" to -1_000L, "-10,000" to -1_000L,
+            "1.2300" to 123L, "+10.50" to 1_050L, "10" to 1_000L,
+            "0.000" to 0L, "92233720368547758.070" to Long.MAX_VALUE,
+            "-92233720368547758.07" to -Long.MAX_VALUE
+        )) {
+            val ofx = "<STMTTRN><DTPOSTED>20260110<TRNAMT>$raw<MEMO>Teste</BANKTRANLIST>"
+            for (kind in StatementKind.entries) {
+                val entry = parser.parse("a.ofx", ofx.toByteArray(), kind).single()
+                assertEquals(raw, kotlin.math.abs(expectedCents), entry.amount.cents)
+                assertEquals(raw, if (expectedCents < 0) TransactionType.EXPENSE else TransactionType.INCOME, entry.type)
+            }
+        }
+    }
+
+    @Test
+    fun ofxRejectsFractionalCentsGroupingScientificNotationAndOverflow() {
+        for (raw in listOf(
+            "1.234", "1,234", "-0.001", "1,000.00", "1.000,00", "1e3", "R$ 10.00",
+            "++10.00", "--10.00", "92233720368547758.08", "-92233720368547758.08",
+            "000000000000000000000000000000000"
+        )) {
+            val ofx = "<STMTTRN><DTPOSTED>20260110<TRNAMT>$raw<MEMO>Teste</BANKTRANLIST>"
+            assertThrows(raw, IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("a.ofx", ofx.toByteArray()) }
+            }
+        }
+    }
+
+    @Test
+    fun nativeCsvRejectsDuplicateHeadersAndUnknownVersions() {
+        for (csv in listOf(
+            "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações,ID\n1,2026-11-01,Compra,100,EXPENSE,Outros,,1",
+            "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações,Formato Finances\n1,2026-11-01,Compra,100,EXPENSE,Outros,,99"
+        )) assertThrows(IllegalArgumentException::class.java) { runBlocking { parser.parse("a.csv", csv.toByteArray()) } }
+    }
+
+    @Test
+    fun ofxRejectsInvalidUnicodeEntities() {
+        for (entity in listOf("&#0;", "&#xD800;", "&#x110000;", "&#999999999999999999999;")) {
+            val text = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-1.00<MEMO>$entity</STMTTRN></BANKTRANLIST></OFX>"
+            assertThrows(IllegalArgumentException::class.java) { runBlocking { parser.parse("a.ofx", text.toByteArray()) } }
+        }
+    }
+
+    @Test
+    fun nativeCsvRoundTripPreservesFormulaPrefixesAndOriginalApostrophes() = runBlocking {
+        val descriptions = listOf("=1+1", "+Compra", "-Compra", "@Compra", "'Compra", "'=1+1", "''Compra", "Compra")
+        val transactions = descriptions.mapIndexed { index, description ->
+            Transaction(index.toLong() + 1, description, Money(100), 1, LocalDate.of(2026, 11, 1), TransactionType.EXPENSE)
+        }
+        val csv = TransactionExporter().export(transactions, emptyMap(), ExportFormat.CSV)
+        assertEquals(descriptions, parser.parse("a.csv", csv.toByteArray()).map { it.description })
+    }
+
+    @Test
+    fun legacyCsvDoesNotStripOriginalApostrophes() = runBlocking {
+        val csv = "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações\n1,2026-11-01,'Compra,100,EXPENSE,Outros,"
+        assertEquals("'Compra", parser.parse("a.csv", csv.toByteArray()).single().description)
+    }
+
+    @Test
+    fun ofxDecodesNamedAndNumericEntitiesExactlyOnce() = runBlocking {
+        val text = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-1.00<MEMO>A &amp; B &lt;C&gt; &quot;D&quot; &apos;E&apos; &#233; &#x1F600; &amp;lt;</STMTTRN></BANKTRANLIST></OFX>"
+        assertEquals("A & B <C> \"D\" 'E' é 😀 &lt;", parser.parse("a.ofx", text.toByteArray()).single().description)
+    }
+
     @Test
     fun parse_csv_rejectsAmbiguousColumnsAndRowsWithExtraOrMissingFields() {
         for (csv in listOf(

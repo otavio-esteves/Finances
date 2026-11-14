@@ -122,8 +122,10 @@ class ChartsViewModel(
                 val samples = exampleTransactions2026(categories, dateProvider.getCurrentDate())
                 val existing = transactionsRepository.getTransactionsForYear(2026).first()
                     .filter { it.notes == EXAMPLE_TRANSACTIONS_NOTE }
-                    .map { it.date to it.description }.toSet()
-                samples.filterNot { (it.date to it.description) in existing }
+                    .map { java.time.YearMonth.from(it.date) to it.description }.toSet()
+                // Older examples may have been clamped to the day they were first added.
+                // Their identity is monthly, so a later day must not insert them again.
+                samples.filterNot { (java.time.YearMonth.from(it.date) to it.description) in existing }
                     .forEach { transactionsRepository.addTransaction(it) }
                 _exampleAction.value = ExampleActionState()
             } catch (error: CancellationException) {

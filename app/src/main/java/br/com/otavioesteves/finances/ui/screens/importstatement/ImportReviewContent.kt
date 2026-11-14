@@ -79,6 +79,10 @@ internal fun ReviewContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     val expenses = state.expenseTotal
+                    state.referenceYear?.let { year ->
+                        Text("Ano informado para datas sem ano: $year. Confira as datas abaixo; o período explícito do PDF tem prioridade.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                     val incomes = state.incomeTotal
                     Text("${state.includedSuggestions.size} para importar · ${state.excludedIndices.size} excluídos",
                         style = MaterialTheme.typography.bodyMedium)

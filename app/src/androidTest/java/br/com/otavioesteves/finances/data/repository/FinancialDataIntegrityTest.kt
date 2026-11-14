@@ -7,6 +7,7 @@ import br.com.otavioesteves.finances.data.DefaultDateProvider
 import br.com.otavioesteves.finances.data.ai.RememberingTransactionCategorizer
 import br.com.otavioesteves.finances.data.local.AppDatabase
 import br.com.otavioesteves.finances.data.local.entity.CategoryEntity
+import br.com.otavioesteves.finances.data.local.mapper.toEntity
 import br.com.otavioesteves.finances.data.local.mapper.toDomain
 import br.com.otavioesteves.finances.domain.ai.TransactionCategorizer
 import br.com.otavioesteves.finances.domain.model.*
@@ -38,6 +39,43 @@ class FinancialDataIntegrityTest {
             db.categoryDao().insertCategories(categories.map { CategoryEntity(it.id, it.name, it.type) })
             block(db)
         } finally { db.close() }
+    }
+
+    @Test fun magnitudeBudgetTracksReplacementDeletionUndoAndRestore() = runBlocking {
+        withDatabase { db ->
+            val dao = db.transactionDao()
+            val repository = RoomTransactionsRepository(dao, db)
+            suspend fun assertBudget(expected: Long) {
+                assertEquals(expected, dao.storedMagnitudeTotal())
+                assertEquals(expected, dao.initialMagnitudeTotal())
+            }
+            repository.addTransaction(entry(100))
+            val first = dao.getAllTransactions().single().toDomain()
+            assertBudget(100)
+            repository.updateTransaction(first.copy(amount = Money(200)))
+            assertBudget(200)
+            dao.insertTransactions(listOf(first.copy(amount = Money(300)).toEntity()))
+            assertBudget(300)
+            val raw = RawStatementEntry("Importada", Money(400), date, TransactionType.EXPENSE)
+            ConfirmStatementImportUseCase(RoomStatementImportRepository(db), DefaultDateProvider())(
+                "a.csv", listOf(CategorySuggestion(raw, expense, 1f, SuggestionSource.USER)))
+            assertBudget(700)
+            try {
+                repository.addTransaction(entry(Long.MAX_VALUE))
+                fail("Overflow must be rejected")
+            } catch (_: IllegalArgumentException) { }
+            assertBudget(700)
+            val backups = RoomBackupRepository(db)
+            val backup = backups.createBackup()
+            RoomStatementImportRepository(db).undoImport(db.statementImportDao().getAllImportsForBackup().single().id)
+            assertBudget(300)
+            backups.restoreBackup(backup)
+            assertBudget(700)
+            repository.removeTransaction(first.id)
+            assertBudget(400)
+            dao.deleteAll()
+            assertBudget(0)
+        }
     }
 
     @Test fun originalMemoryKeySurvivesReviewEditsLaterCorrectionsAndJsonBackup() = runBlocking {
@@ -140,7 +178,7 @@ class FinancialDataIntegrityTest {
             RoomTransactionsRepository(db.transactionDao(), db).addTransaction(entry(Long.MAX_VALUE - 10))
             val imports = RoomStatementImportRepository(db)
             val batch = ImportedStatement(0, "a.csv", java.time.LocalDateTime.of(2026, 11, 1, 9, 0), 2)
-            val result = runCatching { imports.confirmReviewedImport(batch, listOf(entry(6), entry(5)), "overflow", null,
+            val result = runCatching { imports.confirmReviewedImport(batch, listOf(entry(6), entry(5)), "overflow", emptyList(),
                 listOf(CategoryMemory("compra", TransactionType.EXPENSE, expense.id))) }
             assertTrue(result.exceptionOrNull() is IllegalArgumentException)
             assertTrue(imports.getImports().first().isEmpty())

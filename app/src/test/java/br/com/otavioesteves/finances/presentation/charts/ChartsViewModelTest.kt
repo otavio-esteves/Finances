@@ -12,6 +12,8 @@ import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.usecase.EXAMPLE_TRANSACTIONS_NOTE
+import br.com.otavioesteves.finances.domain.usecase.exampleTransactions2026
 import androidx.lifecycle.ViewModelStore
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +34,64 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChartsViewModelTest {
+    @Test
+    fun addingExamplesOnLaterDaysAndMonthsPreservesExistingExamplesWithoutDuplicates() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ViewModelStore()
+        var today = LocalDate.of(2026, 1, 1)
+        val mutableDates = object : DateProvider {
+            override fun getCurrentDate() = today
+            override fun getCurrentMonthPeriod() = MonthPeriod.from(java.time.YearMonth.from(today))
+            override fun getCurrentDateTime() = today.atStartOfDay()
+        }
+        val categories = listOf(Category(1, "Outros", CategoryType.EXPENSE), Category(2, "Salário", CategoryType.INCOME))
+        val rows = exampleTransactions2026(categories, today).mapIndexed { index, row -> row.copy(id = index + 1L) }.toMutableList()
+        // Keep a real transaction with the same description as an example: it must not suppress the sample.
+        val manual = rows.first().copy(id = 1000, date = LocalDate.of(2026, 2, 1), notes = null)
+        rows += manual
+        val initial = rows.toList()
+        val repository = object : TransactionsRepository {
+            override fun hasTransactions() = flowOf(rows.isNotEmpty())
+            override fun getTransaction(id: Long) = flowOf(rows.firstOrNull { it.id == id })
+            override fun getTransactions(period: MonthPeriod) = flowOf(rows.filter { it.date.year == period.year && it.date.monthValue == period.month })
+            override fun getTransactionsForYear(year: Int) = flowOf(rows.filter { it.date.year == year })
+            override fun getMonthlyBalance(period: MonthPeriod) = flowOf(Money.Zero)
+            override suspend fun addTransaction(transaction: Transaction) { rows += transaction.copy(id = (rows.maxOfOrNull { it.id } ?: 0) + 1) }
+            override suspend fun removeTransaction(transactionId: Long) { rows.removeAll { it.id == transactionId } }
+            override suspend fun updateTransaction(transaction: Transaction) = Unit
+        }
+        val catalog = object : CategoriesRepository {
+            override fun getCategories() = flowOf(categories)
+            override fun getCategorySummaries(period: MonthPeriod) = flowOf(emptyList<CategorySummary>())
+        }
+        try {
+            val vm = ChartsViewModel(GetCategorySummariesUseCase(catalog), repository, catalog, mutableDates, dispatcher)
+            store.put("charts", vm)
+            for (day in listOf(5, 20, 31)) {
+                today = LocalDate.of(2026, 1, day)
+                vm.addExamples()
+                testScheduler.advanceUntilIdle()
+                assertEquals(initial, rows)
+            }
+            for (day in listOf(1, 5, 28)) {
+                today = LocalDate.of(2026, 2, day)
+                vm.addExamples()
+                testScheduler.advanceUntilIdle()
+                assertEquals(13, rows.size)
+                assertEquals(initial, rows.take(initial.size))
+            }
+            assertEquals(12, rows.count { it.notes == EXAMPLE_TRANSACTIONS_NOTE })
+            vm.removeExamples()
+            testScheduler.advanceUntilIdle()
+            assertEquals(listOf(manual), rows)
+        } finally {
+            store.clear()
+            testScheduler.runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun `annual totals include only expenses in selected year and category`() {
         val transactions = listOf(

@@ -27,7 +27,7 @@ class TransactionExporterTest {
     fun `export to CSV returns correct format`() {
         val result = exporter.export(transactions, categories, ExportFormat.CSV)
         
-        assertTrue(result.contains("ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações"))
+        assertTrue(result.contains("ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações,Formato Finances"))
         assertTrue(result.contains("1,2026-04-27,\"Almoço\",2500,EXPENSE,\"Alimentação\""))
         assertTrue(result.contains("2,2026-04-27,\"Salário mensal\",500000,INCOME,\"Salário\""))
     }
@@ -76,9 +76,9 @@ class TransactionExporterTest {
         )
 
         assertEquals(
-            "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações\n" +
+            "ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações,Formato Finances\n" +
                 "4,2026-04-27,\"Descrição, com\nquebra\rde linha\",500,EXPENSE," +
-                "\"Categoria, \"\"especial\"\"\",\"Observação, com \"\"aspas\"\"\"",
+                "\"Categoria, \"\"especial\"\"\",\"Observação, com \"\"aspas\"\"\",2",
             csv
         )
     }

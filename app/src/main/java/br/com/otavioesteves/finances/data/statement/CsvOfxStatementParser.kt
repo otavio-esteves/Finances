@@ -6,6 +6,7 @@ import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.utils.MoneyFormatter
+import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
@@ -18,7 +19,7 @@ import java.util.Locale
  */
 class CsvOfxStatementParser : StatementParserRepository {
 
-    override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
+    override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?, referenceYear: Int?): List<RawStatementEntry> {
         return if (fileName.substringAfterLast('.', "").lowercase() in OFX_EXTENSIONS) {
             parseOfx(decodeStatementText(rawContent, ofx = true))
         } else {
@@ -35,7 +36,9 @@ class CsvOfxStatementParser : StatementParserRepository {
         val header = rows.first().map { it.trim().lowercase(Locale.ROOT) }
         val centsIndex = header.indexOf("valor (centavos)")
         val nativeExport = centsIndex >= 0
-        require(!nativeExport || (header.size == NATIVE_EXPORT_HEADERS.size && header.toSet() == NATIVE_EXPORT_HEADERS)) {
+        val nativeHeaders = header.toSet()
+        require(!nativeExport || (header.size == nativeHeaders.size &&
+            (nativeHeaders == NATIVE_EXPORT_HEADERS || nativeHeaders == NATIVE_EXPORT_HEADERS + "formato finances"))) {
             "CSV em centavos não corresponde ao formato exportado pelo Finances"
         }
         val dateIndex = uniqueColumn(header, "data") { it.contains("data") || it.contains("date") }
@@ -43,12 +46,15 @@ class CsvOfxStatementParser : StatementParserRepository {
             it.contains("descri") || it.contains("histor") || it.contains("memo") || it.contains("description")
         }
         val amountIndex = uniqueColumn(header, "valor") { it.contains("valor") || it.contains("amount") || it.contains("value") }
+        require(!StatementCurrency.hasForeignCurrency(header[amountIndex])) { "Coluna monetária em moeda estrangeira sem conversão em reais." }
+        val currencyIndices = header.indices.filter { header[it] in setOf("moeda", "currency", "curdef") }
         require(setOf(dateIndex, descriptionIndex, amountIndex).size == 3) { "Colunas ambíguas no CSV." }
 
         return rows.drop(1).map { fields ->
             require(fields.size == header.size) {
                 "Linha CSV não corresponde ao cabeçalho. Confira o separador e coloque campos com separadores entre aspas."
             }
+            currencyIndices.forEach { StatementCurrency.requireBrl(fields[it]) }
             val amountCents = if (nativeExport) {
                 fields[centsIndex].trim().let { raw ->
                     require(UNSIGNED_CENTS.matches(raw)) { "Valor em centavos inválido: $raw" }
@@ -61,7 +67,10 @@ class CsvOfxStatementParser : StatementParserRepository {
                     ?: throw IllegalArgumentException("Tipo de transação inválido no CSV exportado: $raw")
             } else null
             RawStatementEntry(
-                description = fields[descriptionIndex].trim(),
+                description = if (nativeExport && "formato finances" in header) {
+                    require(fields[header.indexOf("formato finances")] == "2") { "Formato CSV Finances não suportado" }
+                    fields[descriptionIndex].removePrefix("'")
+                } else fields[descriptionIndex].trim(),
                 amount = Money.fromCents(if (amountCents < 0) Math.negateExact(amountCents) else amountCents),
                 date = parseCsvDate(fields[dateIndex].trim()),
                 type = nativeType ?: when (kind) {
@@ -82,13 +91,17 @@ class CsvOfxStatementParser : StatementParserRepository {
     }
 
     private fun parseOfx(text: String): List<RawStatementEntry> {
+        val currencyDeclarations = text.replace(Regex("<ORIGCURRENCY>.*?</ORIGCURRENCY>",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+        Regex("<(?:CURDEF|CURSYM)>\\s*([^<\\r\\n]+)", RegexOption.IGNORE_CASE).findAll(currencyDeclarations)
+            .forEach { StatementCurrency.requireBrl(it.groupValues[1]) }
         val transactionBlocks = OFX_TRANSACTION_REGEX.findAll(text).map { it.value }.toList()
         require(transactionBlocks.isNotEmpty()) { "OFX não contém nenhuma transação (STMTTRN)" }
 
         return transactionBlocks.map { block ->
             val amountRaw = OFX_AMOUNT_REGEX.find(block)?.groupValues?.get(1)?.trim()
                 ?: throw IllegalArgumentException("Transação OFX sem TRNAMT válido")
-            val amountCents = parseAmountCents(amountRaw)
+            val amountCents = parseOfxAmountCents(amountRaw)
             val date = OFX_DATE_REGEX.find(block)?.groupValues?.get(1)?.trim()
                 ?: throw IllegalArgumentException("Transação OFX sem DTPOSTED válido")
             val memo = OFX_MEMO_REGEX.find(block)?.groupValues?.get(1)?.trim()
@@ -112,6 +125,20 @@ class CsvOfxStatementParser : StatementParserRepository {
     private fun parseAmountCents(rawValue: String): Long {
         return MoneyFormatter.parse(rawValue)?.cents
             ?: throw IllegalArgumentException("Valor de transação inválido: $rawValue")
+    }
+
+    private fun parseOfxAmountCents(rawValue: String): Long {
+        // OFX separators are decimal marks, never thousands separators.
+        require(rawValue.length <= 32 && OFX_DECIMAL.matches(rawValue)) {
+            "Valor OFX inválido: $rawValue"
+        }
+        return try {
+            BigDecimal(rawValue.replace(',', '.')).movePointRight(2).longValueExact().also {
+                require(it != Long.MIN_VALUE) { "Valor OFX fora do limite: $rawValue" }
+            }
+        } catch (error: ArithmeticException) {
+            throw IllegalArgumentException("Valor OFX fora do limite ou com fração de centavo: $rawValue", error)
+        }
     }
 
     private fun parseCsvDate(rawValue: String): LocalDate {
@@ -201,6 +228,7 @@ class CsvOfxStatementParser : StatementParserRepository {
     private companion object {
         val NATIVE_EXPORT_HEADERS = setOf("id", "data", "descrição", "valor (centavos)", "tipo", "categoria", "observações")
         val UNSIGNED_CENTS = Regex("[0-9]+")
+        val OFX_DECIMAL = Regex("[+-]?[0-9]+(?:[.,][0-9]+)?")
         val HEADER_DIACRITICS = Regex("\\p{M}+")
         val OFX_EXTENSIONS = setOf("ofx", "qfx")
         val BR_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT)

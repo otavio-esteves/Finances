@@ -5,12 +5,13 @@ import java.time.LocalDate
 import java.util.Locale
 
 /** Short dates need document metadata, never the device's current date or a neighbouring purchase. */
-internal class PdfDateResolver(headerLines: Sequence<String>) {
+internal class PdfDateResolver(headerLines: Sequence<String>, fallbackYear: Int? = null) {
     private val ranges = mutableSetOf<Pair<LocalDate, LocalDate>>()
     private val years = mutableSetOf<Int>()
     private val months = mutableSetOf<Pair<Int, Int>>()
 
     init {
+        require(fallbackYear == null || fallbackYear in 1..9999) { "Informe um ano entre 1 e 9999." }
         headerLines.forEach { original ->
             val line = normalizePdfText(original)
             if (PERIOD_LABEL.containsMatchIn(line)) {
@@ -33,6 +34,7 @@ internal class PdfDateResolver(headerLines: Sequence<String>) {
         require(years.isEmpty() || months.all { it.first in years }) {
             "Ano e mês de referência incompatíveis no PDF."
         }
+        if (ranges.isEmpty() && years.isEmpty() && months.isEmpty() && fallbackYear != null) years += fallbackYear
     }
 
     fun resolve(value: String): LocalDate {
@@ -55,7 +57,7 @@ internal class PdfDateResolver(headerLines: Sequence<String>) {
         val candidates = candidateYears.filter { suffixYear == null || it % 100 == suffixYear }.mapNotNull { year -> runCatching { date(year, month, day) }.getOrNull() }
             .filter { range == null || (!it.isBefore(range.first) && !it.isAfter(range.second)) }
         require(candidates.size == 1) {
-            "A data $value não tem um ano inequívoco no PDF. Use um documento com período ou ano de referência explícito."
+            "A data $value não tem um ano inequívoco no PDF. Informe o ano das compras na importação ou use um arquivo com datas completas."
         }
         val resolved = candidates.single()
         require(years.isEmpty() || resolved.year in years) { "Ano e período de referência incompatíveis no PDF." }

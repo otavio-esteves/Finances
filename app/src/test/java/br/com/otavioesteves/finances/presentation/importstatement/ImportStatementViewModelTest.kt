@@ -67,11 +67,13 @@ class ImportStatementViewModelTest {
         private val failure: Exception? = null
     ) : StatementParserRepository {
         var lastKind: StatementKind? = null
+        var lastReferenceYear: Int? = null
         var expectedPassword: String? = null
         val passwords = mutableListOf<String?>()
 
-        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
+        override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?, referenceYear: Int?): List<RawStatementEntry> {
             lastKind = kind
+            lastReferenceYear = referenceYear
             passwords += password
             if (expectedPassword != null && password != expectedPassword) throw StatementPasswordRequiredException(password != null)
             failure?.let { throw it }
@@ -105,7 +107,7 @@ class ImportStatementViewModelTest {
             statementImport: ImportedStatement,
             transactions: List<Transaction>,
             fingerprint: String,
-            legacyFingerprint: String?
+            legacyFingerprints: List<String>
         ) {
             confirmGate?.await()
             imports += statementImport
@@ -128,6 +130,30 @@ class ImportStatementViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
+    }
+
+    @Test fun oversizedEditReturnsErrorAndPreservesReview() = runTest {
+        val vm = createViewModel()
+        vm.onFileSelected("a.csv", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        val before = vm.uiState.value
+        assertTrue(vm.onEntryEdited(0, "a".repeat(65537), "20,00", "11/01/2026") != null)
+        assertEquals(before, vm.uiState.value)
+        assertEquals(null, vm.onEntryEdited(0, "Compra corrigida", "20,00", "11/01/2026"))
+        testDispatcher.scheduler.advanceUntilIdle()
+    }
+
+    @Test
+    fun explicitReferenceYearSurvivesPasswordRetryAndRemainsVisibleInReview() = runTest {
+        val parser = FakeStatementParserRepository(listOf(entry)).apply { expectedPassword = "secret" }
+        val vm = createViewModel(parserRepository = parser)
+        vm.onFileSelected("fatura.pdf", byteArrayOf(1), StatementKind.CARD_BILL, referenceYear = 2025)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is ImportStatementUiState.NeedsPassword)
+        vm.onPasswordSubmitted("secret")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(2025, parser.lastReferenceYear)
+        assertEquals(2025, (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).referenceYear)
     }
 
     @After

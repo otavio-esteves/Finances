@@ -5,6 +5,18 @@ import org.junit.Test
 import java.time.LocalDate
 
 class FinancialDataValidationTest {
+    @Test fun textBudgetCountsUtf8BytesIncludingMultibyteCharacters() {
+        for (text in listOf("a".repeat(MAX_PERSISTED_TEXT_BYTES), "é".repeat(MAX_PERSISTED_TEXT_BYTES / 2),
+            "😀".repeat(MAX_PERSISTED_TEXT_BYTES / 4))) {
+            requirePersistableText(text, "descrição")
+        }
+        for (text in listOf("a".repeat(MAX_PERSISTED_TEXT_BYTES + 1), "é".repeat(MAX_PERSISTED_TEXT_BYTES / 2 + 1),
+            "😀".repeat(MAX_PERSISTED_TEXT_BYTES / 4 + 1), "a".repeat(3 * 1024 * 1024))) {
+            assertThrows(IllegalArgumentException::class.java) { requirePersistableText(text, "descrição") }
+            assertThrows(IllegalArgumentException::class.java) { RawStatementEntry(text, Money(1), LocalDate.of(2026, 1, 1), TransactionType.EXPENSE) }
+        }
+    }
+
     @Test fun magnitudeTotalAcceptsExactLimitAndZero() {
         assertEquals(Money(Long.MAX_VALUE), checkedMagnitudeTotal(sequenceOf(Long.MAX_VALUE - 1, 1, 0)))
         assertEquals(Money.Zero, checkedMagnitudeTotal(emptySequence()))

@@ -46,6 +46,20 @@ class PdfImportReviewTest {
     @After fun clear() { rule.runOnIdle { store.clear() } }
 
     @Test
+    fun optionalYearIsValidatedAndShownInReview() {
+        val (vm, _) = viewModel(scanned = false)
+        rule.setContent { FinancesTheme { ImportStatementScreen(onBackClick = {}, viewModel = vm) } }
+        rule.onNodeWithText("Ano das compras sem ano (opcional, PDF)").performScrollTo().performTextReplacement("0000")
+        rule.onNodeWithText("Selecionar arquivo").performScrollTo().assertIsNotEnabled()
+        rule.onNodeWithText("Ano das compras sem ano (opcional, PDF)").performScrollTo().performTextReplacement("2026")
+        rule.onNodeWithText("Selecionar arquivo").performScrollTo().assertIsEnabled()
+        rule.runOnIdle { vm.onFileSelected("fatura.pdf", byteArrayOf(1), StatementKind.CARD_BILL, referenceYear = 2026) }
+        waitForReview(vm)
+        rule.onNodeWithText("Ano informado para datas sem ano: 2026. Confira as datas abaixo; o período explícito do PDF tem prioridade.")
+            .performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun overflowingAmountsShowAnErrorAndExcludingAnEntryAllowsImport() {
         val entry = RawStatementEntry("Compra", Money(Long.MAX_VALUE), LocalDate.of(2026, 1, 10), TransactionType.EXPENSE)
         val (vm, saved) = viewModel(scanned = false, entriesToImport = listOf(entry, entry.copy(description = "Outra compra")))
@@ -209,7 +223,7 @@ class PdfImportReviewTest {
             override fun getCategorySummaries(period: MonthPeriod) = flowOf(emptyList<CategorySummary>())
         }
         val parser = object : StatementParserRepository {
-            override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?): List<RawStatementEntry> {
+            override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?, referenceYear: Int?): List<RawStatementEntry> {
                 if (protected && password != "123456") throw StatementPasswordRequiredException(password != null)
                 return entriesToImport ?: if (processingGate == null) listOf(entry) else listOf(entry, entry.copy(description = "Outra compra"))
             }
@@ -226,7 +240,7 @@ class PdfImportReviewTest {
         val saved = mutableListOf<Transaction>()
         val imports = object : StatementImportRepository {
             override fun getImports() = flowOf(emptyList<ImportedStatement>())
-            override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprint: String?) { saved += transactions }
+            override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprints: List<String>) { saved += transactions }
         }
         val transactions = object : TransactionsRepository {
         override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)

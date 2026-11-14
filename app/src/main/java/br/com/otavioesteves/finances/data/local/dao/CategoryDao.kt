@@ -7,6 +7,7 @@ import androidx.room.Query
 import br.com.otavioesteves.finances.data.local.entity.CategoryEntity
 import br.com.otavioesteves.finances.data.local.entity.CategorySummaryEntity
 import kotlinx.coroutines.flow.Flow
+import br.com.otavioesteves.finances.domain.model.requirePersistableText
 
 @Dao
 interface CategoryDao {
@@ -33,8 +34,13 @@ interface CategoryDao {
     """)
     suspend fun getCategorySummarySnapshot(startDate: String, endDate: String): List<CategorySummaryEntity>
 
+    suspend fun insertCategories(categories: List<CategoryEntity>) {
+        categories.forEach { requirePersistableText(it.name, "nome da categoria") }
+        insertCategoriesUnchecked(categories)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertCategories(categories: List<CategoryEntity>)
+    suspend fun insertCategoriesUnchecked(categories: List<CategoryEntity>)
 
     @androidx.room.Transaction
     suspend fun createCategory(name: String, type: br.com.otavioesteves.finances.domain.model.CategoryType): CategoryEntity {
@@ -48,8 +54,13 @@ interface CategoryDao {
         return entity.copy(id = insertCategory(entity))
     }
 
+    suspend fun insertCategory(category: CategoryEntity): Long {
+        requirePersistableText(category.name, "nome da categoria")
+        return insertCategoryUnchecked(category)
+    }
+
     @Insert
-    suspend fun insertCategory(category: CategoryEntity): Long
+    suspend fun insertCategoryUnchecked(category: CategoryEntity): Long
 
     @Query("SELECT COUNT(*) FROM categories")
     suspend fun getCategoriesCount(): Int

@@ -31,7 +31,7 @@ class ImportLifecycleTest {
             db.categoryDao().insertCategories(listOf(CategoryEntity(1, "Outros", CategoryType.EXPENSE), CategoryEntity(2, "Alimentação", CategoryType.EXPENSE)))
             val imports = RoomStatementImportRepository(db)
             val transactions = RoomTransactionsRepository(db.transactionDao(), db)
-            imports.confirmReviewedImport(batch, listOf(entry), "first", null, listOf(CategoryMemory("cafe", TransactionType.EXPENSE, 1)))
+            imports.confirmReviewedImport(batch, listOf(entry), "first", emptyList(), listOf(CategoryMemory("cafe", TransactionType.EXPENSE, 1)))
             val first = imports.getImports().first().single()
             val imported = db.transactionDao().getAllTransactions().single().toDomain()
             assertEquals(first.id, imported.importId)
@@ -59,7 +59,7 @@ class ImportLifecycleTest {
             db.categoryDao().insertCategories(listOf(CategoryEntity(1, "Outros", CategoryType.EXPENSE)))
             val imports = RoomStatementImportRepository(db)
             assertTrue(runCatching {
-                imports.confirmReviewedImport(batch, listOf(entry.copy(categoryId = 999)), "bad", null,
+                imports.confirmReviewedImport(batch, listOf(entry.copy(categoryId = 999)), "bad", emptyList(),
                     listOf(CategoryMemory("cafe", TransactionType.EXPENSE, 1)))
             }.isFailure)
             assertTrue(db.categoryMemoryDao().getAll().isEmpty())

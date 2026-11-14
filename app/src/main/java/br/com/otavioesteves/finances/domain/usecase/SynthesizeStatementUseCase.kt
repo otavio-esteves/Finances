@@ -6,7 +6,7 @@ import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.model.SuggestionSource
-import br.com.otavioesteves.finances.domain.model.isInvoicePaymentDescription
+import br.com.otavioesteves.finances.domain.model.isCardPaymentDescription
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import kotlinx.coroutines.flow.first
 
@@ -22,8 +22,8 @@ class SynthesizeStatementUseCase(
         val suggestions = transactionCategorizer.categorize(entries, knownCategories, onProgress).getOrThrow()
         val transferCategory = knownCategories.firstOrNull { it.type == CategoryType.TRANSFER }
         return suggestions.map { suggestion ->
-            if (suggestion.source != SuggestionSource.MEMORY && transferCategory != null && (suggestion.entry.type == TransactionType.TRANSFER ||
-                isInvoicePaymentDescription(suggestion.entry.description))
+            if (suggestion.source != SuggestionSource.MEMORY && transferCategory != null &&
+                (suggestion.entry.type == TransactionType.TRANSFER || isCardPaymentDescription(suggestion.entry.description))
             ) {
                 suggestion.copy(
                     entry = suggestion.entry.copy(type = TransactionType.TRANSFER),
@@ -34,5 +34,4 @@ class SynthesizeStatementUseCase(
             } else suggestion
         }
     }
-
 }

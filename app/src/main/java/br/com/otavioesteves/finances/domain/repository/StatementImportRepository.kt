@@ -12,11 +12,15 @@ interface StatementImportRepository {
         statementImport: ImportedStatement,
         transactions: List<Transaction>,
         fingerprint: String,
-        legacyFingerprint: String?,
-        memories: List<CategoryMemory>,
-        additionalLegacyFingerprints: List<String> = emptyList()
+        legacyFingerprints: List<String>,
+        memories: List<CategoryMemory>
     ) {
-        confirmImport(statementImport, transactions, fingerprint, legacyFingerprint)
+        confirmImport(statementImport, transactions, fingerprint, legacyFingerprints)
     }
-    suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprint: String? = null)
+    suspend fun confirmImport(
+        statementImport: ImportedStatement,
+        transactions: List<Transaction>,
+        fingerprint: String,
+        legacyFingerprints: List<String> = emptyList()
+    )
 }

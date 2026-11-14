@@ -40,7 +40,8 @@ class PrivatePdfCorpusTest {
                     override fun extractWithMetadata(content: ByteArray, password: String?, checkCancelled: () -> Unit) = extraction
                 }
                 val entries = PdfStatementParser(extractor)
-                    .parse("$id.pdf", content, StatementKind.valueOf(case.getString("kind")))
+                    .parse("$id.pdf", content, StatementKind.valueOf(case.getString("kind")),
+                        referenceYear = if (case.has("referenceYear")) case.getInt("referenceYear") else null)
                 val expense = entries.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount.cents }
                 val income = entries.filter { it.type == TransactionType.INCOME }.sumOf { it.amount.cents }
                 val transfers = entries.filter { it.type == TransactionType.TRANSFER }.sumOf { it.amount.cents }
