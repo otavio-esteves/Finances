@@ -34,6 +34,44 @@ import java.time.LocalDateTime
 
 class StatementImportUseCasesTest {
     @Test
+    fun pdfContinuationsHaveDistinctFingerprintsAndWarnAboutHistoricallyTruncatedRows() = runBlocking {
+        val parser = PdfStatementParser { "" }
+        val first = parser.parseText("Fatura\n01/11/2026 PAGAMENTO 10,00\nLOJA A").single()
+        val second = parser.parseText("Fatura\n01/11/2026 PAGAMENTO 10,00\nLOJA B").single()
+        val category = Category(1, "Outros", CategoryType.EXPENSE)
+        val repository = FakeStatementImportRepository()
+        val confirm = ConfirmStatementImportUseCase(repository, FakeDateProvider(LocalDateTime.of(2026, 11, 1, 9, 0)))
+        for (entry in listOf(first, second)) confirm("fatura.pdf", listOf(CategorySuggestion(entry, category, 1f)))
+        org.junit.Assert.assertNotEquals(repository.fingerprints[0], repository.fingerprints[1])
+        val old = Transaction(1, "PAGAMENTO", first.amount, category.id, first.date, first.type)
+        val matches = FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(old))).findMatches(listOf(first, second))
+        assertEquals(listOf(old), matches[0])
+        assertEquals(listOf(old), matches[1])
+    }
+
+    @Test fun multilineOfxHasDistinctCanonicalHashesAndKeepsBothHistoricalTextVariants() = runBlocking {
+        val parser = CsvOfxStatementParser()
+        suspend fun parse(description: String) = parser.parse("a.ofx",
+            "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>$description</BANKTRANLIST>".toByteArray()).single()
+        val first = parse("A &amp; B\nPedido 1")
+        val second = parse("A &amp; B\nPedido 2")
+        val category = Category(1, "Outros", CategoryType.EXPENSE)
+        val repo = FakeStatementImportRepository()
+        val confirm = ConfirmStatementImportUseCase(repo, FakeDateProvider(LocalDateTime.of(2026, 11, 1, 9, 0)))
+        for (raw in listOf(parse("A &amp; B"), first, second)) {
+            confirm("a.ofx", listOf(CategorySuggestion(raw, category, 1f)), "Conta A")
+        }
+        org.junit.Assert.assertNotEquals(repo.fingerprints[1], repo.fingerprints[2])
+        assertTrue(repo.fingerprints[0] !in repo.legacyClaims[1])
+        assertTrue(repo.legacyClaims[1].containsAll(repo.legacyClaims[0]))
+        assertTrue(repo.fingerprints[1] !in repo.legacyClaims[2])
+        val stored = Transaction(1, "A & B", first.amount, 1, first.date, first.type)
+        val matches = FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(stored, stored.copy(id = 2, description = "A &amp; B"))))
+            .findMatches(listOf(first))
+        assertEquals(setOf(1L, 2L), matches.getValue(0).map { it.id }.toSet())
+    }
+
+    @Test
     fun decodedOfxDescriptionsRetainBothLegacyFingerprintVersionsAndPartialOverlapCandidates() = runBlocking {
         val category = Category(1, "Outros", CategoryType.EXPENSE)
         val oldRaw = RawStatementEntry("A &amp; B", Money(1000), LocalDate.of(2026, 11, 1), TransactionType.EXPENSE)
@@ -43,7 +81,8 @@ class StatementImportUseCasesTest {
         confirm("old.ofx", listOf(CategorySuggestion(oldRaw, category, 1f)))
         confirm("new.ofx", listOf(CategorySuggestion(decoded, category, 1f)))
         org.junit.Assert.assertNotEquals(repo.fingerprints[0], repo.fingerprints[1])
-        assertTrue(repo.fingerprints[0] in repo.legacyClaims[1])
+        // New v4 data is distinct; only the actual historical v1/v2/v3 claims are aliases.
+        assertTrue(repo.fingerprints[0] !in repo.legacyClaims[1])
         assertTrue(repo.legacyClaims[1].containsAll(repo.legacyClaims[0]))
         val stored = Transaction(1, oldRaw.description, oldRaw.amount, 1, oldRaw.date, oldRaw.type)
         val matches = FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(stored, stored.copy(id = 2, description = decoded.description))))
@@ -100,11 +139,17 @@ class StatementImportUseCasesTest {
         org.junit.Assert.assertNotEquals(repository.fingerprints[0], repository.fingerprints[2])
         org.junit.Assert.assertNotEquals(repository.fingerprints[0], repository.fingerprints[3])
         assertEquals(repository.fingerprints[3], repository.fingerprints[4])
-        assertEquals(listOf(
+        val unscopedHistoricalClaims = listOf(
             "3cc5e72d2a688589a5da1cebcc6c19dbe4eade96203752a39b602c7692504bf7",
             "cd8dc7d242aac8c78a89422219e8543054e06b7887579ea8149a0681b83b8b2e"
-        ), repository.legacyClaims.first())
-        assertTrue(repository.legacyClaims.all { it == repository.legacyClaims.first() })
+        )
+        assertTrue(repository.legacyClaims.all { it.drop(1) == unscopedHistoricalClaims })
+        val scopedV3 = repository.legacyClaims.map { it.first() }
+        assertEquals("14de826b281e16936830937db63b8f0343caa24123ceb5a78bb50c3cd1f564e7", scopedV3[0])
+        assertEquals(scopedV3[0], scopedV3[1])
+        org.junit.Assert.assertNotEquals(scopedV3[0], scopedV3[2])
+        org.junit.Assert.assertNotEquals(scopedV3[0], scopedV3[3])
+        assertEquals(scopedV3[3], scopedV3[4])
     }
 
     @Test

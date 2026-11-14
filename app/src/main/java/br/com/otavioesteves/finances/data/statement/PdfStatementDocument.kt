@@ -94,6 +94,10 @@ internal class PdfStatementDocument(original: String) {
 
     fun isMovementSummary(line: String): Boolean = unsignedCredits && normalizePdfText(line) in summaryLines
 
+    fun isMovementSectionHeading(line: String): Boolean = normalizePdfText(line).let {
+        PICPAY_SECTION.matches(it) || it == "detalhe dos movimentos"
+    }
+
     fun validateTotals(entries: List<RawStatementEntry>) {
         closingDate?.let { closing ->
             require(entries.none { it.date.isAfter(closing) }) { "Há lançamentos posteriores ao fechamento da fatura. Nenhum lançamento foi importado." }

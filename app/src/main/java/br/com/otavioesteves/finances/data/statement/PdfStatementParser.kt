@@ -46,31 +46,58 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         var pendingRow: String? = null
         var pendingLines = 0
         var runningBalanceColumn = false
+        var plainTableHeader: String? = null
+        var continuationIndex: Int? = null
+        var rowLines = 0
 
         fun invalidRow(): Nothing = throw IllegalArgumentException(
             "Algumas linhas com data e valor não foram reconhecidas no PDF. Nenhum lançamento foi importado."
         )
 
+        fun appendContinuation(description: String) {
+            val index = continuationIndex ?: invalidRow()
+            if (++rowLines > MAX_WRAPPED_ROW_LINES || ANY_MONEY.containsMatchIn(description) ||
+                PdfDateResolver.DATE_LIKE_PREFIX.containsMatchIn(normalizePdfText(description))) invalidRow()
+            val entry = entries[index]
+            entries[index] = entry.copy(
+                description = "${entry.description} $description",
+                legacyPdfDescription = entry.legacyPdfDescription ?: entry.description
+            )
+        }
+
         lines().forEach { line ->
             val normalized = normalizePdfText(line)
             if (PAGE_FOOTER.matches(normalized)) return@forEach
+            if (document.isMovementSectionHeading(line)) {
+                continuationIndex = null
+                return@forEach
+            }
             // Positioned extraction can split this label across the date, description and value cells.
             val subtotal = SUBTOTAL_ROW.matchEntire(normalized)?.groupValues?.get(1)
             if (subtotal != null && AMOUNT_TOKEN.matches(subtotal)) {
                 if (pendingRow != null || table.hasPending) invalidRow()
                 parseAmount(subtotal, isCardBill = false, requireDirection = false)
+                continuationIndex = null
                 return@forEach
             }
             if (TABLE_HEADER.containsMatchIn(normalized) && !line.contains('\t')) {
                 require(!StatementCurrency.hasForeignCurrency(normalized)) { "Cabeçalho monetário estrangeiro sem coluna inequívoca de conversão em reais." }
                 runningBalanceColumn = VALUE_BALANCE_COLUMNS.containsMatchIn(normalized)
+                if (pendingRow == null && plainTableHeader != normalized) continuationIndex = null
+                plainTableHeader = normalized
                 return@forEach
             }
             if (line.contains('\t') || table.hasPending) {
-                val (handled, entry) = table.process(line)
-                if (handled) {
+                val result = table.process(line)
+                if (result.handled) {
                     if (pendingRow != null) invalidRow()
-                    entry?.let { entries += it }
+                    if (result.boundary) continuationIndex = null
+                    result.entry?.let {
+                        entries += it
+                        continuationIndex = entries.lastIndex
+                        rowLines = result.rowLines
+                    }
+                    result.continuation?.let(::appendContinuation)
                     return@forEach
                 }
             }
@@ -80,14 +107,17 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                 if (pendingRow != null) invalidRow()
                 pendingRow = line
                 pendingLines = 1
+                continuationIndex = null
             } else if (PdfDateResolver.DATE_LIKE_PREFIX.containsMatchIn(normalized)) {
                 invalidRow()
             } else if (pendingRow != null) {
                 pendingRow += " $line"
                 pendingLines++
             } else {
-                if (ANY_MONEY.containsMatchIn(line) && !SAFE_METADATA.containsMatchIn(normalized) &&
-                    !document.isMovementSummary(line)) invalidRow()
+                if (SAFE_METADATA.containsMatchIn(normalized) || document.isMovementSummary(line)) {
+                    continuationIndex = null
+                } else if (ANY_MONEY.containsMatchIn(line)) invalidRow()
+                else if (continuationIndex != null) appendContinuation(line)
                 return@forEach
             }
 
@@ -126,6 +156,8 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             if (runningBalanceColumn) parseAmount(amounts.last().value, isCardBill = false, requireDirection = false)
             val date = dates.resolve(dateMatch.value)
             entries += RawStatementEntry(description, Money.fromCents(amount.cents), date, amount.type, legacyInputType = amount.legacyType)
+            continuationIndex = entries.lastIndex
+            rowLines = pendingLines
             pendingRow = null
         }
         if (pendingRow != null) invalidRow()
@@ -199,9 +231,9 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             RegexOption.IGNORE_CASE
         )
         private val FULL_DATE_IN_DESCRIPTION = Regex("\\b(?:\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}|\\d{4}-\\d{2}-\\d{2})\\b")
-        private val SAFE_METADATA = Regex("^(?:fatura|periodo|referencia|emissao|vencimento|saldo|total|valor total|pagamento minimo|limite|juros|encargos)\\b")
+        private val SAFE_METADATA = Regex("^(?:fatura|periodo|referencia|ano|competencia|emissao|vencimento|saldo|total|valor total|pagamento minimo|limite|juros|encargos)\\b")
         private val CARD_BILL_HEADER = Regex("(?im)^\\s*(?:fatura|cart[aã]o de cr[eé]dito)\\b")
-        private val TABLE_HEADER = Regex("^data\\s+.*(?:descricao|historico|lancamento|estabelecimento).*(?:valor|debito|credito)\\b")
+        private val TABLE_HEADER = Regex("^data\\s+.*(?:descricao|historico|lancamento|estabelecimento|transacoes).*(?:valor|debito|credito)\\b")
         private val VALUE_BALANCE_COLUMNS = Regex("\\bvalor\\b.*\\bsaldo\\b(?:\\s*\\(?r\\$\\)?)?\\s*$")
         private val PAGE_FOOTER = Regex("(?:pagina\\s+\\d+\\s*(?:de|/)\\s*\\d+|\\d+\\s+de\\s+\\d+)")
         private val SUBTOTAL_ROW = Regex("^subtotal dos lancamentos\\s+(.+)$")

@@ -104,20 +104,31 @@ class CsvOfxStatementParser : StatementParserRepository {
             val amountCents = parseOfxAmountCents(amountRaw)
             val date = OFX_DATE_REGEX.find(block)?.groupValues?.get(1)?.trim()
                 ?: throw IllegalArgumentException("Transação OFX sem DTPOSTED válido")
-            val memo = OFX_MEMO_REGEX.find(block)?.groupValues?.get(1)?.trim()
-            val name = OFX_NAME_REGEX.find(block)?.groupValues?.get(1)?.trim()
-            val legacyDescription = memo?.takeIf { it.isNotBlank() } ?: name?.takeIf { it.isNotBlank() } ?: "Transação sem descrição"
+            val memo = OFX_MEMO_REGEX.find(block)?.groupValues?.get(1)
+            val name = OFX_NAME_REGEX.find(block)?.groupValues?.get(1)
+            // Keep both historical parsers' first-line representations only as compatibility aliases.
+            val oldMemo = memo?.substringBefore('\r')?.substringBefore('\n')?.trim()
+            val oldName = name?.substringBefore('\r')?.substringBefore('\n')?.trim()
+            val legacyDescription = oldMemo?.takeIf { it.isNotBlank() } ?: oldName?.takeIf { it.isNotBlank() } ?: "Transação sem descrição"
             val description = memo?.let(::decodeOfxTextEntities)?.trim()
                 ?.takeIf { it.isNotBlank() }
                 ?: name?.let(::decodeOfxTextEntities)?.trim()?.takeIf { it.isNotBlank() }
                 ?: "Transação sem descrição"
+            // A formerly selected NAME may be invalid even when the full MEMO is valid.
+            // Such a file could never have been saved by the old decoding parser.
+            val legacyDecodedDescription = runCatching {
+                oldMemo?.let(::decodeOfxTextEntities)?.trim()?.takeIf { it.isNotBlank() }
+                    ?: oldName?.let(::decodeOfxTextEntities)?.trim()?.takeIf { it.isNotBlank() }
+                    ?: "Transação sem descrição"
+            }.getOrNull()
 
             RawStatementEntry(
                 description = description,
                 amount = Money.fromCents(if (amountCents < 0) Math.negateExact(amountCents) else amountCents),
                 date = parseOfxDate(date),
                 type = if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME,
-                legacyOfxDescription = legacyDescription.takeIf { it != description }
+                legacyOfxDescription = legacyDescription.takeIf { it != description },
+                legacyDecodedOfxDescription = legacyDecodedDescription.takeIf { it != description }
             )
         }
     }
@@ -240,7 +251,8 @@ class CsvOfxStatementParser : StatementParserRepository {
         )
         val OFX_AMOUNT_REGEX = Regex("<TRNAMT>([^<\\r\\n]*)")
         val OFX_DATE_REGEX = Regex("<DTPOSTED>([^<\\r\\n]*)")
-        val OFX_MEMO_REGEX = Regex("<MEMO>([^<\\r\\n]*)")
-        val OFX_NAME_REGEX = Regex("<NAME>([^<\\r\\n]*)")
+        // SGML fields end at the next tag; line breaks are part of a text value.
+        val OFX_MEMO_REGEX = Regex("<MEMO>([^<]*)")
+        val OFX_NAME_REGEX = Regex("<NAME>([^<]*)")
     }
 }

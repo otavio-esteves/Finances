@@ -16,8 +16,15 @@ class RememberingTransactionCategorizer(
         val categoriesById = categories.associateBy { it.id }
         val remembered = entries.map { entry ->
             val currentCategory = choices[categoryMemoryKey(entry.description) to entry.type]?.let { categoriesById[it.categoryId] }
-            val legacyCategory = choices[categoryMemoryKey(entry.legacyOfxDescription ?: entry.description) to (entry.legacyInputType ?: entry.type)]
-                ?.let { categoriesById[it.categoryId] }?.takeUnless { category ->
+            // A truncated key cannot identify the complete description safely. It may also
+            // belong to a new, genuinely single-line purchase with a different category.
+            val legacyDescriptions = if (entry.legacyDecodedOfxDescription != null) emptyList()
+                else listOf(entry.legacyOfxDescription ?: entry.description)
+            val legacyCategory = legacyDescriptions
+                .firstNotNullOfOrNull { description ->
+                    choices[categoryMemoryKey(description) to (entry.legacyInputType ?: entry.type)]
+                        ?.let { categoriesById[it.categoryId] }
+                }?.takeUnless { category ->
                     // A category chosen under the old wrong direction must not restore that parser bug.
                     // A legacy choice that explicitly changed the type still represents user intent.
                     entry.legacyInputType != null && entry.legacyInputType != entry.type &&

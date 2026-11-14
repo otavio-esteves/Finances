@@ -13,6 +13,45 @@ class PdfStatementParserTest {
     private val pdfBytes = "%PDF-1.4".toByteArray()
 
     @Test
+    fun preservesDescriptionAfterTheAmountForDigitalAndOcrText() = runBlocking {
+        for (usedOcr in listOf(false, true)) {
+            val extractor = object : PdfTextExtractor {
+                override fun extract(content: ByteArray) = "Fatura\n01/11/2026 PAGAMENTO 10,00\nLOJA A\n" +
+                    "unidade centro\n02/11/2026 MERCADO 20,00\nSaldo final 30,00\nReferência: novembro/2026"
+                override fun extractWithMetadata(content: ByteArray, password: String?, checkCancelled: () -> Unit) =
+                    PdfTextExtraction(extract(content), usedOcr)
+            }
+            val entries = PdfStatementParser(extractor).parse("fatura.pdf", pdfBytes)
+            assertEquals(listOf("PAGAMENTO LOJA A unidade centro", "MERCADO"), entries.map { it.description })
+            assertEquals(listOf(1000L, 2000L), entries.map { it.amount.cents })
+            assertEquals("PAGAMENTO", entries.first().legacyPdfDescription)
+            assertEquals(listOf(usedOcr, usedOcr), entries.map { it.extractedByOcr })
+        }
+    }
+
+    @Test
+    fun continuationAfterAmountStillHonorsTheSixLineLimitAndRejectsExtraAmounts() {
+        val first = "Fatura\n01/11/2026 LOJA 10,00\n"
+        assertEquals("LOJA um dois tres quatro cinco", parser("")
+            .parseText(first + "um\ndois\ntres\nquatro\ncinco").single().description)
+        for (tail in listOf("um\ndois\ntres\nquatro\ncinco\nseis", "OUTRA COMPRA 20,00")) {
+            assertThrows(IllegalArgumentException::class.java) { parser("").parseText(first + tail) }
+        }
+    }
+
+    @Test
+    fun sectionHeadingsWithPunctuationOrContinuationAreNeverMerchantDescriptions() {
+        for (heading in listOf("Transações Nacionais:", "Transações Internacionais.", "Transações Nacionais (continuação):",
+            "Transações Internacionais - continuação", "Detalhe dos movimentos")) {
+            val entries = parser("").parseText("Fatura\n01/11/2026 LOJA 10,00\n$heading\n02/11/2026 MERCADO 20,00")
+            assertEquals(heading, listOf("LOJA", "MERCADO"), entries.map { it.description })
+            val table = parser("").parseText("Fatura\nData\tDescrição\tValor\n01/11/2026\tLOJA\t10,00\n" +
+                "\t$heading\t\n02/11/2026\tMERCADO\t20,00")
+            assertEquals(heading, listOf("LOJA", "MERCADO"), table.map { it.description })
+        }
+    }
+
+    @Test
     fun cardBillPositiveSignsRemainExpensesAndAgreeWithDebitMarkers(): Unit = runBlocking {
         for (amount in listOf("100,00", "+100,00", "100,00+", "R$ +100,00", "+100,00 D")) {
             val entry = parser("01/11/2026 Mercado $amount")

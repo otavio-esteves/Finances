@@ -10,6 +10,34 @@ class PdfTableParserTest {
     private val parser = PdfStatementParser { "" }
 
     @Test
+    fun preservesDescriptionOnlyCellsAfterACompleteRowAndRefusesAmbiguousColumns() {
+        val header = "Fatura\nData\tDescrição\tValor\n"
+        val entries = parser.parseText(header + "01/11/2026\tPAGAMENTO\t10,00\n\tLOJA A\t\n" +
+            "02/11/2026\tMERCADO\t20,00\n\tTotal\t30,00")
+        assertEquals(listOf("PAGAMENTO LOJA A", "MERCADO"), entries.map { it.description })
+        assertEquals("PAGAMENTO", entries.first().legacyPdfDescription)
+        for (line in listOf("\tLOJA A\t20,00", "\t\t20,00", "\tLOJA A\t10,00")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                parser.parseText(header + "01/11/2026\tPAGAMENTO\t10,00\n$line")
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parser.parseText(header + "\tLOJA SEM DATA\t\n01/11/2026\tPAGAMENTO\t10,00")
+        }
+    }
+
+    @Test
+    fun repeatedPageHeadersDoNotBreakDescriptionContinuations() {
+        for (header in listOf("Data Descrição Valor", "Data Transações Valor", "Data\tDescrição\tValor")) {
+            val tabular = header.contains('\t')
+            val first = if (tabular) "01/11/2026\tLOJA\t10,00" else "01/11/2026 LOJA 10,00"
+            val tail = if (tabular) "\tUNIDADE CENTRO\t" else "UNIDADE CENTRO"
+            val entries = parser.parseText("Fatura\n$header\n$first\nPágina 1 de 2\n$header\n$tail\nTotal da fatura 10,00")
+            assertEquals("LOJA UNIDADE CENTRO", entries.single().description)
+        }
+    }
+
+    @Test
     fun datedMerchantTotalIsPreservedWhileBalancesAndUndatedSummariesAreSkipped() {
         val entries = parser.parseText("Fatura\nData\tDescrição\tValor\n" +
             "01/11/2026\tTotal\t50,00\n02/11/2026\tSaldo\t20,00\n" +

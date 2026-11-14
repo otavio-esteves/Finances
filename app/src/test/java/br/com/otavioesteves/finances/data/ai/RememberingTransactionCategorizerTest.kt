@@ -19,6 +19,29 @@ class RememberingTransactionCategorizerTest {
         override suspend fun clear() {}
     }
 
+    @Test fun multilineOfxDoesNotReuseLossyFirstLineMemories() = runTest {
+        val raw = entry("A & B\nPedido 1").copy(legacyOfxDescription = "A &amp; B", legacyDecodedOfxDescription = "A & B")
+        val inferred = mutableListOf<RawStatementEntry>()
+        val delegate = object : TransactionCategorizer {
+            override suspend fun categorize(entries: List<RawStatementEntry>, categories: List<Category>, onProgress: (Int, Int) -> Unit): Result<List<CategorySuggestion>> {
+                inferred += entries
+                return Result.success(entries.map { CategorySuggestion(it, food, 0.5f, SuggestionSource.RULE) })
+            }
+        }
+        val encoded = CategoryMemory(categoryMemoryKey("A &amp; B"), raw.type, food.id)
+        val decoded = CategoryMemory(categoryMemoryKey("A & B"), raw.type, transfer.id)
+        val full = CategoryMemory(categoryMemoryKey(raw.description), raw.type, transfer.id)
+        val other = raw.copy(description = "A & B\nPedido 2")
+        val categorizer = RememberingTransactionCategorizer(delegate, memory(encoded, decoded, full))
+        val results = categorizer.categorize(listOf(raw, other), listOf(food, transfer)).getOrThrow()
+        assertEquals(transfer, results[0].suggestedCategory)
+        assertEquals(SuggestionSource.MEMORY, results[0].source)
+        assertEquals(raw, results[0].originalEntry)
+        assertEquals(food, results[1].suggestedCategory)
+        assertEquals(SuggestionSource.RULE, results[1].source)
+        assertEquals(listOf(other), inferred)
+    }
+
     @Test fun recognizesEncodedOfxMemoriesWhileGivingCurrentDecodedCorrectionsPriority() = runTest {
         val delegate = object : TransactionCategorizer {
             override suspend fun categorize(entries: List<RawStatementEntry>, categories: List<Category>, onProgress: (Int, Int) -> Unit): Result<List<CategorySuggestion>> = error("Memory should resolve the description")

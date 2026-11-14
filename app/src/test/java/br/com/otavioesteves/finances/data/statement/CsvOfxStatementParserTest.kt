@@ -16,6 +16,44 @@ class CsvOfxStatementParserTest {
 
     private val parser = CsvOfxStatementParser()
 
+    @Test fun ofxPreservesMultilineMemoAndNameInXmlAndSgml() = runBlocking {
+        for (newline in listOf("\n", "\r\n", "\r")) {
+            for (closeTags in listOf(true, false)) {
+                for (field in listOf("MEMO", "NAME")) {
+                    val text = "Loja &amp; Filhos${newline}Parcela 01/02"
+                    val ofx = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101</DTPOSTED>" +
+                        "<TRNAMT>-10.00</TRNAMT><$field>$text" +
+                        (if (closeTags) "</$field>" else "") + "</STMTTRN></BANKTRANLIST></OFX>"
+                    val entry = parser.parse("a.ofx", ofx.toByteArray()).single()
+                    assertEquals("Loja & Filhos${newline}Parcela 01/02", entry.description)
+                    assertEquals("Loja &amp; Filhos", entry.legacyOfxDescription)
+                    assertEquals("Loja & Filhos", entry.legacyDecodedOfxDescription)
+                }
+            }
+        }
+    }
+
+    @Test fun ofxKeepsPrettyPrintedTextAndTheHistoricalEmptyMemoFallback() = runBlocking {
+        val ofx = "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<NAME>Nome antigo<MEMO>\nCompra\nPedido 123\n</MEMO></BANKTRANLIST>"
+        val entry = parser.parse("a.ofx", ofx.toByteArray()).single()
+        assertEquals("Compra\nPedido 123", entry.description)
+        assertEquals("Nome antigo", entry.legacyOfxDescription)
+        assertEquals("Nome antigo", entry.legacyDecodedOfxDescription)
+        val formerlyInvalid = parser.parse("a.ofx", ofx.replace("Nome antigo", "&unknown;").toByteArray()).single()
+        assertEquals(entry.description, formerlyInvalid.description)
+        assertEquals("&unknown;", formerlyInvalid.legacyOfxDescription)
+        assertEquals(null, formerlyInvalid.legacyDecodedOfxDescription)
+    }
+
+    @Test fun ofxValidatesEntitiesInContinuationLinesAndDoesNotConsumeTheNextTransaction() = runBlocking<Unit> {
+        val first = "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>Loja\nPedido 1"
+        val second = "<STMTTRN><DTPOSTED>20261102<TRNAMT>-20.00<MEMO>Outra\nPedido 2</BANKTRANLIST>"
+        assertEquals(listOf("Loja\nPedido 1", "Outra\nPedido 2"), parser.parse("a.ofx", (first + second).toByteArray()).map { it.description })
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { parser.parse("a.ofx", (first + " &unknown;" + second).toByteArray()) }
+        }
+    }
+
     @Test
     fun ofxDecodesNamedAndNumericEntitiesExactlyOnceAndMatchesCsvText() = runBlocking {
         val memo = "Loja &amp; Filhos &lt;centro&gt; &quot;A&quot; &apos;B&apos; Caf&#233; &#x1F600; &amp;amp;"

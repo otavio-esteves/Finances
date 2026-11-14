@@ -18,6 +18,45 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class PdfStatementIntegrationTest {
     @Test
+    fun actualPdfPreservesContinuationBelowACompleteTransactionInTextAndTableLayouts() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        PDFBoxResourceLoader.init(context)
+        for (positioned in listOf(false, true)) {
+            val bytes = ByteArrayOutputStream().use { output ->
+                PDDocument().use { document ->
+                    val page = PDPage()
+                    document.addPage(page)
+                    PDPageContentStream(document, page).use { stream ->
+                        fun text(value: String, x: Float, y: Float) {
+                            stream.beginText()
+                            stream.setFont(PDType1Font.HELVETICA, 12f)
+                            stream.newLineAtOffset(x, y)
+                            stream.showText(value)
+                            stream.endText()
+                        }
+                        text("Fatura", 50f, 740f)
+                        if (positioned) {
+                            text("Data", 50f, 710f); text("Descricao", 170f, 710f); text("Valor", 450f, 710f)
+                            text("01/11/2026", 50f, 680f); text("PAGAMENTO", 170f, 680f); text("10,00", 450f, 680f)
+                            text("LOJA A", 170f, 660f)
+                            text("02/11/2026", 50f, 630f); text("MERCADO", 170f, 630f); text("20,00", 450f, 630f)
+                        } else {
+                            text("01/11/2026 PAGAMENTO 10,00", 50f, 680f)
+                            text("LOJA A", 50f, 660f)
+                            text("02/11/2026 MERCADO 20,00", 50f, 630f)
+                        }
+                    }
+                    document.save(output)
+                }
+                output.toByteArray()
+            }
+            val entries = PdfStatementParser(PdfBoxTextExtractor(context)).parse("fatura.pdf", bytes)
+            assertEquals(listOf("PAGAMENTO LOJA A", "MERCADO"), entries.map { it.description })
+            assertEquals(listOf(1000L, 2000L), entries.map { it.amount.cents })
+        }
+    }
+
+    @Test
     fun extractsTextFromPdfAndParsesTransaction() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         PDFBoxResourceLoader.init(context)
