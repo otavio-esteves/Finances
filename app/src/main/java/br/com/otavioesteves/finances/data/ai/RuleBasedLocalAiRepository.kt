@@ -16,6 +16,8 @@ import br.com.otavioesteves.finances.utils.MoneyFormatter
 import br.com.otavioesteves.finances.utils.formatMonthPeriod
 import java.text.Normalizer
 import java.util.Locale
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * Deterministic, keyword-based stand-in for an on-device LLM. Permanent
@@ -32,9 +34,12 @@ class RuleBasedLocalAiRepository(
         categories: List<Category>,
         onProgress: (done: Int, total: Int) -> Unit
     ): Result<List<CategorySuggestion>> {
+        currentCoroutineContext().ensureActive()
         val suggestions = entries.mapIndexed { index, entry ->
+            currentCoroutineContext().ensureActive()
             suggestCategory(entry, categories).also { onProgress(index + 1, entries.size) }
         }
+        currentCoroutineContext().ensureActive()
         return Result.success(suggestions)
     }
 
