@@ -38,6 +38,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.com.otavioesteves.finances.domain.ai.AiEngineState
 import br.com.otavioesteves.finances.domain.ai.UnsupportedReason
@@ -67,6 +69,7 @@ fun AiModelScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scrollState = rememberScrollState()
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -130,8 +133,8 @@ fun AiModelScreen(
                     displayName = engineState.model.displayName,
                     verified = engineState.model.verified,
                     isImporting = uiState.isImporting,
-                    onReplaceClick = { filePickerLauncher.launch("*/*") },
-                    onRemoveClick = viewModel::onRemoveModel
+                    isRemoving = uiState.isRemoving,
+                    onReplaceClick = { filePickerLauncher.launch("*/*") }
                 )
 
                 is AiEngineState.Failed -> FailedContent(
@@ -139,6 +142,15 @@ fun AiModelScreen(
                 )
 
                 is AiEngineState.Provisioning -> LoadingContent()
+            }
+            if (uiState.hasImportedModel) {
+                PrimaryActionButton(
+                    text = if (uiState.isRemoving) "Removendo modelo…" else "Remover modelo",
+                    onClick = viewModel::onRemoveModel,
+                    enabled = !uiState.isImporting && !uiState.isRemoving,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             }
         }
     }
@@ -207,8 +219,8 @@ private fun ReadyContent(
     displayName: String,
     verified: Boolean,
     isImporting: Boolean,
+    isRemoving: Boolean,
     onReplaceClick: () -> Unit,
-    onRemoveClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -239,14 +251,7 @@ private fun ReadyContent(
         PrimaryActionButton(
             text = if (isImporting) "Importando modelo..." else "Substituir modelo",
             onClick = onReplaceClick,
-            enabled = !isImporting
-        )
-        PrimaryActionButton(
-            text = "Remover modelo",
-            onClick = onRemoveClick,
-            enabled = !isImporting,
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            enabled = !isImporting && !isRemoving
         )
     }
 }

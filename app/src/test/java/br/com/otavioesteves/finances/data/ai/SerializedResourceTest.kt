@@ -10,6 +10,34 @@ import org.junit.Test
 class SerializedResourceTest {
     private class Resource { var closed = false }
 
+    @Test fun availabilityRefreshPreservesAnUnchangedRuntimeAndWaitsForInference() = runTest {
+        val owner = SerializedResource<String, Resource> { it.closed = true }
+        val entered = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val first = owner.use({ "model" }, { Resource() }) { it }
+        owner.invalidateWhen { false }
+        assertSame(first, owner.use({ "model" }, { error("Must reuse the loaded model") }) { it })
+        val inference = async {
+            owner.use({ "model" }, { error("Must reuse the loaded model") }) {
+                entered.complete(Unit)
+                finish.await()
+                assertFalse(it.closed)
+            }
+        }
+        entered.await()
+        var checked = false
+        val refresh = async { owner.invalidateWhen { checked = true; true } }
+        testScheduler.runCurrent()
+        assertFalse(checked)
+        assertFalse(first.closed)
+        finish.complete(Unit)
+        inference.await()
+        refresh.await()
+        assertTrue(checked)
+        assertTrue(first.closed)
+        assertNotSame(first, owner.use({ "model" }, { Resource() }) { it })
+    }
+
     @Test
     fun reusesRuntimeUntilModelChangesOrItIsReleased() = runTest {
         val owner = SerializedResource<String, Resource> { it.closed = true }

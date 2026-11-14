@@ -9,6 +9,7 @@ import br.com.otavioesteves.finances.domain.ai.LocalAiEngine
 import br.com.otavioesteves.finances.domain.ai.ModelImporter
 import br.com.otavioesteves.finances.domain.ai.ModelSource
 import br.com.otavioesteves.finances.domain.ai.DeviceCapabilityPolicy
+import br.com.otavioesteves.finances.domain.ai.UnsupportedReason
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.CancellationException
@@ -28,7 +29,7 @@ import java.io.InputStream
  */
 class ImportedModelLocalAiEngine(
     private val context: Context,
-    private val capabilityGate: AndroidDeviceCapabilityGate = AndroidDeviceCapabilityGate(context),
+    private val checkCapability: () -> UnsupportedReason? = AndroidDeviceCapabilityGate(context)::check,
     private val engineSession: LiteRtEngineSession
 ) : LocalAiEngine, ModelImporter {
 
@@ -36,11 +37,13 @@ class ImportedModelLocalAiEngine(
     private val modelFile = File(modelsDir, MODEL_FILE_NAME)
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val _state = MutableStateFlow(resolveInitialState())
+    private val _hasImportedModel = MutableStateFlow(modelFile.isFile)
+    override val hasImportedModel: StateFlow<Boolean> = _hasImportedModel
+    private val _state = MutableStateFlow(resolveCurrentState())
     override val state: StateFlow<AiEngineState> = _state
 
-    private fun resolveInitialState(): AiEngineState {
-        capabilityGate.check()?.let { return AiEngineState.Unsupported(it) }
+    private fun resolveCurrentState(): AiEngineState {
+        checkCapability()?.let { return AiEngineState.Unsupported(it) }
         val displayName = prefs.getString(KEY_DISPLAY_NAME, null)
         if (displayName == null || !isPlausibleBundle(modelFile)) return AiEngineState.NotProvisioned
         return AiEngineState.Ready(
@@ -54,11 +57,28 @@ class ImportedModelLocalAiEngine(
         )
     }
 
+    private fun refreshState() {
+        _hasImportedModel.value = modelFile.isFile
+        _state.value = resolveCurrentState()
+    }
+
+    override suspend fun refreshAvailability() = engineSession.refreshModelState {
+        val previousState = _state.value
+        refreshState()
+        _state.value != previousState
+    }
+
     override suspend fun importModel(displayName: String, openStream: () -> InputStream): Result<InstalledModel> {
-        if (_state.value is AiEngineState.Unsupported) {
-            return Result.failure(IllegalStateException("Aparelho não suporta o motor de IA local"))
-        }
         return engineSession.invalidate {
+            // Capacity can recover without restarting the app, or change while the picker is open.
+            refreshState()
+            val unsupported = _state.value as? AiEngineState.Unsupported
+            if (unsupported != null) {
+                val message = if (unsupported.reason == UnsupportedReason.NO_STORAGE) {
+                    "Espaço insuficiente para o modelo de IA local. Libere espaço e tente novamente."
+                } else "Aparelho não suporta o motor de IA local."
+                return@invalidate Result.failure(IllegalStateException(message))
+            }
             val tempFile = File(modelsDir, "candidate.litertlm")
             val previousState = _state.value
             try {
@@ -109,6 +129,7 @@ class ImportedModelLocalAiEngine(
                     path = modelFile.absolutePath
                 )
                 _state.value = AiEngineState.Ready(installedModel)
+                _hasImportedModel.value = true
                 Result.success(installedModel)
             } catch (e: CancellationException) {
                 tempFile.delete()
@@ -128,7 +149,7 @@ class ImportedModelLocalAiEngine(
             return@invalidate Result.failure(IllegalStateException("Não foi possível remover o modelo instalado"))
         }
         prefs.edit().clear().apply()
-        _state.value = capabilityGate.check()?.let { AiEngineState.Unsupported(it) } ?: AiEngineState.NotProvisioned
+        refreshState()
         Result.success(Unit)
     }
 

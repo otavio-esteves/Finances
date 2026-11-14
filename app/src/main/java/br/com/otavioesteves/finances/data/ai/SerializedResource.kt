@@ -24,6 +24,11 @@ internal class SerializedResource<K, T>(private val close: (T) -> Unit) {
         block()
     }
 
+    /** Evaluate a metadata/capacity change under the same lock without reloading an unchanged resource. */
+    suspend fun invalidateWhen(hasChanged: () -> Boolean) = mutex.withLock {
+        if (hasChanged()) closeCurrent()
+    }
+
     private fun closeCurrent() {
         val previous = resource
         resource = null

@@ -38,5 +38,9 @@ class LiteRtEngineSession {
         resource.invalidate(block)
     }
 
+    suspend fun refreshModelState(hasChanged: () -> Boolean) = withContext(Dispatchers.IO) {
+        resource.invalidateWhen(hasChanged)
+    }
+
     suspend fun release() { invalidate { } }
 }
