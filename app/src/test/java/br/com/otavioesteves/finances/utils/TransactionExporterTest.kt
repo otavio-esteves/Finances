@@ -99,4 +99,28 @@ class TransactionExporterTest {
         assertTrue(csv.contains("\"'+Categoria\""))
         assertTrue(csv.contains("\"'-1+1\""))
     }
+
+    @Test
+    fun `export escapes controls and full width formula prefixes in every text column`() {
+        for (prefix in listOf("\t", "\r", "\n", "\r\n", "\u0000", " \t", "  ", "＝", "＋", "－", "＠")) {
+            val text = "${prefix}=1+1"
+            val csv = exporter.export(listOf(transactions.first().copy(description = text, notes = text)),
+                mapOf(1L to Category(1, text, CategoryType.EXPENSE)), ExportFormat.CSV)
+            assertEquals("ID,Data,Descrição,Valor (Centavos),Tipo,Categoria,Observações,Formato Finances\n" +
+                "1,2026-04-27,\"'$text\",2500,EXPENSE,\"'$text\",\"'$text\",2", csv)
+        }
+    }
+
+    @Test
+    fun `native CSV round trip preserves controls formulas and existing apostrophes`() = kotlinx.coroutines.runBlocking {
+        val parser = br.com.otavioesteves.finances.data.statement.CsvOfxStatementParser()
+        for (description in listOf("\t=1+1", "\r=1+1", "\n=1+1", "\u0000=1+1", " \t=1+1", "＝1+1", "'=1+1", "Normal")) {
+            val transaction = transactions.first().copy(description = description)
+            val csv = exporter.export(listOf(transaction), categories, ExportFormat.CSV)
+            val entry = parser.parse("export.csv", csv.toByteArray()).single()
+            assertEquals(description, entry.description)
+            assertEquals(transaction.amount, entry.amount)
+            assertEquals(transaction.type, entry.type)
+        }
+    }
 }

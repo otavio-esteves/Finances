@@ -60,11 +60,12 @@ class TransactionExporter {
     }
 
     private fun String.toCsvField(): String {
-        val safeValue = if (firstOrNull() in FORMULA_PREFIXES || startsWith("'")) "'$this" else this
+        val firstVisible = firstOrNull { !it.isWhitespace() && it.code > 0x20 }
+        val safeValue = if (firstOrNull() in FORMULA_PREFIXES || firstVisible in FORMULA_PREFIXES || startsWith("'")) "'$this" else this
         return "\"${safeValue.replace("\"", "\"\"")}\""
     }
 
     private companion object {
-        val FORMULA_PREFIXES = setOf('=', '+', '-', '@')
+        val FORMULA_PREFIXES = setOf('=', '+', '-', '@', '\t', '\r', '\n', '\u0000', '＝', '＋', '－', '＠')
     }
 }
