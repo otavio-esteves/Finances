@@ -9,6 +9,8 @@ import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionOrigin
 import br.com.otavioesteves.finances.domain.model.TransactionType
+import br.com.otavioesteves.finances.domain.model.TransactionEditSnapshot
+import br.com.otavioesteves.finances.domain.model.StaleTransactionEditException
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.AddTransactionUseCase
@@ -57,6 +59,18 @@ class AddTransactionViewModelTest {
         var saveGate: CompletableDeferred<Unit>? = null
         var insertCalls = 0
         var updateCalls = 0
+        override var dataRevision = 0L
+
+        override suspend fun getTransactionForEditing(id: Long): TransactionEditSnapshot? =
+            transactions.find { it.id == id }?.let { TransactionEditSnapshot(it, dataRevision) }
+        override suspend fun updateTransactionIfCurrent(transaction: Transaction, dataRevision: Long) {
+            if (this.dataRevision != dataRevision) throw StaleTransactionEditException()
+            updateTransaction(transaction)
+        }
+        override suspend fun removeTransactionIfCurrent(transactionId: Long, dataRevision: Long) {
+            if (this.dataRevision != dataRevision) throw StaleTransactionEditException()
+            removeTransaction(transactionId)
+        }
 
         override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(transactions.find { it.id == id })
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = flowOf(transactions.filter {
@@ -158,6 +172,50 @@ class AddTransactionViewModelTest {
         assertEquals(TransactionOrigin.IMPORTED, repository.transactions.single().origin)
         assertEquals("food", repository.transactions.single().iconKey)
         assertTrue(viewModel.uiState.value.isSaveSuccessful)
+    }
+
+    @Test
+    fun `old editor cannot overwrite a restored transaction with the same ID`() = runTest {
+        val original = createFakeTransaction(7)
+        val repository = FakeTransactionsRepository(listOf(original))
+        val viewModel = createViewModel(repository, transactionId = 7)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val restored = original.copy(description = "Restaurada", amount = Money(99999))
+        repository.transactions = listOf(restored)
+        repository.dataRevision++
+        viewModel.onNotesChange("Anotação antiga")
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(restored), repository.transactions)
+        assertEquals(StaleTransactionEditException().message, viewModel.uiState.value.error)
+        assertFalse(viewModel.uiState.value.isSaveSuccessful)
+        assertFalse(viewModel.uiState.value.isSaving)
+
+        val reopened = createViewModel(repository, transactionId = 7)
+        testDispatcher.scheduler.advanceUntilIdle()
+        reopened.onNotesChange("Anotação atual")
+        reopened.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(restored.copy(notes = "Anotação atual"), repository.transactions.single())
+        assertTrue(reopened.uiState.value.isSaveSuccessful)
+    }
+
+    @Test
+    fun `old editor cannot delete a restored transaction with the same ID`() = runTest {
+        val repository = FakeTransactionsRepository(listOf(createFakeTransaction(7)))
+        val viewModel = createViewModel(repository, transactionId = 7)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val restored = createFakeTransaction(7).copy(description = "Restaurada")
+        repository.transactions = listOf(restored)
+        repository.dataRevision++
+        viewModel.onDeleteRequest()
+        viewModel.onDeleteConfirm()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(restored), repository.transactions)
+        assertEquals(null, repository.deletedId)
+        assertEquals(StaleTransactionEditException().message, viewModel.uiState.value.error)
+        assertFalse(viewModel.uiState.value.isSaveSuccessful)
+        assertFalse(viewModel.uiState.value.isLoading)
     }
 
     @Test

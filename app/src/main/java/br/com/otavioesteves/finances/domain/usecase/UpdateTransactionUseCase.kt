@@ -9,4 +9,7 @@ class UpdateTransactionUseCase(
     suspend operator fun invoke(transaction: Transaction) {
         repository.updateTransaction(transaction)
     }
+    suspend operator fun invoke(transaction: Transaction, dataRevision: Long) {
+        repository.updateTransactionIfCurrent(transaction, dataRevision)
+    }
 }

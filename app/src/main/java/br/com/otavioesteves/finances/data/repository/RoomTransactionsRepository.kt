@@ -7,6 +7,8 @@ import br.com.otavioesteves.finances.domain.model.AnnualTransactionSummary
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
+import br.com.otavioesteves.finances.domain.model.TransactionEditSnapshot
+import br.com.otavioesteves.finances.domain.model.StaleTransactionEditException
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.first
@@ -19,11 +21,21 @@ class RoomTransactionsRepository(
     private val transactionDao: TransactionDao,
     private val database: br.com.otavioesteves.finances.data.local.AppDatabase? = null
 ) : TransactionsRepository {
+    override val dataRevision: Long get() = database?.dataRevision ?: 0L
 
     override fun hasTransactions(): Flow<Boolean> = transactionDao.hasTransactions().distinctUntilChanged()
 
     override fun getTransaction(id: Long): Flow<Transaction?> =
         transactionDao.getTransactionById(id).distinctUntilChanged().map { it?.toDomain() }
+
+    override suspend fun getTransactionForEditing(id: Long): TransactionEditSnapshot? {
+        val db = database ?: return transactionDao.getTransactionById(id).first()?.toDomain()
+            ?.let { TransactionEditSnapshot(it, 0) }
+        return db.withTransaction {
+            transactionDao.getTransactionById(id).first()?.toDomain()
+                ?.let { TransactionEditSnapshot(it, db.dataRevision) }
+        }
+    }
 
     override fun getTransactionsForYear(year: Int): Flow<List<Transaction>> {
         val startDate = LocalDate.of(year, 1, 1)
@@ -87,6 +99,22 @@ class RoomTransactionsRepository(
 
     override suspend fun removeTransaction(transactionId: Long) {
         transactionDao.deleteTransactionById(transactionId)
+    }
+
+    override suspend fun removeTransactionIfCurrent(transactionId: Long, dataRevision: Long) {
+        val db = requireNotNull(database) { "A exclusão protegida exige o banco de dados." }
+        db.withTransaction {
+            if (db.dataRevision != dataRevision) throw StaleTransactionEditException()
+            transactionDao.deleteTransactionById(transactionId)
+        }
+    }
+
+    override suspend fun updateTransactionIfCurrent(transaction: Transaction, dataRevision: Long) {
+        val db = requireNotNull(database) { "A edição protegida exige o banco de dados." }
+        db.withTransaction {
+            if (db.dataRevision != dataRevision) throw StaleTransactionEditException()
+            updateTransaction(transaction)
+        }
     }
 
     override suspend fun updateTransaction(transaction: Transaction) {

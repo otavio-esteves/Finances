@@ -8,4 +8,7 @@ class DeleteTransactionUseCase(
     suspend operator fun invoke(transactionId: Long) {
         repository.removeTransaction(transactionId)
     }
+    suspend operator fun invoke(transactionId: Long, dataRevision: Long) {
+        repository.removeTransactionIfCurrent(transactionId, dataRevision)
+    }
 }

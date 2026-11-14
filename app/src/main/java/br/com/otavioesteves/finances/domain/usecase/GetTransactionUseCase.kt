@@ -8,4 +8,5 @@ class GetTransactionUseCase(
     private val repository: TransactionsRepository
 ) {
     operator fun invoke(id: Long): Flow<Transaction?> = repository.getTransaction(id)
+    suspend fun forEditing(id: Long) = repository.getTransactionForEditing(id)
 }

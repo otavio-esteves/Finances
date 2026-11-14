@@ -37,7 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     val dataRevision: Long get() = datasetRevision.get()
 
-    /** Called inside the restoring transaction so guarded chat writes serialize with the replacement. */
+    /** Called inside the restoring transaction so guarded writes serialize with the replacement. */
     internal fun markDataRestored() { datasetRevision.incrementAndGet() }
 
     abstract fun categoryDao(): CategoryDao

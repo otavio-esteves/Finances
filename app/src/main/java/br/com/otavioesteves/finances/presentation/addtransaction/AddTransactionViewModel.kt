@@ -16,7 +16,6 @@ import br.com.otavioesteves.finances.utils.MoneyFormatter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
@@ -38,6 +37,7 @@ class AddTransactionViewModel(
     private val _uiState = MutableStateFlow(AddTransactionUiState(date = dateProvider.getCurrentDate()))
     val uiState: StateFlow<AddTransactionUiState> = _uiState.asStateFlow()
     private var editingTransaction: Transaction? = null
+    private var editingDataRevision: Long? = null
 
     init {
         viewModelScope.launch {
@@ -69,10 +69,12 @@ class AddTransactionViewModel(
     private suspend fun loadTransaction(id: Long) {
         _uiState.update { it.copy(isLoading = true) }
         
-        val transaction = getTransactionUseCase(id).first()
+        val snapshot = getTransactionUseCase.forEditing(id)
+        val transaction = snapshot?.transaction
         
         if (transaction != null) {
             editingTransaction = transaction
+            editingDataRevision = snapshot.dataRevision
             _uiState.update { state ->
                 state.copy(
                     description = transaction.description,
@@ -181,13 +183,16 @@ class AddTransactionViewModel(
     fun onDeleteConfirm() {
         if (_uiState.value.isSaving || _uiState.value.isLoading || _uiState.value.isSaveSuccessful) return
         val id = transactionId ?: return
+        val dataRevision = editingDataRevision ?: return
         _uiState.update { it.copy(showDeleteConfirmation = false, isLoading = true) }
         viewModelScope.launch {
             try {
-                deleteTransactionUseCase(id)
+                deleteTransactionUseCase(id, dataRevision)
                 _uiState.update { it.copy(isSaveSuccessful = true) }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: br.com.otavioesteves.finances.domain.model.StaleTransactionEditException) {
+                _uiState.update { it.copy(isLoading = false, error = e.message) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "Erro ao excluir transação") }
             }
@@ -251,7 +256,7 @@ class AddTransactionViewModel(
                 )
 
                 if (isEditMode) {
-                    updateTransactionUseCase(transaction)
+                    updateTransactionUseCase(transaction, requireNotNull(editingDataRevision))
                 } else {
                     addTransactionUseCase(transaction)
                 }
