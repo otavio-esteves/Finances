@@ -13,6 +13,28 @@ class PdfStatementParserTest {
     private val pdfBytes = "%PDF-1.4".toByteArray()
 
     @Test
+    fun merchantContinuationsStartingWithMetadataWordsArePreserved() {
+        for (name in listOf("Total Express", "Limite Modas", "Saldo Fashion", "Fatura Design", "Juros Store", "Valor Total", "Total", "Saldo")) {
+            for (text in listOf(
+                "Fatura\n01/11/2026 Loja 100,00\n$name",
+                "Fatura\n01/11/2026 Loja\n$name\n100,00",
+                "Fatura\nData\tDescrição\tValor\n01/11/2026\tLoja\t100,00\n\t$name\t"
+            )) assertEquals(text, "Loja $name", parser("").parseText(text).single().description)
+        }
+    }
+
+    @Test
+    fun realSummariesEndContinuationsButUnknownMonetaryRowsAreRejected() {
+        val purchase = "Fatura\n01/11/2026 Loja 100,00\nTotal Express\n"
+        for (summary in listOf("Total da fatura 100,00", "Saldo final R$ 100,00", "Limite de crédito total: 1.000,00",
+            "Referência: novembro/2026")) {
+            val entry = parser("").parseText(purchase + summary + "\nRodapé do documento").single()
+            assertEquals(summary, "Loja Total Express", entry.description)
+        }
+        assertThrows(IllegalArgumentException::class.java) { parser("").parseText(purchase + "Total Express 20,00") }
+    }
+
+    @Test
     fun preservesDescriptionAfterTheAmountForDigitalAndOcrText() = runBlocking {
         for (usedOcr in listOf(false, true)) {
             val extractor = object : PdfTextExtractor {

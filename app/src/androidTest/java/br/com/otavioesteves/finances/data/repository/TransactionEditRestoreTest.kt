@@ -55,6 +55,38 @@ class TransactionEditRestoreTest {
     }
 
     @Test
+    fun deleteConfirmationSnapshotRejectsAReplacementWithTheSameId() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java
+        ).build()
+        try {
+            seed(database)
+            val repository = RoomTransactionsRepository(database.transactionDao(), database)
+            val deleting = br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase(repository)
+            val original = requireNotNull(repository.getTransaction(1).first())
+            val confirmation = deleting.forConfirmation(original)
+            RoomBackupRepository(database).restoreBackup(backup())
+            val restored = requireNotNull(repository.getTransaction(1).first())
+
+            try {
+                deleting(confirmation.transaction.id, confirmation.dataRevision)
+                fail("A confirmation from before restore must not delete the replacement")
+            } catch (_: StaleTransactionEditException) { }
+            try {
+                deleting.forConfirmation(original)
+                fail("A stale list row must not open a confirmation for the replacement")
+            } catch (_: StaleTransactionEditException) { }
+            assertEquals(restored, repository.getTransaction(1).first())
+            assertEquals(99999L, database.transactionDao().storedMagnitudeTotal())
+
+            val fresh = deleting.forConfirmation(restored)
+            deleting(fresh.transaction.id, fresh.dataRevision)
+            assertNull(repository.getTransaction(1).first())
+            assertEquals(0L, database.transactionDao().storedMagnitudeTotal())
+        } finally { database.close() }
+    }
+
+    @Test
     fun queuedEditAndNewSnapshotSerializeWithTheRestoringTransaction() = runBlocking {
         withTimeout(15_000) {
             val database = Room.inMemoryDatabaseBuilder(

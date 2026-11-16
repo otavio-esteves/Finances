@@ -67,7 +67,7 @@ class FinancialDataIntegrityTest {
             assertBudget(700)
             val backups = RoomBackupRepository(db)
             val backup = backups.createBackup()
-            RoomStatementImportRepository(db).undoImport(db.statementImportDao().getAllImportsForBackup().single().id)
+            RoomStatementImportRepository(db).let { it.undoImport(it.getImports().first().single()) }
             assertBudget(300)
             backups.restoreBackup(backup)
             assertBudget(700)
@@ -178,7 +178,7 @@ class FinancialDataIntegrityTest {
             RoomTransactionsRepository(db.transactionDao(), db).addTransaction(entry(Long.MAX_VALUE - 10))
             val imports = RoomStatementImportRepository(db)
             val batch = ImportedStatement(0, "a.csv", java.time.LocalDateTime.of(2026, 11, 1, 9, 0), 2)
-            val result = runCatching { imports.confirmReviewedImport(batch, listOf(entry(6), entry(5)), "overflow", emptyList(),
+            val result = runCatching { imports.confirmReviewedImport(batch.copy(dataRevision = imports.getDataRevision()), listOf(entry(6), entry(5)), "overflow", emptyList(),
                 listOf(CategoryMemory("compra", TransactionType.EXPENSE, expense.id))) }
             assertTrue(result.exceptionOrNull() is IllegalArgumentException)
             assertTrue(imports.getImports().first().isEmpty())

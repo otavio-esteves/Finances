@@ -85,14 +85,11 @@ internal class PdfLayoutReconstructor {
                 // Non-transaction headings/footers keep their original text.
                 if (!PdfDateResolver.DATE_PREFIX.containsMatchIn(normalized) && ordered.first().left / width < columns.first().left - 0.03f) return@joinToString text
                 val cells = Array(columns.size) { mutableListOf<String>() }
+                val monetary = ordered.filter { MONEY.matches(normalizeAmountToken(it.text)) }
                 ordered.forEach { word ->
                     val x = word.left / width
-                    val index = if (MONEY.matches(word.text)) {
-                        columns.indices.filter { columns[it].name in MONEY_COLUMNS }
-                            .minByOrNull { abs(word.right / width - columns[it].right) } ?: 0
-                    } else {
-                        columns.indices.lastOrNull { x >= columns[it].left - 0.02f } ?: 0
-                    }
+                    val index = monetaryColumn(word, monetary, columns, width)
+                        ?: columns.indices.lastOrNull { x >= columns[it].left - 0.02f } ?: 0
                     cells[index] += word.text
                 }
                 cells.joinToString("\t") { it.joinToString(" ") }
@@ -172,16 +169,10 @@ internal class PdfLayoutReconstructor {
         output += header.joinToString("\t") { it.name }
         for (block in blocks) {
             val cells = Array(header.size) { mutableListOf<String>() }
-            val monetary = block.filter { MONEY.matches(it.text) }
+            val monetary = block.filter { MONEY.matches(normalizeAmountToken(it.text)) }
             block.forEach { word ->
-                if (word.text == "R$") return@forEach
-                val numeric = if (MONEY.matches(word.text)) word else if (word.text in listOf("C", "D", "+", "-"))
-                    monetary.filter { abs(it.centerY - word.centerY) < word.height &&
-                        minOf(abs(it.right - word.left), abs(word.right - it.left)) < word.height * 2 }
-                        .minByOrNull { abs(it.right - word.left) } else null
-                val index = if (numeric != null) header.indices.filter { header[it].name in MONEY_COLUMNS }
-                    .minBy { abs(numeric.right / width - header[it].right) }
-                else header.indices.lastOrNull { word.left / width >= header[it].left - 0.015f } ?: 0
+                val index = monetaryColumn(word, monetary, header, width)
+                    ?: header.indices.lastOrNull { word.left / width >= header[it].left - 0.015f } ?: 0
                 cells[index] += word.text
             }
             val dated = cells[0].any { FULL_DATE.matches(it) }
@@ -201,6 +192,33 @@ internal class PdfLayoutReconstructor {
         return output.joinToString("\n")
     }
 
+    /** A separate sign follows its adjacent amount, even when the header starts farther right. */
+    private fun monetaryColumn(word: PdfWord, monetary: List<PdfWord>, header: List<Column>, width: Float): Int? {
+        val token = normalizeAmountToken(word.text)
+        val numeric = if (MONEY.matches(token)) word else {
+            if (token !in AMOUNT_MARKERS && !CURRENCY_MARKER.matches(token)) return null
+            val geometricColumn = header.lastOrNull { word.left / width >= it.left - 0.02f }
+            if (geometricColumn?.name == "tipo") return null
+            fun distance(amount: PdfWord) = maxOf(amount.left - word.right, word.left - amount.right, 0f)
+            val adjacent = monetary.filter {
+                abs(it.centerY - word.centerY) < maxOf(it.height, word.height) &&
+                    distance(it) <= maxOf(it.height, word.height) * 2 &&
+                    // C/D before a value can be the end of a merchant's name. In a
+                    // dedicated type column they are kept above; otherwise they are suffixes.
+                    (token !in SUFFIX_MARKERS || word.left >= it.right - 0.5f) &&
+                    (token != "(" || word.right <= it.left + 0.5f)
+            }.sortedBy(::distance)
+            if (adjacent.size > 1) require(distance(adjacent[1]) - distance(adjacent[0]) > 0.5f) {
+                "Sinal monetário entre valores ambíguos no PDF. Nenhum lançamento foi importado."
+            }
+            adjacent.firstOrNull() ?: return null
+        }
+        return header.indices.filter { header[it].name in MONEY_COLUMNS }
+            .minByOrNull { abs(numeric.right / width - header[it].right) }
+    }
+
+    private fun normalizeAmountToken(text: String) = normalizePdfText(text).replace('\u2212', '-').replace('\u2013', '-')
+
     companion object {
         private val DESCRIPTION = Regex("\\b(?:descricao|historico|estabelecimento|transacoes|lancamentos?)\\b")
         private val DATE_HEADER = Regex("^(?:data|dt\\.?|dia)\\s+")
@@ -208,6 +226,9 @@ internal class PdfLayoutReconstructor {
         private val VALUE = Regex("\\b(?:valor|debito|credito)\\b|r\\$")
         private val MONEY = Regex("(?:[+-]?R\\$\\s*)?[+(\\-]?\\d[\\d.]*,\\d{2}[)+\\-]?(?:[CD]|CR|DR)?", RegexOption.IGNORE_CASE)
         private val MONEY_COLUMNS = setOf("valor", "debito", "credito", "saldo", "valor estrangeiro")
+        private val AMOUNT_MARKERS = setOf("+", "-", "(", ")", "c", "d", "cr", "dr", "credito", "debito", "r$")
+        private val SUFFIX_MARKERS = setOf(")", "c", "d", "cr", "dr", "credito", "debito")
+        private val CURRENCY_MARKER = Regex("(?:[+\\-(]?r\\$|r\\$[+\\-(]?)")
         private val SHORT_DATE = Regex("\\d{2}[/.]\\d{2}")
         private val FULL_DATE = Regex("\\d{1,2}[/-]\\d{1,2}[/-]\\d{4}")
         private val PAGE_NUMBER = Regex("(?:pagina\\s+)?\\d+\\s*(?:/|de)\\s*\\d+")

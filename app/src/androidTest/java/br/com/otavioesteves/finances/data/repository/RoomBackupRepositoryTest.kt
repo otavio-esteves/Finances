@@ -19,6 +19,7 @@ import br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase
 import br.com.otavioesteves.finances.utils.readBackupDocument
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
@@ -29,6 +30,46 @@ import java.time.LocalDateTime
 
 @RunWith(AndroidJUnit4::class)
 class RoomBackupRepositoryTest {
+    @Test
+    fun invalidImportAndChatMetadataCannotReplaceDataThroughJsonRestore() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java
+        ).build()
+        try {
+            database.categoryDao().insertCategories(listOf(
+                CategoryEntity(1, "Outros", CategoryType.EXPENSE), CategoryEntity(2, "Salário", CategoryType.INCOME),
+                CategoryEntity(3, "Transferência", CategoryType.TRANSFER)
+            ))
+            database.transactionDao().insertTransaction(TransactionEntity(1, "Original", 5000, 1,
+                LocalDate.of(2026, 11, 1), TransactionType.EXPENSE, null))
+            database.statementImportDao().insertImport(StatementImportEntity(1, "original.csv",
+                LocalDateTime.of(2026, 11, 1, 9, 0), 1))
+            database.chatMessageDao().insertMessages(listOf(ChatMessageEntity(1, ChatRole.USER, "Mensagem original",
+                LocalDateTime.of(2026, 11, 1, 9, 0))))
+            val repository = RoomBackupRepository(database)
+            val original = repository.createBackup()
+            val revision = database.dataRevision
+            val candidates = buildList {
+                for (blank in listOf("", " \t\n")) {
+                    add(original.copy(statementImports = original.statementImports.map { it.copy(fileName = blank) }))
+                    add(original.copy(chatMessages = original.chatMessages.map { it.copy(content = blank) }))
+                }
+                add(original.copy(statementImports = original.statementImports.map { it.copy(importedAt = "inválida") }))
+                add(original.copy(chatMessages = original.chatMessages.map { it.copy(createdAt = "inválida") }))
+            }
+            for (candidate in candidates) {
+                val json = kotlinx.serialization.json.Json.encodeToString(BackupModel.serializer(), candidate)
+                assertTrue(runCatching { RestoreBackupUseCase(repository)(json.byteInputStream()) }.isFailure)
+                assertEquals(original, repository.createBackup())
+                assertEquals(revision, database.dataRevision)
+                assertEquals(5000L, database.transactionDao().storedMagnitudeTotal())
+                assertEquals("original.csv", RoomStatementImportRepository(database).getImports().first().single().fileName)
+            }
+            repository.restoreBackup(original)
+            assertEquals(original, repository.createBackup())
+        } finally { database.close() }
+    }
+
     @Test
     fun backupAboveFiftyMegabytesRoundTripsThroughRoomAndDocumentStreams() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

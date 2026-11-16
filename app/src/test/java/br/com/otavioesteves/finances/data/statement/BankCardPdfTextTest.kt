@@ -11,6 +11,32 @@ class BankCardPdfTextTest {
     private val parser = PdfStatementParser { "" }
     private fun parse(text: String, year: Int? = null) = parser.parseText(text, StatementKind.CARD_BILL, year)
 
+    @Test fun accountHeadingsKeepBankStatementDirectionsInPlainTextAndTables() {
+        for (bank in listOf("Bradesco\nLançamentos", "Caixa\nDemonstrativo", "Santander\nHistórico das despesas")) {
+            for (rows in listOf(
+                "Data Descrição Valor\n10/11/2026 Mercado -100,00\n11/11/2026 Salário +2000,00",
+                "data\tdescricao\tvalor\n10/11/2026\tMercado\t-100,00\n11/11/2026\tSalário\t+2000,00"
+            )) {
+                val entries = parser.parseText("$bank\n$rows", StatementKind.BANK_STATEMENT)
+                assertEquals(bank, listOf(TransactionType.EXPENSE, TransactionType.INCOME), entries.map { it.type })
+                assertEquals(listOf(10_000L, 200_000L), entries.map { it.amount.cents })
+            }
+        }
+    }
+
+    @Test fun cardNormalizationRequiresTheSelectedKindOrAnExplicitBillHeader() {
+        for (bank in listOf("Bradesco\nLançamentos", "Caixa\nDemonstrativo")) {
+            val row = "10/11/2026 Compra +100,00\n11/11/2026 Estorno -20,00"
+            for ((text, kind) in listOf(
+                "$bank\n$row" to StatementKind.CARD_BILL,
+                "Fatura\n$bank\n$row" to StatementKind.BANK_STATEMENT
+            )) {
+                val entries = parser.parseText(text, kind)
+                assertEquals(listOf(TransactionType.EXPENSE, TransactionType.INCOME), entries.map { it.type })
+            }
+        }
+    }
+
     @Test fun santanderFooterDoesNotEndPurchasesOnFollowingPages() {
         val entries = parse("Santander\nHistórico das despesas\n01/11/2026 Mercado 10,00\n" +
             "Central de atendimento 0800 123 4567\nResumo da fatura disponível no app 999,00\n\u000c\n" +

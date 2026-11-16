@@ -25,6 +25,7 @@ class AiModelViewModelTest {
         var warmUps = 0
         var removals = 0
         var imports = 0
+        var importedName: String? = null
         var removalGate: CompletableDeferred<Unit>? = null
         var removalFails = false
         override suspend fun refreshAvailability() { refreshes++; state.value = nextState }
@@ -32,7 +33,8 @@ class AiModelViewModelTest {
         override suspend fun release() {}
         override suspend fun importModel(displayName: String, openStream: () -> InputStream): Result<InstalledModel> {
             imports++
-            error("Unexpected import")
+            importedName = displayName
+            return Result.success(InstalledModel("sha", displayName, ModelSource.USER_IMPORTED, false, "/model"))
         }
         override suspend fun removeImportedModel(): Result<Unit> {
             removals++
@@ -42,6 +44,28 @@ class AiModelViewModelTest {
             state.value = AiEngineState.NotProvisioned
             return Result.success(Unit)
         }
+    }
+
+    @Test fun metadataFailureDoesNotImportAndAllowsRetryWithTheResolvedName() = runTest(dispatcher) {
+        val engine = Engine()
+        val vm = AiModelViewModel(engine, engine, dispatcher)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+        var opened = false
+        vm.onModelSelected({ throw SecurityException("Consulta recusada") }) {
+            opened = true
+            byteArrayOf(1).inputStream()
+        }
+        advanceUntilIdle()
+        assertFalse(opened)
+        assertEquals(0, engine.imports)
+        assertFalse(vm.uiState.value.isImporting)
+        assertEquals("Consulta recusada", vm.uiState.value.errorMessage)
+        vm.onModelSelected({ "modelo.litertlm" }) { byteArrayOf(1).inputStream() }
+        advanceUntilIdle()
+        assertEquals(1, engine.imports)
+        assertEquals("modelo.litertlm", engine.importedName)
+        assertNull(vm.uiState.value.errorMessage)
+        assertFalse(vm.uiState.value.isImporting)
     }
 
     @Test fun returningToScreenRefreshesCapacityAndWarmsOnlyAnAvailableModel() = runTest(dispatcher) {

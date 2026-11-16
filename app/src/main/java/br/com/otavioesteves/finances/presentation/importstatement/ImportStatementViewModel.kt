@@ -50,7 +50,10 @@ class ImportStatementViewModel(
     private val loadRevision = AtomicLong()
     private var validationJob: Job? = null
     private var validationRevision = 0
-    private data class PendingFile(val name: String, val kind: StatementKind, val openStream: () -> InputStream, val referenceYear: Int?)
+    private data class PendingFile(
+        val name: String, val kind: StatementKind, val openStream: () -> InputStream, val referenceYear: Int?,
+        val resolveName: (() -> String)? = null
+    )
     private var pendingFile: PendingFile? = null
 
     private val _uiState = MutableStateFlow<ImportStatementUiState>(ImportStatementUiState.Idle)
@@ -61,6 +64,10 @@ class ImportStatementViewModel(
 
     fun onFileSelected(fileName: String, kind: StatementKind = StatementKind.BANK_STATEMENT, referenceYear: Int? = null, openStream: () -> InputStream) {
         startReading(PendingFile(fileName, kind, openStream, referenceYear))
+    }
+
+    fun onFileSelected(resolveFileName: () -> String, kind: StatementKind = StatementKind.BANK_STATEMENT, referenceYear: Int? = null, openStream: () -> InputStream) {
+        startReading(PendingFile("arquivo financeiro", kind, openStream, referenceYear, resolveFileName))
     }
 
     fun onPasswordSubmitted(password: String) {
@@ -75,7 +82,8 @@ class ImportStatementViewModel(
         validationJob?.cancel()
         validationRevision++
         pendingFile = file
-        val (fileName, kind, openStream, referenceYear) = file
+        val (_, kind, openStream, referenceYear) = file
+        var fileName = file.name
         _uiState.value = ImportStatementUiState.Loading(fileName)
         loadJob = viewModelScope.launch {
             val requestContext = currentCoroutineContext()
@@ -87,7 +95,16 @@ class ImportStatementViewModel(
                 }
             }
             try {
-                val content = withContext(ioDispatcher) { readBounded(openStream()) }
+                val dataRevision = confirmStatementImport.getDataRevision()
+                val (resolvedName, content) = withContext(ioDispatcher) {
+                    val name = file.resolveName?.invoke() ?: file.name
+                    currentCoroutineContext().ensureActive()
+                    name to readBounded(openStream())
+                }
+                requestContext.ensureActive()
+                if (loadRevision.get() != revision) return@launch
+                fileName = resolvedName
+                pendingFile = file.copy(name = fileName, resolveName = null)
                 showStage(ImportProcessingStage.EXTRACTING)
                 val entries = withContext(cpuDispatcher) { importStatement(fileName, content, kind, password, referenceYear) }
                 requestContext.ensureActive()
@@ -102,7 +119,7 @@ class ImportStatementViewModel(
                 val overlapMatches = withContext(cpuDispatcher) { findPotentialOverlaps.findMatches(entries) }
                 showStage(ImportProcessingStage.CATEGORIZING, total = entries.size)
                 val suggestions = withContext(cpuDispatcher) {
-                    synthesizeStatement(entries) { done, total ->
+                    synthesizeStatement(entries, kind) { done, total ->
                         // The final callback can precede a failed result. Only the review represents completion.
                         if (total == entries.size && done in 0 until total) {
                             showStage(ImportProcessingStage.CATEGORIZING, done, total)
@@ -120,7 +137,8 @@ class ImportStatementViewModel(
                     suggestions = suggestions,
                     availableCategories = categories,
                     overlapMatches = overlapMatches,
-                    referenceYear = referenceYear
+                    referenceYear = referenceYear,
+                    dataRevision = dataRevision
                 )
             } catch (e: StatementPasswordRequiredException) {
                 currentCoroutineContext().ensureActive()
@@ -282,7 +300,7 @@ class ImportStatementViewModel(
             try {
                 val result = withContext(cpuDispatcher) {
                     confirmStatementImport(current.fileName, current.includedSuggestions, current.sourceLabel,
-                        fingerprintSuggestions = current.suggestions)
+                        fingerprintSuggestions = current.suggestions, dataRevision = current.dataRevision)
                 }
                 _uiState.value = ImportStatementUiState.Success(result.transactionCount)
             } catch (e: CancellationException) {
@@ -305,9 +323,12 @@ class ImportStatementViewModel(
         _uiState.value = ImportStatementUiState.Idle
     }
 
-    private fun readBounded(input: InputStream): ByteArray = readBoundedDocument(
-        input, MAX_STATEMENT_BYTES, "Arquivo muito grande. O limite para CSV, OFX e PDF é 10 MB."
-    )
+    private suspend fun readBounded(input: InputStream): ByteArray {
+        val context = currentCoroutineContext()
+        return readBoundedDocument(
+            input, MAX_STATEMENT_BYTES, "Arquivo muito grande. O limite para CSV, OFX e PDF é 10 MB."
+        ) { context.ensureActive() }
+    }
 
     private companion object {
         const val MAX_STATEMENT_BYTES = 10 * 1024 * 1024

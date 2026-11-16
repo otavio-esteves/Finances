@@ -30,7 +30,15 @@ interface TransactionsRepository {
         getTransactions(period).map { it.take(limit) }
     fun getMonthlyBalance(period: MonthPeriod): Flow<Money>
     suspend fun addTransaction(transaction: Transaction)
+    /** Generate, deduplicate and insert the whole example batch in one guarded transaction. */
+    suspend fun addExamples2026IfCurrent(today: java.time.LocalDate, dataRevision: Long) {
+        throw UnsupportedOperationException("A inserção protegida de exemplos não está disponível.")
+    }
     suspend fun removeTransaction(transactionId: Long)
+    /** Delete the matching rows and update totals atomically, rejecting a replaced dataset. */
+    suspend fun removeTransactionsByNoteIfCurrent(year: Int, note: String, dataRevision: Long) {
+        throw UnsupportedOperationException("A exclusão em lote protegida não está disponível.")
+    }
     suspend fun updateTransaction(transaction: Transaction)
     suspend fun updateTransactionIfCurrent(transaction: Transaction, dataRevision: Long) {
         if (this.dataRevision != dataRevision) throw StaleTransactionEditException()

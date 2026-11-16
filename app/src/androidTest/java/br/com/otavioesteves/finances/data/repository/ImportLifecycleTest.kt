@@ -31,7 +31,7 @@ class ImportLifecycleTest {
             db.categoryDao().insertCategories(listOf(CategoryEntity(1, "Outros", CategoryType.EXPENSE), CategoryEntity(2, "Alimentação", CategoryType.EXPENSE)))
             val imports = RoomStatementImportRepository(db)
             val transactions = RoomTransactionsRepository(db.transactionDao(), db)
-            imports.confirmReviewedImport(batch, listOf(entry), "first", emptyList(), listOf(CategoryMemory("cafe", TransactionType.EXPENSE, 1)))
+            imports.confirmReviewedImport(batch.copy(dataRevision = imports.getDataRevision()), listOf(entry), "first", emptyList(), listOf(CategoryMemory("cafe", TransactionType.EXPENSE, 1)))
             val first = imports.getImports().first().single()
             val imported = db.transactionDao().getAllTransactions().single().toDomain()
             assertEquals(first.id, imported.importId)
@@ -45,7 +45,7 @@ class ImportLifecycleTest {
             backupRepository.restoreBackup(backup)
             assertEquals(1, db.categoryMemoryDao().getAll().size)
             assertTrue(imports.getImports().first().first { it.id == first.id }.canUndo)
-            imports.undoImport(first.id)
+            imports.undoImport(imports.getImports().first().first { it.id == first.id })
             assertEquals(setOf("Manual", "Outro lote"), db.transactionDao().getAllTransactions().map { it.description }.toSet())
             assertEquals(1, db.categoryMemoryDao().getAll().size)
             imports.confirmImport(batch, listOf(entry), "first")
@@ -59,14 +59,14 @@ class ImportLifecycleTest {
             db.categoryDao().insertCategories(listOf(CategoryEntity(1, "Outros", CategoryType.EXPENSE)))
             val imports = RoomStatementImportRepository(db)
             assertTrue(runCatching {
-                imports.confirmReviewedImport(batch, listOf(entry.copy(categoryId = 999)), "bad", emptyList(),
+                imports.confirmReviewedImport(batch.copy(dataRevision = imports.getDataRevision()), listOf(entry.copy(categoryId = 999)), "bad", emptyList(),
                     listOf(CategoryMemory("cafe", TransactionType.EXPENSE, 1)))
             }.isFailure)
             assertTrue(db.categoryMemoryDao().getAll().isEmpty())
             assertTrue(imports.getImports().first().isEmpty())
             val legacyId = db.statementImportDao().insertImport(StatementImportEntity(fileName = "antigo.csv",
                 importedAt = batch.importedAt, transactionCount = 1))
-            assertTrue(runCatching { imports.undoImport(legacyId) }.isFailure)
+            assertTrue(runCatching { imports.undoImport(imports.getImports().first().single { it.id == legacyId }) }.isFailure)
             assertEquals(1, imports.getImports().first().size)
         } finally { db.close() }
     }

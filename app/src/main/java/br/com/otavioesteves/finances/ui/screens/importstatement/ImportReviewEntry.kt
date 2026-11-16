@@ -103,7 +103,7 @@ internal fun SuggestionRow(
                             when (suggestion.entry.type) {
                                 TransactionType.EXPENSE -> "Tipo: Despesa"
                                 TransactionType.INCOME -> "Tipo: Receita"
-                                TransactionType.TRANSFER -> "Tipo: Pagamento de fatura / transferência"
+                                TransactionType.TRANSFER -> "Tipo: Pagamento de cartão / transferência"
                             }
                         )
                     }
@@ -111,7 +111,7 @@ internal fun SuggestionRow(
                         listOf(
                             TransactionType.EXPENSE to "Despesa",
                             TransactionType.INCOME to "Receita",
-                            TransactionType.TRANSFER to "Pagamento de fatura / transferência"
+                            TransactionType.TRANSFER to "Pagamento de cartão / transferência"
                         ).filter { (type, _) -> availableCategories.any { it.type.name == type.name } }
                             .forEach { (type, label) ->
                                 DropdownMenuItem(text = { Text(label) }, enabled = enabled, onClick = {

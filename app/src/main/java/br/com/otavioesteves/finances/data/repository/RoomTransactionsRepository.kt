@@ -97,8 +97,34 @@ class RoomTransactionsRepository(
         transactionDao.insertTransaction(transaction.toEntity())
     }
 
+    override suspend fun addExamples2026IfCurrent(today: LocalDate, dataRevision: Long) {
+        val db = requireNotNull(database) { "A inserção protegida exige o banco de dados." }
+        db.withTransaction {
+            if (db.dataRevision != dataRevision) throw StaleTransactionEditException()
+            val categories = db.categoryDao().getAllCategoriesForBackup().map { it.toDomain() }
+            val samples = br.com.otavioesteves.finances.domain.usecase.exampleTransactions2026(categories, today)
+            val existing = transactionDao.getTransactionsByNote("2026-01-01", "2026-12-31",
+                br.com.otavioesteves.finances.domain.usecase.EXAMPLE_TRANSACTIONS_NOTE)
+                .map { java.time.YearMonth.from(it.date) to it.description }.toSet()
+            // Keep the monthly identity of older examples whose dates were clamped on insertion.
+            val missing = samples.filterNot { (java.time.YearMonth.from(it.date) to it.description) in existing }
+            transactionDao.insertTransactions(missing.map { it.toEntity() })
+        }
+    }
+
     override suspend fun removeTransaction(transactionId: Long) {
         transactionDao.deleteTransactionById(transactionId)
+    }
+
+    override suspend fun removeTransactionsByNoteIfCurrent(year: Int, note: String, dataRevision: Long) {
+        require(year in 1..9999)
+        val db = requireNotNull(database) { "A exclusão protegida exige o banco de dados." }
+        db.withTransaction {
+            if (db.dataRevision != dataRevision) throw StaleTransactionEditException()
+            transactionDao.deleteTransactionsByNote(
+                LocalDate.of(year, 1, 1).toString(), LocalDate.of(year, 12, 31).toString(), note
+            )
+        }
     }
 
     override suspend fun removeTransactionIfCurrent(transactionId: Long, dataRevision: Long) {

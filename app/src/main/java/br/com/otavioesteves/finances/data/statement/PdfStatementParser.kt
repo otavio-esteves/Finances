@@ -32,7 +32,8 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             "Não foi possível reconhecer texto neste PDF. Use uma digitalização mais nítida."
         }
         require(text.length <= MAX_TEXT_CHARS) { "O texto do PDF excede o limite de análise local." }
-        val document = PdfStatementDocument(BankCardPdfText.prepare(text))
+        val cardContext = kind == StatementKind.CARD_BILL || CARD_BILL_HEADER.containsMatchIn(text)
+        val document = PdfStatementDocument(BankCardPdfText.prepare(text, cardContext))
         fun lines() = document.text.lineSequence().map { raw ->
             raw.replace('\u2212', '-').replace('\u2013', '-').replace('\u00a0', ' ')
                 .split('\t').joinToString("\t") { it.replace(WHITESPACE, " ").trim() }
@@ -101,7 +102,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                     return@forEach
                 }
             }
-            if (pendingRow != null && SUMMARY_BOUNDARY.containsMatchIn(normalized)) invalidRow()
+            if (pendingRow != null && isMetadata(normalized)) invalidRow()
             val datePrefix = PdfDateResolver.DATE_PREFIX.find(normalized)
             if (datePrefix != null) {
                 if (pendingRow != null) invalidRow()
@@ -114,7 +115,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                 pendingRow += " $line"
                 pendingLines++
             } else {
-                if (SAFE_METADATA.containsMatchIn(normalized) || document.isMovementSummary(line)) {
+                if (isMetadata(normalized) || document.isMovementSummary(line)) {
                     continuationIndex = null
                 } else if (ANY_MONEY.containsMatchIn(line)) invalidRow()
                 else if (continuationIndex != null) appendContinuation(line)
@@ -183,6 +184,14 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         }
     }
 
+    private fun isMetadata(line: String): Boolean {
+        if (DOCUMENT_METADATA.matches(line)) return true
+        val amount = AMOUNT_TOKEN.find(line) ?: return false
+        if (line.substring(amount.range.last + 1).isNotBlank()) return false
+        val label = line.substring(0, amount.range.first).trim().trimEnd(':').trim()
+        return SUMMARY_LABEL.matches(label)
+    }
+
     /** Explicit signs and debit/credit markers must agree; conflicting notation is never silently overridden. */
     private fun parseAmount(raw: String, isCardBill: Boolean, requireDirection: Boolean): ParsedPdfAmount {
         var value = normalizePdfText(raw).replace(" ", "").replace("r$", "")
@@ -231,7 +240,19 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             RegexOption.IGNORE_CASE
         )
         private val FULL_DATE_IN_DESCRIPTION = Regex("\\b(?:\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}|\\d{4}-\\d{2}-\\d{2})\\b")
-        private val SAFE_METADATA = Regex("^(?:fatura|periodo|referencia|ano|competencia|emissao|vencimento|saldo|total|valor total|pagamento minimo|limite|juros|encargos)\\b")
+        private val DOCUMENT_METADATA = Regex(
+            "(?:fatura(?: (?:do|de) cartao(?: de credito)?)?|cartao de credito|" +
+                "ano\\s*(?:de|:)?\\s*\\d{4}|" +
+                "(?:periodo|referencia|competencia|emissao|vencimento)(?:\\s*:\\s*.+|\\s+\\d.*)|" +
+                "fatura(?: de)?\\s+(?:(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)" +
+                "(?:/| de | )|\\d{1,2}/)\\d{4})"
+        )
+        private val SUMMARY_LABEL = Regex(
+            "(?:saldo(?: anterior| atual| final| (?:do )?dia| fatura anterior)?|" +
+                "total(?: da fatura(?: anterior| em real)?| de compras| compras| para .+| do cartao.*)?|" +
+                "subtotal(?: dos lancamentos)?|valor total|pagamento minimo|" +
+                "limite(?: de credito(?: total)?)?|juros(?: de mora| do periodo)?|encargos(?: financeiros)?)"
+        )
         private val CARD_BILL_HEADER = Regex("(?im)^\\s*(?:fatura|cart[aã]o de cr[eé]dito)\\b")
         private val TABLE_HEADER = Regex("^data\\s+.*(?:descricao|historico|lancamento|estabelecimento|transacoes).*(?:valor|debito|credito)\\b")
         private val VALUE_BALANCE_COLUMNS = Regex("\\bvalor\\b.*\\bsaldo\\b(?:\\s*\\(?r\\$\\)?)?\\s*$")
@@ -239,7 +260,6 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         private val SUBTOTAL_ROW = Regex("^subtotal dos lancamentos\\s+(.+)$")
         // A dated merchant named Total is a purchase; balance and explicit bill summaries remain metadata.
         private val DATED_SUMMARY_LABEL = Regex("(?:total(?: da fatura(?: anterior)?| de compras)|saldo(?: fatura anterior| anterior| atual| final| do dia)?|pagamento minimo|valor total|vencimento)")
-        private val SUMMARY_BOUNDARY = Regex("^(?:total|subtotal|saldo|valor total)\\b")
         private val DATED_BILL_PAYMENT = Regex("^pagamento\\s+em\\s+\\d{1,2}\\s+[a-z]{3}\\b")
         // Frozen rules identify batches imported before payment/refund classification was corrected.
         private val LEGACY_BILL_PAYMENT = Regex("^pagamento\\s+(?:(?:de|da)\\s+fatura\\b|em\\s+\\d{1,2}\\s+[a-z]{3}\\b)")

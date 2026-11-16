@@ -7,6 +7,15 @@ import java.time.LocalDate
 
 class FormattersTest {
     @Test
+    fun parseMoneyAcceptsOneExplicitPositiveSignAndStillRejectsConflictingSigns() {
+        for (value in listOf("+100,00", "+100.00", "+R$ 100,00", "+ 100", "+0,00")) {
+            assertEquals(value, if (value == "+0,00") Money.Zero else Money(10_000), MoneyFormatter.parse(value))
+        }
+        for (value in listOf("++100,00", "+-100,00", "-+100,00", "100,00+", "R$ +100,00")) {
+            assertEquals(value, null, MoneyFormatter.parse(value))
+        }
+    }
+    @Test
     fun formatCurrency_formatsZeroInCents() {
         assertEquals("R$ 0,00", MoneyFormatter.format(Money.Zero))
     }

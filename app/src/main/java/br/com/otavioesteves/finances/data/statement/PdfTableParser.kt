@@ -53,7 +53,11 @@ internal class PdfTableParser(
         val dateOnly = DATE_WITH_TIME.matchEntire(date)?.groupValues?.get(1) ?: date
         val description = cells[descriptionIndex()]
         val normalizedDescription = normalizePdfText(description)
-        if (SUMMARY.matches(normalizedDescription) && (date.isBlank() || normalizedDescription != "total")) return Result(true, boundary = true)
+        val hasAmount = cells.indices.any { header[it] in MONEY_COLUMNS && cells[it].isNotBlank() }
+        if (SUMMARY.matches(normalizedDescription) &&
+            ((date.isBlank() && hasAmount) || (date.isNotBlank() && normalizedDescription != "total"))) {
+            return Result(true, boundary = true)
+        }
         if (date.isNotBlank()) {
             require(pending == null) { "Lançamento anterior incompleto na tabela PDF." }
             require(PdfDateResolver.DATE_PREFIX.matchEntire(normalizePdfText(dateOnly)) != null) { "Data inválida na tabela PDF: $date" }
@@ -134,6 +138,7 @@ internal class PdfTableParser(
 
     companion object {
         private val DESCRIPTION = setOf("descricao", "historico", "estabelecimento", "lancamento")
+        private val MONEY_COLUMNS = setOf("valor", "debito", "credito", "saldo", "valor estrangeiro")
         private val SUMMARY = Regex("(?:saldo(?: anterior| atual| final| (?:do )?dia| fatura anterior)?|total(?: da fatura(?: anterior)?| de compras| compras| para .+| do cartao.*)?|subtotal|valor total)")
         private val DATE_WITH_TIME = Regex("(\\d{1,2}[/-]\\d{1,2}[/-]\\d{4})\\s*-\\s*\\d{2}:\\d{2}(?::\\d{2})?")
         private val EXPLICIT_DIRECTION = Regex("[+\\-(]|(?:credito|debito|cr|dr|c|d)$")

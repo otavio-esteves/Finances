@@ -19,12 +19,16 @@ class ConfirmStatementImportUseCase(
     private val statementImportRepository: StatementImportRepository,
     private val dateProvider: DateProvider
 ) {
+    suspend fun getDataRevision(): Long = statementImportRepository.getDataRevision()
+
     suspend operator fun invoke(
         fileName: String,
         confirmedSuggestions: List<CategorySuggestion>,
         sourceLabel: String? = null,
-        fingerprintSuggestions: List<CategorySuggestion> = confirmedSuggestions
+        fingerprintSuggestions: List<CategorySuggestion> = confirmedSuggestions,
+        dataRevision: Long? = null
     ): ImportedStatement {
+        val reviewedRevision = dataRevision ?: getDataRevision()
         require(confirmedSuggestions.isNotEmpty()) { "O extrato não contém transações." }
         val transactions = confirmedSuggestions.map { suggestion ->
             val category = requireNotNull(suggestion.suggestedCategory) {
@@ -53,7 +57,8 @@ class ConfirmStatementImportUseCase(
             importedAt = dateProvider.getCurrentDateTime(),
             transactionCount = confirmedSuggestions.size,
             sourceLabel = sourceLabel?.trim()?.takeIf { it.isNotEmpty() },
-            canUndo = true
+            canUndo = true,
+            dataRevision = reviewedRevision
         )
         // Excluding rows changes what is saved, but the claim still identifies the entire source batch.
         // A new version distinguishes complete text from historical first-line claims.

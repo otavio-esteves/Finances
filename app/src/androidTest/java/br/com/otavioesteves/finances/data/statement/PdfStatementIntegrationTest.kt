@@ -18,10 +18,75 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class PdfStatementIntegrationTest {
     @Test
+    fun actualAccountPdfWithGenericBankHeadingsPreservesDebitAndCredit() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        PDFBoxResourceLoader.init(context)
+        for ((bank, heading) in listOf("Bradesco" to "Lancamentos", "Caixa" to "Demonstrativo")) {
+            val bytes = ByteArrayOutputStream().use { output ->
+                PDDocument().use { document ->
+                    val page = PDPage()
+                    document.addPage(page)
+                    PDPageContentStream(document, page).use { stream ->
+                        fun text(value: String, x: Float, y: Float) {
+                            stream.beginText()
+                            stream.setFont(PDType1Font.HELVETICA, 12f)
+                            stream.newLineAtOffset(x, y)
+                            stream.showText(value)
+                            stream.endText()
+                        }
+                        text(bank, 50f, 760f); text(heading, 50f, 735f)
+                        text("Data", 50f, 710f); text("Descricao", 170f, 710f); text("Valor", 450f, 710f)
+                        text("10/11/2026", 50f, 680f); text("Mercado", 170f, 680f); text("-100,00", 450f, 680f)
+                        text("11/11/2026", 50f, 650f); text("Salario", 170f, 650f); text("+2000,00", 450f, 650f)
+                    }
+                    document.save(output)
+                }
+                output.toByteArray()
+            }
+            val entries = PdfStatementParser(PdfBoxTextExtractor(context)).parse(
+                "extrato.pdf", bytes, br.com.otavioesteves.finances.domain.model.StatementKind.BANK_STATEMENT
+            )
+            assertEquals(bank, listOf(TransactionType.EXPENSE, TransactionType.INCOME), entries.map { it.type })
+            assertEquals(listOf(10_000L, 200_000L), entries.map { it.amount.cents })
+        }
+    }
+
+    @Test
+    fun actualPdfKeepsASeparateNegativeSignWithTheCardCredit() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        PDFBoxResourceLoader.init(context)
+        val bytes = ByteArrayOutputStream().use { output ->
+            PDDocument().use { document ->
+                val page = PDPage()
+                document.addPage(page)
+                PDPageContentStream(document, page).use { stream ->
+                    fun text(value: String, x: Float, y: Float) {
+                        stream.beginText()
+                        stream.setFont(PDType1Font.HELVETICA, 12f)
+                        stream.newLineAtOffset(x, y)
+                        stream.showText(value)
+                        stream.endText()
+                    }
+                    text("Fatura", 50f, 740f)
+                    text("Data", 50f, 710f); text("Descricao", 170f, 710f); text("Valor", 450f, 710f)
+                    text("01/11/2026", 50f, 680f); text("Estorno", 170f, 680f)
+                    text("-", 430f, 680f); text("1.000,00", 440f, 680f)
+                }
+                document.save(output)
+            }
+            output.toByteArray()
+        }
+        val entry = PdfStatementParser(PdfBoxTextExtractor(context)).parse("fatura.pdf", bytes).single()
+        assertEquals("Estorno", entry.description)
+        assertEquals(100_000L, entry.amount.cents)
+        assertEquals(TransactionType.INCOME, entry.type)
+    }
+
+    @Test
     fun actualPdfPreservesContinuationBelowACompleteTransactionInTextAndTableLayouts() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         PDFBoxResourceLoader.init(context)
-        for (positioned in listOf(false, true)) {
+        for (continuation in listOf("LOJA A", "Total Express", "Limite Modas")) for (positioned in listOf(false, true)) {
             val bytes = ByteArrayOutputStream().use { output ->
                 PDDocument().use { document ->
                     val page = PDPage()
@@ -38,11 +103,11 @@ class PdfStatementIntegrationTest {
                         if (positioned) {
                             text("Data", 50f, 710f); text("Descricao", 170f, 710f); text("Valor", 450f, 710f)
                             text("01/11/2026", 50f, 680f); text("PAGAMENTO", 170f, 680f); text("10,00", 450f, 680f)
-                            text("LOJA A", 170f, 660f)
+                            text(continuation, 170f, 660f)
                             text("02/11/2026", 50f, 630f); text("MERCADO", 170f, 630f); text("20,00", 450f, 630f)
                         } else {
                             text("01/11/2026 PAGAMENTO 10,00", 50f, 680f)
-                            text("LOJA A", 50f, 660f)
+                            text(continuation, 50f, 660f)
                             text("02/11/2026 MERCADO 20,00", 50f, 630f)
                         }
                     }
@@ -51,7 +116,7 @@ class PdfStatementIntegrationTest {
                 output.toByteArray()
             }
             val entries = PdfStatementParser(PdfBoxTextExtractor(context)).parse("fatura.pdf", bytes)
-            assertEquals(listOf("PAGAMENTO LOJA A", "MERCADO"), entries.map { it.description })
+            assertEquals(listOf("PAGAMENTO $continuation", "MERCADO"), entries.map { it.description })
             assertEquals(listOf(1000L, 2000L), entries.map { it.amount.cents })
         }
     }

@@ -6,6 +6,7 @@ import br.com.otavioesteves.finances.domain.model.RawStatementEntry
 import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.model.SuggestionSource
+import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.model.isCardPaymentDescription
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import kotlinx.coroutines.flow.first
@@ -16,6 +17,7 @@ class SynthesizeStatementUseCase(
 ) {
     suspend operator fun invoke(
         entries: List<RawStatementEntry>,
+        kind: StatementKind = StatementKind.BANK_STATEMENT,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): List<CategorySuggestion> {
         val knownCategories = categoriesRepository.getCategories().first()
@@ -23,7 +25,9 @@ class SynthesizeStatementUseCase(
         val transferCategory = knownCategories.firstOrNull { it.type == CategoryType.TRANSFER }
         return suggestions.map { suggestion ->
             if (suggestion.source != SuggestionSource.MEMORY && transferCategory != null &&
-                (suggestion.entry.type == TransactionType.TRANSFER || isCardPaymentDescription(suggestion.entry.description))
+                (suggestion.entry.type == TransactionType.TRANSFER || isCardPaymentDescription(
+                    suggestion.entry.description, includeBankLabels = kind == StatementKind.CARD_BILL
+                ))
             ) {
                 suggestion.copy(
                     entry = suggestion.entry.copy(type = TransactionType.TRANSFER),

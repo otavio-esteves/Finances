@@ -197,7 +197,7 @@ class RoomStatementImportRepositoryTest {
                     .exceptionOrNull() is DuplicateStatementImportException)
             }
             val first = imports.getImports().first().single { it.sourceLabel == "Cartão A" }
-            imports.undoImport(first.id)
+            imports.undoImport(first)
             confirm("a.csv", suggestions, "Cartão A")
             assertEquals(2, db.transactionDao().getAllTransactions().size)
             assertEquals(2, imports.getImports().first().size)

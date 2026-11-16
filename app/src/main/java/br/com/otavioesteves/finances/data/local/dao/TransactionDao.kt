@@ -113,6 +113,23 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE importId = :id")
     suspend fun deleteImportedTransactionsUnchecked(id: Long)
 
+    @androidx.room.Transaction
+    suspend fun deleteTransactionsByNote(startDate: String, endDate: String, note: String) {
+        val total = magnitudeTotal()
+        val removed = magnitudeByNote(startDate, endDate, note) ?: 0L
+        deleteTransactionsByNoteUnchecked(startDate, endDate, note)
+        saveMagnitudeTotal(total - removed)
+    }
+
+    @Query("SELECT SUM(amountCents) FROM transactions WHERE date >= :startDate AND date <= :endDate AND notes = :note")
+    suspend fun magnitudeByNote(startDate: String, endDate: String, note: String): Long?
+
+    @Query("SELECT * FROM transactions WHERE date >= :startDate AND date <= :endDate AND notes = :note")
+    suspend fun getTransactionsByNote(startDate: String, endDate: String, note: String): List<TransactionEntity>
+
+    @Query("DELETE FROM transactions WHERE date >= :startDate AND date <= :endDate AND notes = :note")
+    suspend fun deleteTransactionsByNoteUnchecked(startDate: String, endDate: String, note: String)
+
     @Query("SELECT * FROM transactions")
     suspend fun getAllTransactions(): List<TransactionEntity>
 

@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.InputStream
 
 data class AiModelUiState(
@@ -25,7 +28,8 @@ data class AiModelUiState(
 
 class AiModelViewModel(
     private val localAiEngine: LocalAiEngine,
-    private val modelImporter: ModelImporter
+    private val modelImporter: ModelImporter,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
 
     private val isImporting = MutableStateFlow(false)
@@ -63,13 +67,17 @@ class AiModelViewModel(
         }
     }
 
-    fun onModelSelected(displayName: String, openStream: () -> InputStream) {
+    fun onModelSelected(displayName: String, openStream: () -> InputStream) =
+        onModelSelected({ displayName }, openStream)
+
+    fun onModelSelected(resolveDisplayName: () -> String, openStream: () -> InputStream) {
         if (isImporting.value || isRemoving.value) return
         refreshJob?.cancel()
         isImporting.value = true
         errorMessage.value = null
         viewModelScope.launch {
             try {
+                val displayName = withContext(ioDispatcher) { resolveDisplayName() }
                 modelImporter.importModel(displayName, openStream)
                     .onFailure { errorMessage.value = it.message ?: "Não foi possível importar o modelo selecionado." }
             } catch (cancelled: CancellationException) {

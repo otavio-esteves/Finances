@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -38,18 +39,26 @@ class SettingsViewModel(
     private var pendingRestore: (() -> InputStream)? = null
 
     val imports = (importsRepository?.getImports() ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+        .catch { error ->
+            if (error is CancellationException) throw error
+            _uiState.update { it.copy(error = "Não foi possível carregar o histórico de importações.") }
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun requestUndo(item: br.com.otavioesteves.finances.domain.model.ImportedStatement) {
-        if (!_uiState.value.isLoading && item.canUndo) _uiState.update { it.copy(pendingUndo = item) }
+        if (!_uiState.value.isLoading && !_uiState.value.showRestoreConfirmation && item.canUndo) {
+            _uiState.update { it.copy(pendingUndo = item) }
+        }
     }
     fun cancelUndo() { _uiState.update { it.copy(pendingUndo = null) } }
     fun confirmUndo() {
+        if (_uiState.value.isLoading) return
         val item = _uiState.value.pendingUndo ?: return
-        _uiState.update { it.copy(pendingUndo = null, isLoading = true) }
+        _uiState.update { it.copy(pendingUndo = null, isLoading = true, error = null, successMessage = null) }
         viewModelScope.launch {
             try {
-                requireNotNull(importsRepository).undoImport(item.id)
+                requireNotNull(importsRepository).undoImport(item)
                 _uiState.update { it.copy(isLoading = false, successMessage = "Importação desfeita") }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { _uiState.update { it.copy(isLoading = false, error = e.message ?: "Não foi possível desfazer") } }
@@ -85,7 +94,7 @@ class SettingsViewModel(
     fun onRestoreRequest(openInput: () -> InputStream) {
         if (_uiState.value.isLoading) return
         pendingRestore = openInput
-        _uiState.update { it.copy(showRestoreConfirmation = true) }
+        _uiState.update { it.copy(showRestoreConfirmation = true, pendingUndo = null) }
     }
 
     fun onRestoreCancel() {

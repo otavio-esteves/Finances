@@ -99,6 +99,8 @@ class ImportStatementViewModelTest {
     }
 
     private class FakeStatementImportRepository : StatementImportRepository {
+        var revision = 0L
+        override suspend fun getDataRevision(): Long = revision
         var confirmGate: CompletableDeferred<Unit>? = null
         val imports = mutableListOf<ImportedStatement>()
         val transactions = mutableListOf<Transaction>()
@@ -113,6 +115,45 @@ class ImportStatementViewModelTest {
             imports += statementImport
             this.transactions += transactions
         }
+    }
+
+    @Test fun restoreAfterReviewRejectsConfirmationAndAllowsACompletelyNewReview() = runTest {
+        val repository = FakeStatementImportRepository().apply { revision = 7L }
+        val vm = createViewModel(statementImportRepository = repository)
+        vm.onFileSelected("extrato.csv", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(7L, (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).dataRevision)
+        repository.revision++
+        vm.onConfirmImport()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is ImportStatementUiState.Error)
+        assertTrue((vm.uiState.value as ImportStatementUiState.Error).message.contains("restaurados"))
+        assertTrue(repository.transactions.isEmpty())
+        assertTrue(repository.imports.isEmpty())
+
+        vm.onStartOver()
+        vm.onFileSelected("extrato.csv", byteArrayOf(1))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(8L, (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).dataRevision)
+        vm.onConfirmImport()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(ImportStatementUiState.Success(1), vm.uiState.value)
+        assertEquals(1, repository.transactions.size)
+    }
+
+    @Test fun revisionIsCapturedBeforeReadingTheFileRatherThanAfterCategorization() = runTest {
+        val repository = FakeStatementImportRepository().apply { revision = 3L }
+        val vm = createViewModel(statementImportRepository = repository)
+        vm.onFileSelected("extrato.csv") {
+            repository.revision++ // A restore finishes while document processing is underway.
+            byteArrayOf(1).inputStream()
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(3L, (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).dataRevision)
+        vm.onConfirmImport()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is ImportStatementUiState.Error)
+        assertTrue(repository.transactions.isEmpty())
     }
 
     private class FakeTransactionsRepository(private val transactions: List<Transaction> = emptyList()) : TransactionsRepository {
@@ -130,6 +171,47 @@ class ImportStatementViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
+    }
+
+    @Test fun metadataFailureIsReportedBeforeOpeningTheDocumentAndAllowsRetry() = runTest {
+        val vm = createViewModel()
+        var opened = false
+        vm.onFileSelected({ throw SecurityException("Provedor indisponível") }) {
+            opened = true
+            byteArrayOf(1).inputStream()
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(!opened)
+        assertEquals(ImportStatementUiState.Error("Provedor indisponível"), vm.uiState.value)
+        vm.onFileSelected({ "extrato.csv" }) { opened = true; byteArrayOf(1).inputStream() }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(opened)
+        assertEquals("extrato.csv", (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).fileName)
+    }
+
+    @Test fun cancellationDuringMetadataLookupCannotOpenTheStreamOrOverwriteANewerSelection() = runTest {
+        val vm = createViewModel()
+        var openedOld = false
+        vm.onFileSelected({
+            vm.onFileSelected({ "novo.csv" }) { byteArrayOf(2).inputStream() }
+            "antigo.csv"
+        }) { openedOld = true; byteArrayOf(1).inputStream() }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(!openedOld)
+        assertEquals("novo.csv", (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).fileName)
+    }
+
+    @Test fun passwordRetryKeepsTheResolvedNameWithoutQueryingTheProviderAgain() = runTest {
+        val parser = FakeStatementParserRepository(listOf(entry)).apply { expectedPassword = "senha" }
+        val vm = createViewModel(parserRepository = parser)
+        var lookups = 0
+        vm.onFileSelected({ lookups++; "protegido.pdf" }) { byteArrayOf(1).inputStream() }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is ImportStatementUiState.NeedsPassword)
+        vm.onPasswordSubmitted("senha")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, lookups)
+        assertEquals("protegido.pdf", (vm.uiState.value as ImportStatementUiState.ReviewingSuggestions).fileName)
     }
 
     @Test fun oversizedEditReturnsErrorAndPreservesReview() = runTest {
@@ -191,6 +273,45 @@ class ImportStatementViewModelTest {
             ioDispatcher = testDispatcher,
             cpuDispatcher = testDispatcher
         )
+    }
+
+    @Test
+    fun cancellingDuringDocumentReadStopsAtTheCurrentChunkAndClosesTheStream() = runTest {
+        val vm = createViewModel()
+        var reads = 0
+        var closed = false
+        val input = object : java.io.ByteArrayInputStream(ByteArray(64)) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                reads++
+                return super.read(buffer, offset, 1).also { vm.onStartOver() }
+            }
+            override fun close() { closed = true; super.close() }
+        }
+        vm.onFileSelected("a.csv") { input }
+        testDispatcher.scheduler.runCurrent()
+
+        assertEquals(1, reads)
+        assertEquals(63, input.available())
+        assertTrue(closed)
+        assertEquals(ImportStatementUiState.Idle, vm.uiState.value)
+    }
+
+    @Test
+    fun selectedCardKindReachesPaymentSynthesisWithoutTreatingUtilityInvoicesAsTransfers() = runTest {
+        val transfer = Category(3, "Transferência", CategoryType.TRANSFER)
+        for (kind in StatementKind.entries) {
+            val payment = entry.copy(description = "Pagamento da fatura")
+            val utility = entry.copy(description = "Pagamento de fatura de energia")
+            val vm = createViewModel(entries = listOf(payment, utility), suggestions = listOf(
+                CategorySuggestion(payment, mercado, 0.8f), CategorySuggestion(utility, mercado, 0.8f)
+            ), categories = listOf(mercado, transfer))
+            vm.onFileSelected("a.csv", byteArrayOf(1), kind)
+            testDispatcher.scheduler.runCurrent()
+            val state = vm.uiState.value as ImportStatementUiState.ReviewingSuggestions
+            assertEquals(if (kind == StatementKind.CARD_BILL) TransactionType.TRANSFER else TransactionType.EXPENSE,
+                state.suggestions[0].entry.type)
+            assertEquals(TransactionType.EXPENSE, state.suggestions[1].entry.type)
+        }
     }
 
     @Test

@@ -25,11 +25,11 @@ class ImportSettingsTest {
     @After fun clear() { rule.runOnIdle { store.clear() } }
 
     @Test fun historyRequiresConfirmationAndRefreshesAfterUndo() {
-        val imports = MutableStateFlow(listOf(ImportedStatement(1, "fatura-teste.csv", LocalDateTime.of(2026, 11, 1, 9, 0), 2, canUndo = true)))
+        val imports = MutableStateFlow(listOf(ImportedStatement(1, "fatura-teste.csv", LocalDateTime.of(2026, 11, 1, 9, 0), 2, canUndo = true, dataRevision = 0)))
         var undone = false
         val repository = object : StatementImportRepository {
             override fun getImports() = imports
-            override suspend fun undoImport(importId: Long) { assertEquals(1L, importId); undone = true; imports.value = emptyList() }
+            override suspend fun undoImport(statementImport: ImportedStatement) { assertEquals(1L, statementImport.id); undone = true; imports.value = emptyList() }
             override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprints: List<String>) {}
         }
         val vm = viewModel(repository)

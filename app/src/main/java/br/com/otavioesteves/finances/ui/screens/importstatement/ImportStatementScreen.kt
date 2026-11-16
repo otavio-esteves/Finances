@@ -101,8 +101,9 @@ fun ImportStatementScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let { selectedUri ->
-            val fileName = queryDisplayName(context, selectedUri) ?: "arquivo financeiro"
-            viewModel.onFileSelected(fileName, selectedKind, selectedYear) {
+            viewModel.onFileSelected(
+                { queryDisplayName(context, selectedUri) ?: "arquivo financeiro" }, selectedKind, selectedYear
+            ) {
                 contentResolver.openInputStream(selectedUri)
                     ?: throw IllegalArgumentException("Não foi possível abrir o arquivo selecionado.")
             }

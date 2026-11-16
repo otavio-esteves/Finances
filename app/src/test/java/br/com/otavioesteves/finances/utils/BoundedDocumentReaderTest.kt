@@ -1,6 +1,7 @@
 package br.com.otavioesteves.finances.utils
 
 import java.io.ByteArrayInputStream
+import kotlinx.coroutines.ensureActive
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -24,6 +25,46 @@ class BoundedDocumentReaderTest {
         assertEquals("large", error.message)
         assertEquals(994, input.available())
         assertTrue(input.closed)
+    }
+
+    @Test
+    fun cancellationAfterAChunkClosesTheStreamWithoutReadingAgain() {
+        val job = kotlinx.coroutines.Job()
+        var reads = 0
+        var closed = false
+        val input = object : ByteArrayInputStream(ByteArray(64)) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                reads++
+                return super.read(buffer, offset, 1).also { job.cancel() }
+            }
+            override fun close() { closed = true; super.close() }
+        }
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            readBoundedDocument(input, 1024, "large") { job.ensureActive() }
+        }
+        assertEquals(1, reads)
+        assertEquals(63, input.available())
+        assertTrue(closed)
+    }
+
+    @Test
+    fun alreadyCancelledReadClosesTheStreamWithoutConsumingBytes() {
+        val input = TrackingStream("12345".toByteArray())
+        val job = kotlinx.coroutines.Job().apply { cancel() }
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            readBoundedDocument(input, 5, "large") { job.ensureActive() }
+        }
+        assertEquals(5, input.available())
+        assertTrue(input.closed)
+    }
+
+    @Test
+    fun zeroLengthProviderReadsStillConsumeTheByteBudget() {
+        val input = object : ByteArrayInputStream("123456".toByteArray()) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int) = 0
+        }
+        assertThrows(IllegalArgumentException::class.java) { readBoundedDocument(input, 5, "large") }
+        assertEquals(0, input.available())
     }
 
     @Test

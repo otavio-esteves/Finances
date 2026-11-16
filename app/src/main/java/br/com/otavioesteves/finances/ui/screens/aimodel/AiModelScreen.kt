@@ -75,8 +75,7 @@ fun AiModelScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            val name = queryDisplayName(context, selectedUri) ?: "Modelo importado"
-            viewModel.onModelSelected(name) {
+            viewModel.onModelSelected({ queryDisplayName(context, selectedUri) ?: "Modelo importado" }) {
                 context.contentResolver.openInputStream(selectedUri)
                     ?: throw IllegalStateException("Não foi possível abrir o arquivo selecionado")
             }

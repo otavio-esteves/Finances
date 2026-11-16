@@ -5,20 +5,35 @@ import java.io.InputStream
 import br.com.otavioesteves.finances.domain.model.BackupInputStream
 
 /** Reads at most [maxBytes], closes the stream even when the document is rejected. */
-fun readBoundedDocument(input: InputStream, maxBytes: Int, tooLargeMessage: String): ByteArray {
+fun readBoundedDocument(
+    input: InputStream,
+    maxBytes: Int,
+    tooLargeMessage: String,
+    checkCancelled: () -> Unit = {}
+): ByteArray {
     require(maxBytes > 0)
     return input.use { stream ->
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(8192)
         var total = 0
         while (true) {
+            checkCancelled()
             // Read only one byte beyond the limit to determine whether the file fits.
-            val count = stream.read(buffer, 0, minOf(buffer.size.toLong(), maxBytes.toLong() - total + 1).toInt())
+            var count = stream.read(buffer, 0, minOf(buffer.size.toLong(), maxBytes.toLong() - total + 1).toInt())
+            checkCancelled()
             if (count < 0) break
+            if (count == 0) {
+                val value = stream.read()
+                checkCancelled()
+                if (value < 0) break
+                buffer[0] = value.toByte()
+                count = 1
+            }
             require(count <= maxBytes - total) { tooLargeMessage }
             total += count
             output.write(buffer, 0, count)
         }
+        checkCancelled()
         output.toByteArray()
     }
 }

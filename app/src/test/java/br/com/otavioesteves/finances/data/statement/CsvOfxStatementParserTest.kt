@@ -16,6 +16,23 @@ class CsvOfxStatementParserTest {
 
     private val parser = CsvOfxStatementParser()
 
+    @Test
+    fun csvExplicitPositiveSignsFollowTheSelectedDocumentKind() = runBlocking {
+        val csv = "Data;Descrição;Valor\n01/11/2026;Compra;+100,00\n02/11/2026;Crédito;-25,00\n03/11/2026;Zero;+0,00"
+        for (kind in StatementKind.entries) {
+            val entries = parser.parse("a.csv", csv.toByteArray(), kind)
+            assertEquals(listOf(10_000L, 2_500L, 0L), entries.map { it.amount.cents })
+            val positive = if (kind == StatementKind.BANK_STATEMENT) TransactionType.INCOME else TransactionType.EXPENSE
+            val negative = if (kind == StatementKind.BANK_STATEMENT) TransactionType.EXPENSE else TransactionType.INCOME
+            assertEquals(listOf(positive, negative, positive), entries.map { it.type })
+        }
+        for (amount in listOf("++100,00", "+-100,00", "-+100,00")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("a.csv", csv.replace("+100,00", amount).toByteArray()) }
+            }
+        }
+    }
+
     @Test fun ofxPreservesMultilineMemoAndNameInXmlAndSgml() = runBlocking {
         for (newline in listOf("\n", "\r\n", "\r")) {
             for (closeTags in listOf(true, false)) {

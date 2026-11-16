@@ -13,10 +13,10 @@ import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.usecase.EXAMPLE_TRANSACTIONS_NOTE
-import br.com.otavioesteves.finances.domain.usecase.exampleTransactions2026
 import androidx.lifecycle.ViewModelStore
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,62 +30,107 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChartsViewModelTest {
     @Test
-    fun addingExamplesOnLaterDaysAndMonthsPreservesExistingExamplesWithoutDuplicates() = runTest {
+    fun addingExamplesUsesOneGuardedBatchAndAllowsRetryAfterRestore() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
-        var today = LocalDate.of(2026, 1, 1)
-        val mutableDates = object : DateProvider {
-            override fun getCurrentDate() = today
-            override fun getCurrentMonthPeriod() = MonthPeriod.from(java.time.YearMonth.from(today))
-            override fun getCurrentDateTime() = today.atStartOfDay()
-        }
-        val categories = listOf(Category(1, "Outros", CategoryType.EXPENSE), Category(2, "Salário", CategoryType.INCOME))
-        val rows = exampleTransactions2026(categories, today).mapIndexed { index, row -> row.copy(id = index + 1L) }.toMutableList()
-        // Keep a real transaction with the same description as an example: it must not suppress the sample.
-        val manual = rows.first().copy(id = 1000, date = LocalDate.of(2026, 2, 1), notes = null)
-        rows += manual
-        val initial = rows.toList()
-        val repository = object : TransactionsRepository {
-            override fun hasTransactions() = flowOf(rows.isNotEmpty())
-            override fun getTransaction(id: Long) = flowOf(rows.firstOrNull { it.id == id })
-            override fun getTransactions(period: MonthPeriod) = flowOf(rows.filter { it.date.year == period.year && it.date.monthValue == period.month })
-            override fun getTransactionsForYear(year: Int) = flowOf(rows.filter { it.date.year == year })
-            override fun getMonthlyBalance(period: MonthPeriod) = flowOf(Money.Zero)
-            override suspend fun addTransaction(transaction: Transaction) { rows += transaction.copy(id = (rows.maxOfOrNull { it.id } ?: 0) + 1) }
-            override suspend fun removeTransaction(transactionId: Long) { rows.removeAll { it.id == transactionId } }
-            override suspend fun updateTransaction(transaction: Transaction) = Unit
-        }
-        val catalog = object : CategoriesRepository {
-            override fun getCategories() = flowOf(categories)
-            override fun getCategorySummaries(period: MonthPeriod) = flowOf(emptyList<CategorySummary>())
+        val catalog = ChartCategories()
+        val gate = CompletableDeferred<Unit>()
+        val revisions = mutableListOf<Long>()
+        val requestedDates = mutableListOf<LocalDate>()
+        val repository = object : TransactionsRepository by AnnualRepository() {
+            override var dataRevision = 0L
+            override suspend fun addTransaction(transaction: Transaction) = error("Examples must be inserted as a batch")
+            override suspend fun addExamples2026IfCurrent(today: LocalDate, dataRevision: Long) {
+                revisions += dataRevision
+                requestedDates += today
+                gate.await()
+                if (this.dataRevision != dataRevision) throw br.com.otavioesteves.finances.domain.model.StaleTransactionEditException()
+            }
         }
         try {
-            val vm = ChartsViewModel(GetCategorySummariesUseCase(catalog), repository, catalog, mutableDates, dispatcher)
+            val vm = ChartsViewModel(GetCategorySummariesUseCase(catalog), repository, catalog, dates, dispatcher)
             store.put("charts", vm)
-            for (day in listOf(5, 20, 31)) {
-                today = LocalDate.of(2026, 1, day)
-                vm.addExamples()
-                testScheduler.advanceUntilIdle()
-                assertEquals(initial, rows)
-            }
-            for (day in listOf(1, 5, 28)) {
-                today = LocalDate.of(2026, 2, day)
-                vm.addExamples()
-                testScheduler.advanceUntilIdle()
-                assertEquals(13, rows.size)
-                assertEquals(initial, rows.take(initial.size))
-            }
-            assertEquals(12, rows.count { it.notes == EXAMPLE_TRANSACTIONS_NOTE })
-            vm.removeExamples()
+            vm.addExamples()
+            vm.addExamples()
+            // A restoration can complete before the ViewModel's coroutine even starts.
+            repository.dataRevision++
+            testScheduler.runCurrent()
+            assertEquals(listOf(0L), revisions)
+            gate.complete(Unit)
             testScheduler.advanceUntilIdle()
-            assertEquals(listOf(manual), rows)
+            assertNotNull(vm.exampleAction.value.error)
+            assertFalse(vm.exampleAction.value.isBusy)
+            vm.addExamples()
+            testScheduler.advanceUntilIdle()
+            assertEquals(listOf(0L, 1L), revisions)
+            assertEquals(listOf(dates.getCurrentDate(), dates.getCurrentDate()), requestedDates)
+            assertEquals(null, vm.exampleAction.value.error)
         } finally {
+            gate.complete(Unit)
+            store.clear()
+            testScheduler.runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun removingExamplesRejectsARestoreWhileTheDeleteIsQueuedAndAllowsRetry() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ViewModelStore()
+        val original = transaction(1, 2026, 1, 1, 100, TransactionType.EXPENSE)
+            .copy(id = 1, notes = EXAMPLE_TRANSACTIONS_NOTE)
+        val restored = original.copy(description = "Despesa real restaurada", notes = null)
+        val rows = mutableListOf(original)
+        val gate = CompletableDeferred<Unit>()
+        val repository = object : TransactionsRepository {
+            override var dataRevision = 0L
+            var requests = 0
+            override fun hasTransactions() = flowOf(rows.isNotEmpty())
+            override fun getTransaction(id: Long) = flowOf(rows.find { it.id == id })
+            override fun getTransactions(period: MonthPeriod) = flowOf(rows.toList())
+            override fun getMonthlyBalance(period: MonthPeriod) = flowOf(Money.Zero)
+            override suspend fun addTransaction(transaction: Transaction) = Unit
+            override suspend fun updateTransaction(transaction: Transaction) = Unit
+            override suspend fun removeTransaction(transactionId: Long) = error("Individual deletes cannot protect a batch")
+            override suspend fun removeTransactionsByNoteIfCurrent(year: Int, note: String, dataRevision: Long) {
+                requests++
+                gate.await()
+                if (this.dataRevision != dataRevision) throw br.com.otavioesteves.finances.domain.model.StaleTransactionEditException()
+                rows.removeAll { it.date.year == year && it.notes == note }
+            }
+        }
+        val catalog = ChartCategories()
+        try {
+            val vm = ChartsViewModel(GetCategorySummariesUseCase(catalog), repository, catalog, dates, dispatcher)
+            store.put("charts", vm)
+            vm.removeExamples()
+            vm.removeExamples()
+            testScheduler.runCurrent()
+            assertEquals(1, repository.requests)
+            rows.clear()
+            rows += restored
+            repository.dataRevision++
+            gate.complete(Unit)
+            testScheduler.runCurrent()
+            assertEquals(listOf(restored), rows)
+            assertFalse(vm.exampleAction.value.isBusy)
+            assertNotNull(vm.exampleAction.value.error)
+
+            rows += original.copy(id = 2)
+            vm.removeExamples()
+            testScheduler.runCurrent()
+            assertEquals(listOf(restored), rows)
+            assertEquals(null, vm.exampleAction.value.error)
+        } finally {
+            gate.complete(Unit)
             store.clear()
             testScheduler.runCurrent()
             Dispatchers.resetMain()

@@ -41,7 +41,8 @@ sealed interface ImportStatementUiState {
         val selectedIndices: Set<Int> = emptySet(),
         val selectionMode: Boolean = false,
         val filter: ImportReviewFilter = ImportReviewFilter.ALL,
-        val referenceYear: Int? = null
+        val referenceYear: Int? = null,
+        val dataRevision: Long = 0L
     ) : ImportStatementUiState {
         val includedSuggestions: List<CategorySuggestion>
             get() = suggestions.filterIndexed { index, _ -> index !in excludedIndices }

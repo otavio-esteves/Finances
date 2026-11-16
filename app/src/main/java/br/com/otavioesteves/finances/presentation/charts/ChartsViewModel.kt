@@ -14,14 +14,12 @@ import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
 import br.com.otavioesteves.finances.domain.usecase.EXAMPLE_TRANSACTIONS_NOTE
-import br.com.otavioesteves.finances.domain.usecase.exampleTransactions2026
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -115,21 +113,16 @@ class ChartsViewModel(
 
     fun addExamples() {
         if (_exampleAction.value.isBusy) return
+        val dataRevision = transactionsRepository.dataRevision
         _exampleAction.value = ExampleActionState(isBusy = true)
         viewModelScope.launch {
             try {
-                val categories = categoriesRepository.getCategories().first { it.isNotEmpty() }
-                val samples = exampleTransactions2026(categories, dateProvider.getCurrentDate())
-                val existing = transactionsRepository.getTransactionsForYear(2026).first()
-                    .filter { it.notes == EXAMPLE_TRANSACTIONS_NOTE }
-                    .map { java.time.YearMonth.from(it.date) to it.description }.toSet()
-                // Older examples may have been clamped to the day they were first added.
-                // Their identity is monthly, so a later day must not insert them again.
-                samples.filterNot { (java.time.YearMonth.from(it.date) to it.description) in existing }
-                    .forEach { transactionsRepository.addTransaction(it) }
+                transactionsRepository.addExamples2026IfCurrent(dateProvider.getCurrentDate(), dataRevision)
                 _exampleAction.value = ExampleActionState()
             } catch (error: CancellationException) {
                 throw error
+            } catch (error: br.com.otavioesteves.finances.domain.model.StaleTransactionEditException) {
+                _exampleAction.value = ExampleActionState(error = "Os dados foram restaurados. Confira os dados antes de adicionar os exemplos novamente.")
             } catch (error: Exception) {
                 _exampleAction.value = ExampleActionState(error = error.message ?: "Não foi possível adicionar os exemplos.")
             }
@@ -138,15 +131,16 @@ class ChartsViewModel(
 
     fun removeExamples() {
         if (_exampleAction.value.isBusy) return
+        val dataRevision = transactionsRepository.dataRevision
         _exampleAction.value = ExampleActionState(isBusy = true)
         viewModelScope.launch {
             try {
-                transactionsRepository.getTransactionsForYear(2026).first()
-                    .filter { it.notes == EXAMPLE_TRANSACTIONS_NOTE }
-                    .forEach { transactionsRepository.removeTransaction(it.id) }
+                transactionsRepository.removeTransactionsByNoteIfCurrent(2026, EXAMPLE_TRANSACTIONS_NOTE, dataRevision)
                 _exampleAction.value = ExampleActionState()
             } catch (error: CancellationException) {
                 throw error
+            } catch (error: br.com.otavioesteves.finances.domain.model.StaleTransactionEditException) {
+                _exampleAction.value = ExampleActionState(error = "Os dados foram restaurados. Confira os exemplos antes de remover novamente.")
             } catch (error: Exception) {
                 _exampleAction.value = ExampleActionState(error = error.message ?: "Não foi possível remover os exemplos.")
             }

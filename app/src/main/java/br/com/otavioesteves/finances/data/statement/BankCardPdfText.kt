@@ -2,7 +2,9 @@ package br.com.otavioesteves.finances.data.statement
 
 /** Normalizes identified card sections before the shared strict transaction parser. */
 internal object BankCardPdfText {
-    fun prepare(text: String): String {
+    fun prepare(text: String, isCardBill: Boolean): String {
+        // Bank names and generic headings such as "Lançamentos" also occur in account statements.
+        if (!isCardBill) return text
         val lines = text.replace("\u000c", "\n\u000c\n").lineSequence().toList()
         val normalized = lines.map(::normalizePdfText)
         val all = normalizePdfText(text)
@@ -41,11 +43,6 @@ internal object BankCardPdfText {
                 else -> active && !inFooter
             }
         }
-            .map { line ->
-                val value = normalizePdfText(line)
-                // Labelled holder subtotals are metadata, not purchases or a pending row's amount.
-                if (!line.contains('\t') && SUBTOTAL.containsMatchIn(value)) "Total " + line else line
-            }
         return (listOf("Fatura") + metadata + body).joinToString("\n")
     }
 
@@ -100,5 +97,4 @@ internal object BankCardPdfText {
     private val INTER_END = Regex("^(?:limite de credito total|proxima fatura)\\b")
     private val PAGE = Regex("(?:pagina\\s+)?\\d+\\s*(?:/|de)\\s*\\d+")
     private val REFERENCE = Regex("^(?:ano|periodo|referencia|competencia|fatura)\\b")
-    private val SUBTOTAL = Regex("^subtotal\\b")
 }

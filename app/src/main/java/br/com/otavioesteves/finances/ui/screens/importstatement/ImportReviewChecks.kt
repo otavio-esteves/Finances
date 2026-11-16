@@ -47,7 +47,7 @@ internal fun ImportReviewChecks(
             }
         }
         }
-        Text("Pagamentos de fatura devem ser Transferência para não contar as compras duas vezes. Confira o tipo antes de salvar.",
+        Text("Pagamentos de fatura de cartão devem ser Transferência para não contar as compras duas vezes. Confira o tipo antes de salvar.",
             style = MaterialTheme.typography.bodySmall)
     }
 }

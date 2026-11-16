@@ -8,7 +8,9 @@ data class ImportedStatement(
     val importedAt: LocalDateTime,
     val transactionCount: Int,
     val sourceLabel: String? = null,
-    val canUndo: Boolean = false
+    val canUndo: Boolean = false,
+    /** Transient generation of the review or history snapshot; never persisted or exported. */
+    val dataRevision: Long? = null
 ) {
     init {
         require(id >= 0) { "id must be positive or zero" }

@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
+import br.com.otavioesteves.finances.domain.model.TransactionEditSnapshot
+import br.com.otavioesteves.finances.domain.model.StaleTransactionEditException
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase
 import br.com.otavioesteves.finances.domain.usecase.GetTransactionsByMonthUseCase
@@ -26,6 +28,9 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -47,7 +52,8 @@ class TransactionsViewModel(
     private val _selectedMonthPeriod = monthSelection.period
     val selectedMonthPeriod: StateFlow<MonthPeriod> = _selectedMonthPeriod
 
-    private val _transactionToDelete = MutableStateFlow<Transaction?>(null)
+    private val _deletionSnapshot = MutableStateFlow<TransactionEditSnapshot?>(null)
+    private var deletionRequest: Job? = null
     private val _error = MutableStateFlow<String?>(null)
     private var mappedPeriod: MonthPeriod? = null
     private var itemMapper = TransactionItemMapper()
@@ -76,11 +82,11 @@ class TransactionsViewModel(
                 }
             }
         }.flowOn(mappingDispatcher),
-        _transactionToDelete,
+        _deletionSnapshot,
         _error
-    ) { monthlyState, toDelete, errorMsg ->
+    ) { monthlyState, snapshot, errorMsg ->
         monthlyState.copy(
-            transactionToDelete = toDelete,
+            transactionToDelete = snapshot?.transaction,
             error = errorMsg
         )
     }.stateIn(
@@ -104,22 +110,39 @@ class TransactionsViewModel(
     }
 
     fun onDeleteRequest(transaction: Transaction) {
-        _transactionToDelete.value = transaction
+        onDeleteCancel()
+        _error.value = null
+        deletionRequest = viewModelScope.launch {
+            try {
+                val snapshot = deleteTransaction.forConfirmation(transaction)
+                currentCoroutineContext().ensureActive()
+                _deletionSnapshot.value = snapshot
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: StaleTransactionEditException) {
+                _error.value = e.message
+            } catch (e: Exception) {
+                _error.value = "Erro ao preparar exclusão da transação"
+            }
+        }
     }
 
     fun onDeleteCancel() {
-        _transactionToDelete.value = null
+        deletionRequest?.cancel()
+        _deletionSnapshot.value = null
     }
 
     fun onDeleteConfirm() {
-        val transaction = _transactionToDelete.value ?: return
-        _transactionToDelete.value = null
+        val snapshot = _deletionSnapshot.value ?: return
+        _deletionSnapshot.value = null
         
         viewModelScope.launch {
             try {
-                deleteTransaction(transaction.id)
+                deleteTransaction(snapshot.transaction.id, snapshot.dataRevision)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: StaleTransactionEditException) {
+                _error.value = e.message
             } catch (e: Exception) {
                 _error.value = "Erro ao excluir transação"
             }

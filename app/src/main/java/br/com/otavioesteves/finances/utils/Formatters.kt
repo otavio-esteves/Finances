@@ -45,7 +45,7 @@ object MoneyFormatter {
         }.getOrNull()
     }
 
-    private val AMOUNT_INPUT = Regex("^(-?)\\s*(?:R\\$\\s*)?([0-9][0-9.,]*)$")
+    private val AMOUNT_INPUT = Regex("^([+-]?)\\s*(?:R\\$\\s*)?([0-9][0-9.,]*)$")
     private val BR_GROUPED = Regex("^[0-9]{1,3}(?:\\.[0-9]{3})+(?:,[0-9]{1,2})?$")
     private val US_GROUPED = Regex("^[0-9]{1,3}(?:,[0-9]{3})+(?:\\.[0-9]{1,2})?$")
     private val PLAIN_DECIMAL = Regex("^[0-9]+[.,][0-9]{1,2}$")

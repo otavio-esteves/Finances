@@ -91,7 +91,7 @@ class StatementImportUseCasesTest {
     }
 
     @Test
-    fun csvAndOfxCardPaymentsAreTransfersInBothFinancialDirections() = runBlocking {
+    fun csvAndOfxPaymentRecognitionRequiresCardContextForGenericLabels() = runBlocking {
         val categories = listOf(Category(1, "Outros", CategoryType.EXPENSE), Category(2, "Outros", CategoryType.INCOME),
             Category(3, "Transferência", CategoryType.TRANSFER))
         val date = FakeDateProvider(LocalDateTime.of(2026, 11, 1, 9, 0))
@@ -101,9 +101,10 @@ class StatementImportUseCasesTest {
         for (description in listOf("Pagamento da fatura", "PAGAMENTO DE FATURA", "Pagamento do cartão", "Pagamento\u00a0da\u00a0fatura")) {
             for (kind in StatementKind.entries) {
                 val entries = parser.parse("a.csv", "Data;Descrição;Valor\n01/11/2026;$description;-100.00".toByteArray(), kind)
-                val result = synthesize(entries).single()
-                assertEquals(TransactionType.TRANSFER, result.entry.type)
-                assertEquals(categories[2], result.suggestedCategory)
+                val result = synthesize(entries, kind).single()
+                val expectedType = if (kind == StatementKind.CARD_BILL || "cartão" in description) TransactionType.TRANSFER else entries.single().type
+                assertEquals(expectedType, result.entry.type)
+                assertEquals(categories.first { it.type.name == expectedType.name }, result.suggestedCategory)
                 assertEquals(entries.single().type, result.originalType)
             }
         }
@@ -251,7 +252,7 @@ class StatementImportUseCasesTest {
         val result = SynthesizeStatementUseCase(
             FakeTransactionCategorizer(listOf(suggestion)),
             FakeCategoriesRepository(listOf(expense, transfer))
-        )(listOf(entry)).single()
+        )(listOf(entry), StatementKind.CARD_BILL).single()
 
         assertEquals(TransactionType.TRANSFER, result.entry.type)
         assertEquals(TransactionType.EXPENSE, result.originalType)
@@ -269,20 +270,38 @@ class StatementImportUseCasesTest {
         for (label in listOf("Pagamento da fatura", "PAGAMENTO DE FATURA", "Pagamento fatura", "Pag cartão", "Pagamento do cartão")) {
             val csv = CsvOfxStatementParser()
             val entriesByFormat = listOf(
-                csv.parse("fatura.csv", "Data;Descrição;Valor\n10/01/2026;$label;-500,00\n11/01/2026;Estorno $label;-20,00".toByteArray(), StatementKind.CARD_BILL),
-                csv.parse("extrato.csv", "Data;Descrição;Valor\n10/01/2026;$label;-500,00\n11/01/2026;Estorno $label;20,00".toByteArray()),
+                csv.parse("fatura.csv", "Data;Descrição;Valor\n10/01/2026;$label;-500,00\n11/01/2026;Estorno $label;-20,00".toByteArray(), StatementKind.CARD_BILL) to StatementKind.CARD_BILL,
+                csv.parse("extrato.csv", "Data;Descrição;Valor\n10/01/2026;$label;-500,00\n11/01/2026;Estorno $label;20,00".toByteArray()) to StatementKind.BANK_STATEMENT,
                 csv.parse("fatura.ofx", ("<BANKTRANLIST><STMTTRN><DTPOSTED>20260110<TRNAMT>500.00<MEMO>$label</STMTTRN>" +
-                    "<STMTTRN><DTPOSTED>20260111<TRNAMT>20.00<MEMO>Estorno $label</STMTTRN></BANKTRANLIST>").toByteArray(), StatementKind.CARD_BILL),
+                    "<STMTTRN><DTPOSTED>20260111<TRNAMT>20.00<MEMO>Estorno $label</STMTTRN></BANKTRANLIST>").toByteArray(), StatementKind.CARD_BILL) to StatementKind.CARD_BILL,
                 PdfStatementParser { "Fatura\n10/01/2026 $label -500,00\n11/01/2026 Estorno $label -20,00" }
-                    .parse("fatura.pdf", "%PDF-1.4".toByteArray(), StatementKind.CARD_BILL)
+                    .parse("fatura.pdf", "%PDF-1.4".toByteArray(), StatementKind.CARD_BILL) to StatementKind.CARD_BILL
             )
-            for (entries in entriesByFormat) {
-                val result = synthesize(entries)
-                assertEquals(label, listOf(TransactionType.TRANSFER, TransactionType.INCOME), result.map { it.entry.type })
-                assertEquals(transfer, result.first().suggestedCategory)
+            for ((entries, kind) in entriesByFormat) {
+                val result = synthesize(entries, kind)
+                val paymentType = if (kind == StatementKind.CARD_BILL || "cartão" in label) TransactionType.TRANSFER else TransactionType.EXPENSE
+                assertEquals(label, listOf(paymentType, TransactionType.INCOME), result.map { it.entry.type })
+                assertEquals(categories.first { it.type.name == paymentType.name }, result.first().suggestedCategory)
                 assertEquals(entries.first(), result.first().originalEntry)
                 assertEquals(entries.first().type, result.first().originalType)
                 assertEquals(listOf(50_000L, 2_000L), result.map { it.entry.amount.cents })
+            }
+        }
+    }
+
+    @Test
+    fun utilityInvoicesRemainExpensesInBankStatementsAndCardBills() = runBlocking {
+        val expense = Category(1, "Outros", CategoryType.EXPENSE)
+        val transfer = Category(2, "Transferência", CategoryType.TRANSFER)
+        val date = FakeDateProvider(LocalDateTime.of(2026, 11, 1, 9, 0))
+        val synthesize = SynthesizeStatementUseCase(RuleBasedLocalAiRepository(date), FakeCategoriesRepository(listOf(expense, transfer)))
+        for (description in listOf("Pagamento de fatura de energia", "Pagamento da fatura Claro", "Pagamento fatura de água")) {
+            for (kind in StatementKind.entries) {
+                val entry = RawStatementEntry(description, Money(10000), LocalDate.of(2026, 11, 1), TransactionType.EXPENSE)
+                val result = synthesize(listOf(entry), kind).single()
+                assertEquals(description, TransactionType.EXPENSE, result.entry.type)
+                assertEquals(expense, result.suggestedCategory)
+                assertEquals(entry, result.originalEntry)
             }
         }
     }
@@ -356,7 +375,7 @@ class StatementImportUseCasesTest {
         assertEquals(category.id, persisted.categoryId)
         assertEquals(1, statementImportRepository.addedImports.size)
         assertEquals(
-            ImportedStatement(id = 0, fileName = "extrato.csv", importedAt = importedAt, transactionCount = 1, canUndo = true),
+            ImportedStatement(id = 0, fileName = "extrato.csv", importedAt = importedAt, transactionCount = 1, canUndo = true, dataRevision = 0),
             result
         )
         assertEquals(result, statementImportRepository.addedImports.single())

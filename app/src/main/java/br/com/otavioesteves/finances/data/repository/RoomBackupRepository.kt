@@ -79,10 +79,10 @@ class RoomBackupRepository(
                 "Backup inválido: tipo de transação incompatível com a categoria"
             }
             require(backup.chatMessages.map { it.id }.distinct().size == backup.chatMessages.size &&
-                backup.chatMessages.all { it.id > 0 }
+                backup.chatMessages.all { it.id > 0 && it.content.isNotBlank() }
             ) { "Backup inválido: mensagens repetidas ou inválidas" }
             require(backup.statementImports.map { it.id }.distinct().size == backup.statementImports.size &&
-                backup.statementImports.all { it.id > 0 && it.transactionCount >= 0 }
+                backup.statementImports.all { it.id > 0 && it.fileName.isNotBlank() && it.transactionCount >= 0 }
             ) { "Backup inválido: importações repetidas ou inválidas" }
             val fingerprints = backup.statementImports.mapNotNull { it.fingerprint }
             require(fingerprints.size == fingerprints.toSet().size) {
@@ -120,6 +120,14 @@ class RoomBackupRepository(
                 ).also { entity -> entity.toDomain() }
             }
             br.com.otavioesteves.finances.domain.model.checkedMagnitudeTotal(transactions.asSequence().map { it.amountCents })
+            val statementImports = backup.statementImports.map {
+                StatementImportEntity(it.id, it.fileName, LocalDateTime.parse(it.importedAt), it.transactionCount, it.fingerprint, it.sourceLabel, it.canUndo)
+                    .also { entity -> entity.toDomain() }
+            }
+            val chatMessages = backup.chatMessages.map {
+                ChatMessageEntity(it.id, it.role, it.content, LocalDateTime.parse(it.createdAt))
+                    .also { entity -> entity.toDomain() }
+            }
             database.categoryMemoryDao().clear()
             database.transactionDao().deleteAll()
             database.categoryDao().deleteAll()
@@ -135,12 +143,8 @@ class RoomBackupRepository(
             )
 
             database.transactionDao().insertTransactions(transactions)
-            database.statementImportDao().insertImports(backup.statementImports.map {
-                StatementImportEntity(it.id, it.fileName, LocalDateTime.parse(it.importedAt), it.transactionCount, it.fingerprint, it.sourceLabel, it.canUndo)
-            })
-            database.chatMessageDao().insertMessages(backup.chatMessages.map {
-                ChatMessageEntity(it.id, it.role, it.content, LocalDateTime.parse(it.createdAt))
-            })
+            database.statementImportDao().insertImports(statementImports)
+            database.chatMessageDao().insertMessages(chatMessages)
             database.categoryMemoryDao().remember(backup.categoryMemories.map {
                 br.com.otavioesteves.finances.data.local.entity.CategoryMemoryEntity(it.descriptionKey, it.inputType, it.categoryId)
             })

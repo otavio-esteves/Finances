@@ -49,7 +49,16 @@ class TransactionsViewModelTest {
 
     private class FakeTransactionsRepository : TransactionsRepository {
         override fun hasTransactions(): kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
-        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(null)
+        override fun getTransaction(id: Long): Flow<Transaction?> = flowOf(transactions.firstOrNull { it.id == id })
+        override var dataRevision: Long = 0
+        var snapshotGate: CompletableDeferred<Unit>? = null
+        override suspend fun getTransactionForEditing(id: Long): br.com.otavioesteves.finances.domain.model.TransactionEditSnapshot? {
+            val snapshot = transactions.firstOrNull { it.id == id }?.let {
+                br.com.otavioesteves.finances.domain.model.TransactionEditSnapshot(it, dataRevision)
+            }
+            snapshotGate?.await()
+            return snapshot
+        }
         var deletedId: Long? = null
         var shouldFail = false
         var transactions: List<Transaction> = emptyList()
@@ -61,6 +70,7 @@ class TransactionsViewModelTest {
         override suspend fun removeTransaction(transactionId: Long) {
             if (shouldFail) throw Exception("DB Error")
             deletedId = transactionId
+            transactions = transactions.filterNot { it.id == transactionId }
         }
         override suspend fun updateTransaction(transaction: Transaction) {}
     }
@@ -82,11 +92,11 @@ class TransactionsViewModelTest {
 
     @Test
     fun `onDeleteRequest updates uiState with transaction to delete`() = runTest {
-        val viewModel = createViewModel(FakeTransactionsRepository())
+        val transaction = createFakeTransaction(id = 1)
+        val viewModel = createViewModel(FakeTransactionsRepository().apply { transactions = listOf(transaction) })
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.uiState.collect()
         }
-        val transaction = createFakeTransaction(id = 1)
         
         viewModel.onDeleteRequest(transaction)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -96,12 +106,17 @@ class TransactionsViewModelTest {
 
     @Test
     fun `onDeleteCancel clears transaction to delete`() = runTest {
-        val viewModel = createViewModel(FakeTransactionsRepository())
-        viewModel.onDeleteRequest(createFakeTransaction(id = 1))
-        
+        val transaction = createFakeTransaction(1)
+        val repository = FakeTransactionsRepository().apply { transactions = listOf(transaction) }
+        val viewModel = createViewModel(repository)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+        viewModel.onDeleteRequest(transaction)
+        testDispatcher.scheduler.runCurrent()
+        assertEquals(transaction, viewModel.uiState.value.transactionToDelete)
         viewModel.onDeleteCancel()
-        
+        testDispatcher.scheduler.runCurrent()
         assertNull(viewModel.uiState.value.transactionToDelete)
+        assertNull(repository.deletedId)
     }
 
     @Test
@@ -109,8 +124,9 @@ class TransactionsViewModelTest {
         val repository = FakeTransactionsRepository()
         val viewModel = createViewModel(repository)
         val transaction = createFakeTransaction(id = 123)
-        
+        repository.transactions = listOf(transaction)
         viewModel.onDeleteRequest(transaction)
+        testDispatcher.scheduler.runCurrent()
         viewModel.onDeleteConfirm()
         testDispatcher.scheduler.advanceUntilIdle()
         
@@ -126,12 +142,75 @@ class TransactionsViewModelTest {
             viewModel.uiState.collect()
         }
         
-        viewModel.onDeleteRequest(createFakeTransaction(id = 1))
+        val transaction = createFakeTransaction(id = 1)
+        repository.transactions = listOf(transaction)
+        viewModel.onDeleteRequest(transaction)
+        testDispatcher.scheduler.runCurrent()
         viewModel.onDeleteConfirm()
         testDispatcher.scheduler.advanceUntilIdle()
         
         assertNotNull(viewModel.uiState.value.error)
         assertEquals("Erro ao excluir transação", viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun `restoring while delete confirmation is open preserves reused IDs`() = runTest {
+        val original = createFakeTransaction(1)
+        val restored = original.copy(description = "Restaurada", amount = Money(99999))
+        val repository = FakeTransactionsRepository().apply { transactions = listOf(original) }
+        val viewModel = createViewModel(repository)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+        viewModel.onDeleteRequest(original)
+        testDispatcher.scheduler.runCurrent()
+        assertEquals(original, viewModel.uiState.value.transactionToDelete)
+
+        repository.transactions = listOf(restored)
+        repository.dataRevision++
+        viewModel.onDeleteConfirm()
+        viewModel.onDeleteConfirm()
+        testDispatcher.scheduler.runCurrent()
+
+        assertEquals(listOf(restored), repository.transactions)
+        assertNull(repository.deletedId)
+        assertNull(viewModel.uiState.value.transactionToDelete)
+        assertTrue(viewModel.uiState.value.error.orEmpty().contains("restaurados"))
+    }
+
+    @Test
+    fun `requesting deletion from stale cached rows cannot target a restored record`() = runTest {
+        val original = createFakeTransaction(1)
+        val restored = original.copy(description = "Restaurada")
+        val repository = FakeTransactionsRepository().apply { transactions = listOf(restored); dataRevision = 1 }
+        val viewModel = createViewModel(repository)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+
+        viewModel.onDeleteRequest(original)
+        testDispatcher.scheduler.runCurrent()
+        viewModel.onDeleteConfirm()
+        testDispatcher.scheduler.runCurrent()
+
+        assertNull(viewModel.uiState.value.transactionToDelete)
+        assertNotNull(viewModel.uiState.value.error)
+        assertNull(repository.deletedId)
+        assertEquals(listOf(restored), repository.transactions)
+    }
+
+    @Test
+    fun `a cancelled snapshot request cannot reopen delete confirmation`() = runTest {
+        val original = createFakeTransaction(1)
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeTransactionsRepository().apply { transactions = listOf(original); snapshotGate = gate }
+        val viewModel = createViewModel(repository)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+        viewModel.onDeleteRequest(original)
+        testDispatcher.scheduler.runCurrent()
+        viewModel.onDeleteCancel()
+        gate.complete(Unit)
+        testDispatcher.scheduler.runCurrent()
+
+        assertNull(viewModel.uiState.value.transactionToDelete)
+        assertNull(viewModel.uiState.value.error)
+        assertNull(repository.deletedId)
     }
 
     @Test
