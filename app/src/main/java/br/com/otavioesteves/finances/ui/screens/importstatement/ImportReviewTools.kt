@@ -86,6 +86,9 @@ internal fun PotentialOverlapComparison(
     matches: List<Transaction>,
     categories: List<Category>
 ) {
+    var page by remember(matches) { mutableIntStateOf(0) }
+    val firstMatch = page * MATCHES_PER_PAGE
+    val endMatch = minOf(firstMatch + MATCHES_PER_PAGE, matches.size)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Possível duplicata", style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.error)
@@ -101,8 +104,9 @@ internal fun PotentialOverlapComparison(
             Column(Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small)
                 .padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("No histórico (${matches.size})", style = MaterialTheme.typography.labelMedium)
-                matches.forEachIndexed { index, transaction ->
-                    if (index > 0) HorizontalDivider()
+                for (index in firstMatch until endMatch) {
+                    val transaction = matches[index]
+                    if (index > firstMatch) HorizontalDivider()
                     ComparisonDetails(transaction.description, transaction.date, transaction.amount,
                         transaction.type, categories.firstOrNull { it.id == transaction.categoryId }?.name)
                     Text(transaction.sourceLabel ?: if (transaction.origin == TransactionOrigin.MANUAL)
@@ -110,8 +114,17 @@ internal fun PotentialOverlapComparison(
                 }
             }
         }
+        if (matches.size > MATCHES_PER_PAGE) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = { page-- }, enabled = page > 0) { Text("Anteriores") }
+                Text("${firstMatch + 1}–$endMatch de ${matches.size}", style = MaterialTheme.typography.labelSmall)
+                TextButton(onClick = { page++ }, enabled = endMatch < matches.size) { Text("Próximos") }
+            }
+        }
     }
 }
+
+private const val MATCHES_PER_PAGE = 5
 
 @Composable
 private fun ComparisonDetails(description: String, date: LocalDate, amount: Money, type: TransactionType, category: String?) {

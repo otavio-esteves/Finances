@@ -6,6 +6,8 @@ import br.com.otavioesteves.finances.domain.model.StatementKind
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.utils.MoneyFormatter
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -20,20 +22,23 @@ import java.util.Locale
 class CsvOfxStatementParser : StatementParserRepository {
 
     override suspend fun parse(fileName: String, rawContent: ByteArray, kind: StatementKind, password: String?, referenceYear: Int?): List<RawStatementEntry> {
-        return if (fileName.substringAfterLast('.', "").lowercase() in OFX_EXTENSIONS) {
-            parseOfx(decodeStatementText(rawContent, ofx = true))
+        val context = currentCoroutineContext()
+        context.ensureActive()
+        val entries = if (fileName.substringAfterLast('.', "").lowercase() in OFX_EXTENSIONS) {
+            parseOfx(decodeStatementText(rawContent, ofx = true)) { context.ensureActive() }
         } else {
-            parseCsv(decodeStatementText(rawContent, ofx = false), kind)
+            parseCsv(decodeStatementText(rawContent, ofx = false), kind) { context.ensureActive() }
         }
+        context.ensureActive()
+        return entries
     }
 
-    private fun parseCsv(text: String, kind: StatementKind): List<RawStatementEntry> {
+    private fun parseCsv(text: String, kind: StatementKind, checkCancelled: () -> Unit): List<RawStatementEntry> {
         val content = text.removePrefix("\uFEFF")
-        val rows = splitCsvRecords(content, detectDelimiter(content))
-            .filter { row -> row.any { it.isNotBlank() } }
-        require(rows.size >= 2) { "CSV vazio ou sem linhas de transação" }
+        val rows = csvRecords(content, detectDelimiter(content, checkCancelled), checkCancelled).iterator()
+        require(rows.hasNext()) { "CSV vazio ou sem linhas de transação" }
 
-        val header = rows.first().map { it.trim().lowercase(Locale.ROOT) }
+        val header = rows.next().map { it.trim().lowercase(Locale.ROOT) }
         val centsIndex = header.indexOf("valor (centavos)")
         val nativeExport = centsIndex >= 0
         val nativeHeaders = header.toSet()
@@ -50,7 +55,9 @@ class CsvOfxStatementParser : StatementParserRepository {
         val currencyIndices = header.indices.filter { header[it] in setOf("moeda", "currency", "curdef") }
         require(setOf(dateIndex, descriptionIndex, amountIndex).size == 3) { "Colunas ambíguas no CSV." }
 
-        return rows.drop(1).map { fields ->
+        val entries = mutableListOf<RawStatementEntry>()
+        while (rows.hasNext()) {
+            val fields = rows.next()
             require(fields.size == header.size) {
                 "Linha CSV não corresponde ao cabeçalho. Confira o separador e coloque campos com separadores entre aspas."
             }
@@ -66,7 +73,7 @@ class CsvOfxStatementParser : StatementParserRepository {
                 TransactionType.entries.firstOrNull { it.name == raw }
                     ?: throw IllegalArgumentException("Tipo de transação inválido no CSV exportado: $raw")
             } else null
-            RawStatementEntry(
+            entries += RawStatementEntry(
                 description = if (nativeExport && "formato finances" in header) {
                     require(fields[header.indexOf("formato finances")] == "2") { "Formato CSV Finances não suportado" }
                     fields[descriptionIndex].removePrefix("'")
@@ -79,6 +86,8 @@ class CsvOfxStatementParser : StatementParserRepository {
                 }
             )
         }
+        require(entries.isNotEmpty()) { "CSV vazio ou sem linhas de transação" }
+        return entries
     }
 
     private fun uniqueColumn(header: List<String>, label: String, matches: (String) -> Boolean): Int {
@@ -90,22 +99,16 @@ class CsvOfxStatementParser : StatementParserRepository {
         return candidates.single()
     }
 
-    private fun parseOfx(text: String): List<RawStatementEntry> {
-        val currencyDeclarations = text.replace(Regex("<ORIGCURRENCY>.*?</ORIGCURRENCY>",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
-        Regex("<(?:CURDEF|CURSYM)>\\s*([^<\\r\\n]+)", RegexOption.IGNORE_CASE).findAll(currencyDeclarations)
-            .forEach { StatementCurrency.requireBrl(it.groupValues[1]) }
-        val transactionBlocks = OFX_TRANSACTION_REGEX.findAll(text).map { it.value }.toList()
-        require(transactionBlocks.isNotEmpty()) { "OFX não contém nenhuma transação (STMTTRN)" }
-
-        return transactionBlocks.map { block ->
-            val amountRaw = OFX_AMOUNT_REGEX.find(block)?.groupValues?.get(1)?.trim()
+    private fun parseOfx(text: String, checkCancelled: () -> Unit): List<RawStatementEntry> {
+        val entries = ofxTransactions(text, checkCancelled).map { fields ->
+            checkCancelled()
+            val amountRaw = fields.amount?.trim()
                 ?: throw IllegalArgumentException("Transação OFX sem TRNAMT válido")
             val amountCents = parseOfxAmountCents(amountRaw)
-            val date = OFX_DATE_REGEX.find(block)?.groupValues?.get(1)?.trim()
+            val date = fields.date?.trim()
                 ?: throw IllegalArgumentException("Transação OFX sem DTPOSTED válido")
-            val memo = OFX_MEMO_REGEX.find(block)?.groupValues?.get(1)
-            val name = OFX_NAME_REGEX.find(block)?.groupValues?.get(1)
+            val memo = fields.memo
+            val name = fields.name
             // Keep both historical parsers' first-line representations only as compatibility aliases.
             val oldMemo = memo?.substringBefore('\r')?.substringBefore('\n')?.trim()
             val oldName = name?.substringBefore('\r')?.substringBefore('\n')?.trim()
@@ -130,7 +133,9 @@ class CsvOfxStatementParser : StatementParserRepository {
                 legacyOfxDescription = legacyDescription.takeIf { it != description },
                 legacyDecodedOfxDescription = legacyDecodedDescription.takeIf { it != description }
             )
-        }
+        }.toList()
+        require(entries.isNotEmpty()) { "OFX não contém nenhuma transação (STMTTRN)" }
+        return entries
     }
 
     private fun parseAmountCents(rawValue: String): Long {
@@ -164,51 +169,80 @@ class CsvOfxStatementParser : StatementParserRepository {
         return LocalDate.parse(digitsOnly.substring(0, 8), DateTimeFormatter.BASIC_ISO_DATE)
     }
 
-    private fun detectDelimiter(text: String): Char {
+    private fun detectDelimiter(text: String, checkCancelled: () -> Unit): Char {
         var insideQuotes = false
         var commas = 0
         var semicolons = 0
+        var hasContent = false
         var index = 0
+        var nextCancellationCheck = 0
         while (index < text.length) {
+            if (index >= nextCancellationCheck) {
+                checkCancelled()
+                nextCancellationCheck = index + 4096
+            }
             when (text[index]) {
                 '"' -> {
                     if (insideQuotes && text.getOrNull(index + 1) == '"') index++
                     else insideQuotes = !insideQuotes
                 }
-                '\n', '\r' -> if (!insideQuotes) break
+                '\n', '\r' -> if (!insideQuotes && (hasContent || commas > 0 || semicolons > 0)) break
                 ',' -> if (!insideQuotes) commas++
                 ';' -> if (!insideQuotes) semicolons++
+                else -> if (!text[index].isWhitespace()) hasContent = true
             }
             index++
         }
         return if (semicolons > commas) ';' else ','
     }
 
-    private fun splitCsvRecords(text: String, delimiter: Char): List<List<String>> {
-        val records = mutableListOf<List<String>>()
+    /** Retain only the current row; blank records never enter an intermediate collection. */
+    private fun csvRecords(text: String, delimiter: Char, checkCancelled: () -> Unit): Sequence<List<String>> = sequence {
         val fields = mutableListOf<String>()
         val field = StringBuilder()
         var insideQuotes = false
         var quoteClosed = false
         var index = 0
+        var nextCancellationCheck = 0
+        var nonBlankRecords = 0
+
+        fun append(char: Char) {
+            require(field.length < MAX_CSV_FIELD_BYTES) { "O campo do CSV é muito extenso. Use até 128 KiB por campo." }
+            field.append(char)
+        }
 
         fun finishField() {
-            fields += field.toString()
+            require(fields.size < MAX_CSV_COLUMNS) { "O CSV excede o limite de $MAX_CSV_COLUMNS colunas." }
+            val value = field.toString()
+            require(value.isEmpty() || value.toByteArray(Charsets.UTF_8).size <= MAX_CSV_FIELD_BYTES) {
+                "O campo do CSV é muito extenso. Use até 128 KiB por campo."
+            }
+            fields += value
             field.clear()
             quoteClosed = false
         }
 
-        fun finishRecord() {
+        suspend fun SequenceScope<List<String>>.finishRecord() {
             finishField()
-            records += fields.toList()
+            if (fields.any { it.isNotBlank() }) {
+                require(++nonBlankRecords <= MAX_CSV_TRANSACTIONS + 1) {
+                    "O CSV excede o limite de 50.000 lançamentos. Divida o arquivo antes de importar."
+                }
+                checkCancelled()
+                yield(fields.toList())
+            }
             fields.clear()
         }
 
         while (index < text.length) {
+            if (index >= nextCancellationCheck) {
+                checkCancelled()
+                nextCancellationCheck = index + 4096
+            }
             val char = text[index]
             when {
                 char == '"' && insideQuotes && text.getOrNull(index + 1) == '"' -> {
-                    field.append('"')
+                    append('"')
                     index++
                 }
                 char == '"' && insideQuotes -> {
@@ -227,32 +261,26 @@ class CsvOfxStatementParser : StatementParserRepository {
                     if (char == '\r' && text.getOrNull(index + 1) == '\n') index++
                 }
                 quoteClosed -> require(char == ' ' || char == '\t') { "CSV com texto após o fechamento das aspas." }
-                else -> field.append(char)
+                else -> append(char)
             }
             index++
         }
+        checkCancelled()
         require(!insideQuotes) { "CSV com aspas não fechadas" }
         if (field.isNotEmpty() || fields.isNotEmpty() || quoteClosed) finishRecord()
-        return records
     }
 
     private companion object {
+        const val MAX_CSV_TRANSACTIONS = 50_000
+        const val MAX_CSV_COLUMNS = 64
+        // Raw CSV fields may contain the protective apostrophe added by native exports.
+        // Persisted descriptions still enforce their separate 64 KiB storage limit.
+        const val MAX_CSV_FIELD_BYTES = 128 * 1024
         val NATIVE_EXPORT_HEADERS = setOf("id", "data", "descrição", "valor (centavos)", "tipo", "categoria", "observações")
         val UNSIGNED_CENTS = Regex("[0-9]+")
         val OFX_DECIMAL = Regex("[+-]?[0-9]+(?:[.,][0-9]+)?")
         val HEADER_DIACRITICS = Regex("\\p{M}+")
         val OFX_EXTENSIONS = setOf("ofx", "qfx")
         val BR_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT)
-        // OFX is SGML-based and closing tags (e.g. </STMTTRN>) are often omitted,
-        // so a transaction block ends at the next STMTTRN, the list closing tag, or EOF.
-        val OFX_TRANSACTION_REGEX = Regex(
-            "<STMTTRN>(.*?)(?=<STMTTRN>|</BANKTRANLIST>|\\z)",
-            RegexOption.DOT_MATCHES_ALL
-        )
-        val OFX_AMOUNT_REGEX = Regex("<TRNAMT>([^<\\r\\n]*)")
-        val OFX_DATE_REGEX = Regex("<DTPOSTED>([^<\\r\\n]*)")
-        // SGML fields end at the next tag; line breaks are part of a text value.
-        val OFX_MEMO_REGEX = Regex("<MEMO>([^<]*)")
-        val OFX_NAME_REGEX = Regex("<NAME>([^<]*)")
     }
 }
