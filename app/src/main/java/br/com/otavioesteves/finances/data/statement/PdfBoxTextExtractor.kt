@@ -8,7 +8,6 @@ import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
-import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.tom_roush.pdfbox.text.TextPosition
 import java.io.File
@@ -37,7 +36,7 @@ class PdfBoxTextExtractor(context: Context) : PdfTextExtractor {
         var ocr: OfflinePdfOcr? = null
         var scannedPages = 0
         try {
-            PDDocument.load(content, password.orEmpty()).use { document ->
+            return withBoundedPdfDocument(content, password.orEmpty(), checkCancelled) { document, checkLimits ->
                 require(document.numberOfPages <= MAX_PAGES) { "PDF com mais de $MAX_PAGES páginas não é aceito." }
                 val output = BoundedTextWriter(PdfStatementParser.MAX_TEXT_CHARS)
                 val layout = PdfLayoutReconstructor()
@@ -69,8 +68,10 @@ class PdfBoxTextExtractor(context: Context) : PdfTextExtractor {
                         }
                     }.apply { sortByPosition = true; startPage = pageIndex + 1; endPage = pageIndex + 1 }
                     stripper.writeText(document, BoundedTextWriter(PdfStatementParser.MAX_TEXT_CHARS))
+                    checkLimits()
                     val page = document.getPage(pageIndex)
                     val imageFraction = PdfImageCoverage(page).fraction()
+                    checkLimits()
                     var width = page.cropBox.width
                     var wasScanned = false
                     val pageWords = if (imageFraction >= 0.20f || words.isEmpty()) {
@@ -111,10 +112,12 @@ class PdfBoxTextExtractor(context: Context) : PdfTextExtractor {
                     output.write("\n\u000c\n")
                 }
                 layout.finish()
-                return PdfTextExtraction(output.toString(), scannedPages > 0)
+                PdfTextExtraction(output.toString(), scannedPages > 0)
             }
         } catch (error: InvalidPasswordException) {
             throw StatementPasswordRequiredException(!password.isNullOrEmpty())
+        } catch (error: PdfResourceLimitException) {
+            throw IllegalArgumentException(PDF_RESOURCE_LIMIT_MESSAGE, error)
         } catch (error: IOException) {
             throw IllegalArgumentException("Não foi possível ler o PDF. Verifique se o arquivo está íntegro.", error)
         } finally {

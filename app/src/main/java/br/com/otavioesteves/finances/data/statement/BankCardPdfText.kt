@@ -78,9 +78,10 @@ internal object BankCardPdfText {
             val match = INTER_AMOUNT.matchEntire(requireNotNull(pending)) ?: continue
             val description = match.groupValues[1].trim()
             require(description.substringAfter(' ', "").isNotBlank()) { INCOMPLETE }
+            require(!INTER_DANGLING_SIGNS.containsMatchIn(description)) { INCOMPLETE }
             // Inter's '-' before R$ separates columns. '+ R$' explicitly identifies a credit.
             val amount = match.groupValues[3]
-            output += "$description ${if (match.groupValues[2].isNotEmpty()) "-" else ""}$amount"
+            output += "$description ${if (match.groupValues[2].isNotEmpty()) "-" else ""}R$ $amount"
             pending = null
         }
         require(pending == null) { INCOMPLETE }
@@ -92,6 +93,7 @@ internal object BankCardPdfText {
     private val INTER = Regex("\\b(?:banco inter|cartao inter|bancointer\\.com\\.br)\\b")
     private val INTER_DATE = Regex("^(\\d{1,2})\\s+de\\s+([\\p{L}]{3})\\.\\s+(\\d{4})\\s+", RegexOption.IGNORE_CASE)
     private val INTER_AMOUNT = Regex("^(.+?)\\s+-\\s*(\\+\\s*)?R\\$\\s*(\\d[\\d.]*,\\d{2})$")
+    private val INTER_DANGLING_SIGNS = Regex("\\s[+-]\\s*$")
     private val INTER_HEADER = Regex("^(?:cartao\\s+[\\d* .x]+|total cartao\\b.*|data movimentacao\\b.*)$")
     private val INTER_FX = Regex("^(?:valor e simbolo da moeda de origem|valor em dolar americano|cotacao do dolar americano):")
     private val INTER_END = Regex("^(?:limite de credito total|proxima fatura)\\b")

@@ -93,7 +93,9 @@ class BankCardPdfTextTest {
             "10 de jan. 2026 Compra sem valor\n11 de jan. 2026 Outra compra - R$ 10,00",
             "10 de jan. 2026 Compra - R$ 10,00\nFarmácia - R$ 20,00",
             "10 de jan. 2026 Compra exterior\nValor em dólar americano: $ 20,00",
-            "10 de jan. 2026 Compra - + - R$ 10,00"
+            "10 de jan. 2026 Compra - + - R$ 10,00",
+            "10 de jan. 2026 Compra - - R$ 10,00",
+            "10 de jan. 2026 Compra + - R$ 10,00"
         )) assertThrows(rows, IllegalArgumentException::class.java) {
             parse("Banco Inter\nDespesas da fatura\n$rows\nLimite de crédito total R$ 1.000,00")
         }
@@ -225,6 +227,6 @@ class BankCardPdfTextTest {
             word("120,00", 390f, 50f, 440f), word("20,00", 520f, 50f, 560f)
         ), 600f)
         assertEquals(12_000L, parse(layout).single().amount.cents)
-        assertTrue(layout, layout.contains("valor\tvalor estrangeiro"))
+        assertTrue(layout, layout.contains("valor (BRL)\tvalor estrangeiro"))
     }
 }

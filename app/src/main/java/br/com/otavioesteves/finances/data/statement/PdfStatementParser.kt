@@ -32,6 +32,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             "Não foi possível reconhecer texto neste PDF. Use uma digitalização mais nítida."
         }
         require(text.length <= MAX_TEXT_CHARS) { "O texto do PDF excede o limite de análise local." }
+        val currencyPolicy = PdfCurrencyPolicy(text)
         val cardContext = kind == StatementKind.CARD_BILL || CARD_BILL_HEADER.containsMatchIn(text)
         val document = PdfStatementDocument(BankCardPdfText.prepare(text, cardContext))
         fun lines() = document.text.lineSequence().map { raw ->
@@ -42,12 +43,13 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         val isCardBill = kind == StatementKind.CARD_BILL || CARD_BILL_HEADER.containsMatchIn(document.text)
         val table = PdfTableParser(dates, { raw, cardBill, direction ->
             parseAmount(raw, cardBill, direction && !document.unsignedCredits)
-        }, isCardBill)
+        }, isCardBill, currencyPolicy)
         val entries = mutableListOf<RawStatementEntry>()
         var pendingRow: String? = null
         var pendingLines = 0
         var runningBalanceColumn = false
         var plainTableHeader: String? = null
+        var plainValueIsBrl = false
         var continuationIndex: Int? = null
         var rowLines = 0
 
@@ -68,6 +70,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
 
         lines().forEach { line ->
             val normalized = normalizePdfText(line)
+            if (currencyPolicy.isDeclaration(line)) return@forEach
             if (PAGE_FOOTER.matches(normalized)) return@forEach
             if (document.isMovementSectionHeading(line)) {
                 continuationIndex = null
@@ -84,6 +87,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
             if (TABLE_HEADER.containsMatchIn(normalized) && !line.contains('\t')) {
                 require(!StatementCurrency.hasForeignCurrency(normalized)) { "Cabeçalho monetário estrangeiro sem coluna inequívoca de conversão em reais." }
                 runningBalanceColumn = VALUE_BALANCE_COLUMNS.containsMatchIn(normalized)
+                plainValueIsBrl = PdfCurrencyPolicy.hasBrlValueColumn(normalized)
                 if (pendingRow == null && plainTableHeader != normalized) continuationIndex = null
                 plainTableHeader = normalized
                 return@forEach
@@ -152,6 +156,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                 body.substring(amounts.last().range.last + 1).isNotBlank() ||
                 amounts.zipWithNext().any { (first, second) -> body.substring(first.range.last + 1, second.range.first).isNotBlank() }
             ) invalidRow()
+            currencyPolicy.requireBrlValue(amounts.first().value, plainValueIsBrl)
             val amount = parseAmount(amounts.first().value, isCardBill, requireDirection = !document.unsignedCredits)
             // Validate the balance column but never import it as a purchase or infer a transaction sign from it.
             if (runningBalanceColumn) parseAmount(amounts.last().value, isCardBill = false, requireDirection = false)

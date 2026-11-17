@@ -8,7 +8,8 @@ import br.com.otavioesteves.finances.domain.model.TransactionType
 internal class PdfTableParser(
     private val dates: PdfDateResolver,
     private val parseAmount: (String, Boolean, Boolean) -> ParsedPdfAmount,
-    private val cardBill: Boolean
+    private val cardBill: Boolean,
+    private val currencyPolicy: PdfCurrencyPolicy = PdfCurrencyPolicy("")
 ) {
     data class Result(
         val handled: Boolean,
@@ -18,6 +19,7 @@ internal class PdfTableParser(
         val rowLines: Int = 1
     )
     private var header = emptyList<String>()
+    private var brlColumns = emptySet<Int>()
     private var pending: MutableList<String>? = null
     private var pendingLines = 0
     val hasPending get() = pending != null
@@ -32,17 +34,19 @@ internal class PdfTableParser(
             return Result(true)
         }
         val cells = line.split('\t').map { it.trim() }
-        val normalized = cells.map { normalizePdfText(it) }
+        val normalized = cells.map(PdfCurrencyPolicy::columnName)
         if (normalized.any { it.startsWith("data") } && normalized.any { it in DESCRIPTION } &&
             normalized.any { it in listOf("valor", "debito", "credito") }
         ) {
             require(pending == null || normalized == header) { "As colunas do PDF mudaram em um lançamento incompleto." }
             val repeatedHeader = normalized == header
             header = normalized
+            brlColumns = cells.indices.filter { PdfCurrencyPolicy.hasBrlMarker(cells[it]) }.toSet()
             dateIndex(); descriptionIndex()
             require(header.count { it in DESCRIPTION } == 1) { "Coluna de descrição ambígua no PDF." }
             require(header.count { it in listOf("data movimento", "data mov") } <= 1) { "Data de movimento ambígua no PDF." }
             require(header.count { it == "valor" } <= 1 && header.count { it == "debito" } <= 1 && header.count { it == "credito" } <= 1)
+            require(header.count { it == "moeda" } <= 1) { "Coluna de moeda ambígua no PDF. Nenhum lançamento foi importado." }
             require(("debito" in header) == ("credito" in header)) { "Tabela de débito/crédito incompleta." }
             require(("valor" in header) != ("debito" in header)) { "Colunas monetárias ambíguas no PDF." }
             return Result(true, boundary = !repeatedHeader)
@@ -81,7 +85,9 @@ internal class PdfTableParser(
         }
         val row = requireNotNull(pending)
         val currency = header.indexOf("moeda")
-        require(currency < 0 || row[currency].isBlank() || row[currency].uppercase() in listOf("R$", "BRL")) {
+        val explicitBrlValue = header.indexOf("valor") in brlColumns
+        require(currency < 0 || row[currency].isBlank() || row[currency].uppercase() in listOf("R$", "BRL") ||
+            (explicitBrlValue && "valor estrangeiro" in header)) {
             "Lançamento em moeda estrangeira sem valor convertido em reais."
         }
         val foreign = header.indexOf("valor estrangeiro")
@@ -89,6 +95,7 @@ internal class PdfTableParser(
         val valueIndex = header.indexOf("valor")
         val amount: ParsedPdfAmount = if (valueIndex >= 0) {
             if (row[valueIndex].isBlank()) return Result(true, boundary = true)
+            currencyPolicy.requireBrlValue(row[valueIndex], valueIndex in brlColumns, row.getOrNull(currency))
             val marker = header.indexOf("tipo").takeIf { it >= 0 }?.let { row[it] }.orEmpty()
             parseAmount((row[valueIndex] + " " + marker).trim(), cardBill, true)
         } else {
@@ -97,6 +104,8 @@ internal class PdfTableParser(
             if (debit.isBlank() && credit.isBlank()) return Result(true, boundary = true)
             fun value(raw: String, type: TransactionType): Long? {
                 if (raw.isBlank() || raw == "-" || raw == "—") return null
+                val column = header.indexOf(if (type == TransactionType.EXPENSE) "debito" else "credito")
+                currencyPolicy.requireBrlValue(raw, column in brlColumns, row.getOrNull(currency))
                 val parsed = parseAmount(raw, false, false)
                 val explicit = EXPLICIT_DIRECTION.containsMatchIn(normalizePdfText(raw))
                 require(!explicit || parsed.type == type) { "O sinal não corresponde à coluna de débito/crédito." }

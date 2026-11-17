@@ -12,7 +12,7 @@ internal data class PdfWord(
 
 /** Rebuild rows from word coordinates, preserving empty debit/credit cells with tabs. */
 internal class PdfLayoutReconstructor {
-    private data class Column(val name: String, val left: Float, val right: Float)
+    private data class Column(val name: String, val left: Float, val right: Float, val isBrl: Boolean = false)
     private var columns = emptyList<Column>()
     private var descriptionPrefix = ""
 
@@ -39,7 +39,7 @@ internal class PdfLayoutReconstructor {
             if (METADATA.containsMatchIn(normalized)) return@joinToString text
             if (DATE_HEADER.containsMatchIn(normalized) && DESCRIPTION.containsMatchIn(normalized) && VALUE.containsMatchIn(normalized)) {
                 val header = mutableListOf<Column>()
-                ordered.forEachIndexed { wordIndex, word ->
+                ordered.forEach { word ->
                     val label = normalizePdfText(word.text).substringBefore('(').trim(':', '.', '(', ')')
                     val kind = when {
                         label in listOf("data", "dt", "dia") -> "data"
@@ -50,16 +50,17 @@ internal class PdfLayoutReconstructor {
                         label == "valor" -> if (StatementCurrency.hasForeignCurrency(word.text)) "valor estrangeiro" else "valor"
                         label == "r$" && header.lastOrNull()?.name !in MONEY_COLUMNS -> "valor"
                         (label == "us$" || StatementCurrency.hasForeignCurrency(label)) && (header.lastOrNull()?.name != "valor" ||
-                            ordered.getOrNull(wordIndex - 1)?.text?.lowercase() == "r$") -> "valor estrangeiro"
+                            header.lastOrNull()?.isBrl == true) -> "valor estrangeiro"
                         label in listOf("credito/debito", "debito/credito") -> "valor"
-                        label == "moeda" -> "moeda"
+                        label in listOf("moeda", "currency") -> "moeda"
                         label == "debito" -> "debito"
                         label == "credito" -> "credito"
                         label == "saldo" -> "saldo"
                         label in listOf("tipo", "d/c", "c/d") -> "tipo"
                         else -> null
                     }
-                    if (kind != null) header += Column(kind, word.left / width, word.right / width)
+                    if (kind != null) header += Column(kind, word.left / width, word.right / width,
+                        PdfCurrencyPolicy.hasBrlMarker(word.text))
                     else if (header.isNotEmpty()) {
                         val previous = header.removeAt(header.lastIndex)
                         val name = when {
@@ -67,7 +68,8 @@ internal class PdfLayoutReconstructor {
                             previous.name == "valor" && (label == "us$" || StatementCurrency.hasForeignCurrency(label)) -> "valor estrangeiro"
                             else -> previous.name
                         }
-                        header += previous.copy(name = name, right = word.right / width)
+                        header += previous.copy(name = name, right = word.right / width,
+                            isBrl = previous.isBrl || PdfCurrencyPolicy.hasBrlMarker(word.text))
                     }
                 }
                 require(header.none { it.name == "valor estrangeiro" } || header.any { it.name in MONEY_COLUMNS && it.name != "valor estrangeiro" }) {
@@ -77,7 +79,9 @@ internal class PdfLayoutReconstructor {
                 val firstMoney = header.firstOrNull { it.name in MONEY_COLUMNS }
                 if (description != null && firstMoney != null && firstMoney.left - description.right > 0.025f) {
                     columns = header
-                    return@joinToString header.joinToString("\t") { it.name }
+                    return@joinToString header.joinToString("\t") {
+                        if (it.isBrl && it.name in MONEY_COLUMNS) "${it.name} (BRL)" else it.name
+                    }
                 }
             }
             if (columns.isEmpty() || (!PdfDateResolver.DATE_PREFIX.containsMatchIn(normalized) && !MONEY.containsMatchIn(text))) text
