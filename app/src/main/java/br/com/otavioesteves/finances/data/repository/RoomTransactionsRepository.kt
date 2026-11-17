@@ -8,6 +8,7 @@ import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionEditSnapshot
+import br.com.otavioesteves.finances.domain.model.TransactionExportSnapshot
 import br.com.otavioesteves.finances.domain.model.StaleTransactionEditException
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import androidx.room.withTransaction
@@ -22,6 +23,11 @@ class RoomTransactionsRepository(
     private val database: br.com.otavioesteves.finances.data.local.AppDatabase? = null
 ) : TransactionsRepository {
     override val dataRevision: Long get() = database?.dataRevision ?: 0L
+
+    override suspend fun getDataRevision(): Long {
+        val db = database ?: return dataRevision
+        return db.withTransaction { db.dataRevision }
+    }
 
     override fun hasTransactions(): Flow<Boolean> = transactionDao.hasTransactions().distinctUntilChanged()
 
@@ -84,6 +90,19 @@ class RoomTransactionsRepository(
             .map { entities -> entities.map { it.toDomain() } }
     }
 
+    override suspend fun getExportSnapshot(period: MonthPeriod): TransactionExportSnapshot {
+        val db = requireNotNull(database) { "A exportação consistente exige o banco de dados." }
+        val month = period.toYearMonth()
+        return db.withTransaction {
+            TransactionExportSnapshot(
+                transactions = transactionDao.getTransactionsSnapshot(
+                    month.atDay(1).toString(), month.atEndOfMonth().toString()
+                ).map { it.toDomain() },
+                categories = db.categoryDao().getAllCategoriesForBackup().map { it.toDomain() }
+            )
+        }
+    }
+
     override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> {
         val startDate = LocalDate.of(period.year, period.month, 1)
         val endDate = startDate.plusMonths(1).minusDays(1)
@@ -95,6 +114,14 @@ class RoomTransactionsRepository(
 
     override suspend fun addTransaction(transaction: Transaction) {
         transactionDao.insertTransaction(transaction.toEntity())
+    }
+
+    override suspend fun addTransactionIfCurrent(transaction: Transaction, dataRevision: Long) {
+        val db = requireNotNull(database) { "A inclusão protegida exige o banco de dados." }
+        db.withTransaction {
+            if (db.dataRevision != dataRevision) throw StaleTransactionEditException()
+            transactionDao.insertTransaction(transaction.toEntity())
+        }
     }
 
     override suspend fun addExamples2026IfCurrent(today: LocalDate, dataRevision: Long) {

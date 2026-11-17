@@ -9,6 +9,7 @@ import br.com.otavioesteves.finances.data.local.entity.TransactionEntity
 import br.com.otavioesteves.finances.data.local.entity.TransactionMonthAggregateEntity
 import br.com.otavioesteves.finances.data.local.mapper.toDomain
 import br.com.otavioesteves.finances.domain.model.checkedMagnitudeTotal
+import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.model.requirePersistableText
 import kotlinx.coroutines.flow.Flow
 
@@ -22,6 +23,9 @@ interface TransactionDao {
 
     @Query("SELECT * FROM transactions WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, id DESC")
     fun getTransactionsByDateRange(startDate: String, endDate: String): Flow<List<TransactionEntity>>
+
+    @Query("SELECT * FROM transactions WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, id DESC")
+    suspend fun getTransactionsSnapshot(startDate: String, endDate: String): List<TransactionEntity>
 
     @Query("SELECT * FROM transactions WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, id DESC LIMIT :limit")
     fun getRecentTransactionsByDateRange(startDate: String, endDate: String, limit: Int): Flow<List<TransactionEntity>>
@@ -146,6 +150,9 @@ interface TransactionDao {
     @Query("SELECT amountCents FROM transactions WHERE id = :id")
     suspend fun findAmount(id: Long): Long?
 
+    @Query("SELECT type FROM categories WHERE id = :id")
+    suspend fun findCategoryType(id: Long): CategoryType?
+
     @Query("SELECT amountCents FROM transaction_total WHERE id = 1")
     suspend fun storedMagnitudeTotal(): Long?
 
@@ -162,6 +169,12 @@ interface TransactionDao {
 
     private suspend fun validateReplacement(transactions: List<TransactionEntity>): Long {
         transactions.forEach { it.toDomain().requirePersistableText() }
+        // The caller's category can be stale after a restore. Check the stored type
+        // under the same transaction that writes rows and updates the magnitude total.
+        val categoryTypes = transactions.map { it.categoryId }.distinct().associateWith { findCategoryType(it) }
+        require(transactions.all { categoryTypes[it.categoryId]?.name == it.type.name }) {
+            "A categoria não existe ou é incompatível com o tipo da transação. Selecione a categoria novamente."
+        }
         val replacingIds = transactions.filter { it.id > 0 }.map { it.id }
         require(replacingIds.distinct().size == replacingIds.size) { "Transações repetidas no mesmo lote." }
         var remaining = magnitudeTotal()

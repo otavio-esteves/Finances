@@ -11,10 +11,34 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.time.LocalDate
 
 class TransactionUseCasesTest {
+    @Test
+    fun guardedAddPassesTheCapturedRevisionAndRejectsAnOldForm() = runBlocking {
+        val added = mutableListOf<Transaction>()
+        val repository = object : TransactionsRepository by FakeTransactionsRepository() {
+            override var dataRevision = 12L
+            override suspend fun addTransactionIfCurrent(transaction: Transaction, dataRevision: Long) {
+                if (this.dataRevision != dataRevision) throw br.com.otavioesteves.finances.domain.model.StaleTransactionEditException()
+                added += transaction
+            }
+        }
+        val useCase = AddTransactionUseCase(repository)
+        val revision = useCase.dataRevision
+        val row = transaction(0, 100, TransactionType.EXPENSE, LocalDate.of(2026, 11, 1))
+        repository.dataRevision++
+        assertThrows(br.com.otavioesteves.finances.domain.model.StaleTransactionEditException::class.java) {
+            runBlocking { useCase(row, revision) }
+        }
+        assertTrue(added.isEmpty())
+        useCase(row, useCase.dataRevision)
+        assertEquals(listOf(row), added)
+    }
+
     @Test
     fun getTransactionsByMonth_returnsRepositoryFlow() = runBlocking {
         val january = MonthPeriod(year = 2026, month = 1)

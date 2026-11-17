@@ -26,7 +26,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -154,9 +153,7 @@ class TransactionsViewModel(
     }
 
     suspend fun getExportData(format: ExportFormat, period: MonthPeriod): String = withContext(mappingDispatcher) {
-        // Export a fresh query for the requested month, independent of UI subscriptions and loading state.
-        val transactions = getTransactionsByMonth(period).first()
-        val categoryMap = categoriesRepository.getCategories().first().associateBy { it.id }
-        TransactionExporter().export(transactions, categoryMap, format)
+        val snapshot = getTransactionsByMonth.forExport(period)
+        TransactionExporter().export(snapshot.transactions, snapshot.categories.associateBy { it.id }, format)
     }
 }

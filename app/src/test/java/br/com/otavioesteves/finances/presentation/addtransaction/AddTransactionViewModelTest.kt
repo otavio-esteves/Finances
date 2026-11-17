@@ -60,6 +60,12 @@ class AddTransactionViewModelTest {
         var insertCalls = 0
         var updateCalls = 0
         override var dataRevision = 0L
+        var revisionReadGate: CompletableDeferred<Unit>? = null
+
+        override suspend fun getDataRevision(): Long {
+            revisionReadGate?.await()
+            return dataRevision
+        }
 
         override suspend fun getTransactionForEditing(id: Long): TransactionEditSnapshot? =
             transactions.find { it.id == id }?.let { TransactionEditSnapshot(it, dataRevision) }
@@ -117,6 +123,80 @@ class AddTransactionViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `new form waits for a pending restore before exposing its first category catalog`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeTransactionsRepository().apply {
+            dataRevision = 1L
+            revisionReadGate = gate
+        }
+        val categories = FakeCategoriesRepository()
+        val viewModel = createViewModel(repository, categoriesRepository = categories)
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(viewModel.uiState.value.categories.isEmpty())
+
+        val restoredCategory = Category(1, "Saúde", CategoryType.EXPENSE)
+        categories.categories.value = listOf(restoredCategory)
+        gate.complete(Unit)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf(restoredCategory), viewModel.uiState.value.categories)
+        fillNewTransaction(viewModel)
+        viewModel.onCategoryChange(restoredCategory)
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, repository.transactions.size)
+        assertTrue(viewModel.uiState.value.isSaveSuccessful)
+    }
+
+    @Test
+    fun `new form rejects restore with reused category ID and type and a reopened form can save`() = runTest {
+        val repository = FakeTransactionsRepository()
+        val categories = FakeCategoriesRepository()
+        val viewModel = createViewModel(repository, categoriesRepository = categories)
+        testDispatcher.scheduler.advanceUntilIdle()
+        fillNewTransaction(viewModel)
+        viewModel.saveTransaction()
+        // The save is queued, but has not reached the repository yet.
+        repository.dataRevision++
+        val restoredCategory = Category(1, "Saúde", CategoryType.EXPENSE)
+        categories.categories.value = listOf(restoredCategory)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(repository.transactions.isEmpty())
+        assertEquals(0, repository.insertCalls)
+        assertEquals(StaleTransactionEditException().message, viewModel.uiState.value.error)
+        assertEquals("Compra", viewModel.uiState.value.description)
+        assertFalse(viewModel.uiState.value.isSaving)
+        assertFalse(viewModel.uiState.value.isSaveSuccessful)
+        // Observing the new catalog does not silently re-authorize the old form.
+        viewModel.onCategoryChange(restoredCategory)
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(repository.transactions.isEmpty())
+
+        val reopened = createViewModel(repository, categoriesRepository = categories)
+        testDispatcher.scheduler.advanceUntilIdle()
+        fillNewTransaction(reopened)
+        reopened.onCategoryChange(restoredCategory)
+        reopened.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, repository.transactions.size)
+        assertTrue(reopened.uiState.value.isSaveSuccessful)
+    }
+
+    @Test
+    fun `new form captures revision before the first category emission even for identical restored categories`() = runTest {
+        val repository = FakeTransactionsRepository()
+        val viewModel = createViewModel(repository)
+        repository.dataRevision++
+        testDispatcher.scheduler.advanceUntilIdle()
+        fillNewTransaction(viewModel)
+        viewModel.saveTransaction()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(repository.transactions.isEmpty())
+        assertEquals(StaleTransactionEditException().message, viewModel.uiState.value.error)
     }
 
     @Test

@@ -6,6 +6,8 @@ import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.Money
 import br.com.otavioesteves.finances.domain.model.MonthPeriod
 import br.com.otavioesteves.finances.domain.model.Transaction
+import br.com.otavioesteves.finances.domain.model.TransactionExportSnapshot
+import br.com.otavioesteves.finances.domain.model.CategoryType
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
 import br.com.otavioesteves.finances.domain.usecase.DeleteTransactionUseCase
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -63,8 +66,12 @@ class TransactionsViewModelTest {
         var shouldFail = false
         var transactions: List<Transaction> = emptyList()
         val monthlyFlows = mutableMapOf<MonthPeriod, Flow<List<Transaction>>>()
+        var exportCategories: List<Category> = emptyList()
+        var exportSnapshot: TransactionExportSnapshot? = null
 
         override fun getTransactions(period: MonthPeriod): Flow<List<Transaction>> = monthlyFlows[period] ?: flowOf(transactions)
+        override suspend fun getExportSnapshot(period: MonthPeriod): TransactionExportSnapshot =
+            exportSnapshot ?: TransactionExportSnapshot(getTransactions(period).first(), exportCategories)
         override fun getMonthlyBalance(period: MonthPeriod): Flow<Money> = flowOf(Money.Zero)
         override suspend fun addTransaction(transaction: Transaction) {}
         override suspend fun removeTransaction(transactionId: Long) {
@@ -355,6 +362,7 @@ class TransactionsViewModelTest {
     private fun createViewModel(repository: FakeTransactionsRepository,
         categories: FakeCategoriesRepository = FakeCategoriesRepository(),
         savedState: androidx.lifecycle.SavedStateHandle = androidx.lifecycle.SavedStateHandle()): TransactionsViewModel {
+        repository.exportCategories = categories.categories
         return TransactionsViewModel(
             getTransactionsByMonth = GetTransactionsByMonthUseCase(repository),
             deleteTransaction = DeleteTransactionUseCase(repository),
@@ -363,6 +371,24 @@ class TransactionsViewModelTest {
             mappingDispatcher = testDispatcher,
             savedStateHandle = savedState
         )
+    }
+
+    @Test
+    fun `CSV and JSON exports use the category catalog captured with the transactions`() = runTest {
+        val transaction = createFakeTransaction(1)
+        val category = Category(transaction.categoryId, "Categoria original", CategoryType.EXPENSE)
+        val repository = FakeTransactionsRepository().apply {
+            transactions = listOf(transaction)
+            exportSnapshot = TransactionExportSnapshot(transactions, listOf(category))
+        }
+        val restoredCategories = FakeCategoriesRepository(listOf(category.copy(name = "Categoria restaurada")))
+        val viewModel = createViewModel(repository, restoredCategories)
+
+        ExportFormat.entries.forEach { format ->
+            val exported = viewModel.getExportData(format, fakeMonthPeriod)
+            assertTrue(exported, exported.contains("Categoria original"))
+            assertTrue(exported, !exported.contains("Categoria restaurada"))
+        }
     }
 
     @Test

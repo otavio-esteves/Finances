@@ -38,10 +38,18 @@ class AddTransactionViewModel(
     val uiState: StateFlow<AddTransactionUiState> = _uiState.asStateFlow()
     private var editingTransaction: Transaction? = null
     private var editingDataRevision: Long? = null
+    // Capture before loading categories. A restore invalidates the whole new form,
+    // even when the restored catalog reuses the same IDs, names and types.
+    private val creationDataRevision = addTransactionUseCase.dataRevision
 
     init {
         viewModelScope.launch {
             try {
+                // A restoration may already have advanced its token before committing.
+                // Wait for that transaction before a new form can observe categories.
+                if (!isEditMode && addTransactionUseCase.getDataRevision() != creationDataRevision) {
+                    _uiState.update { it.copy(error = br.com.otavioesteves.finances.domain.model.StaleTransactionEditException().message) }
+                }
                 categoriesRepository.getCategories().collect { categories ->
                     _uiState.update { state ->
                         val selectedId = state.selectedCategory?.id ?: editingTransaction?.categoryId
@@ -258,7 +266,7 @@ class AddTransactionViewModel(
                 if (isEditMode) {
                     updateTransactionUseCase(transaction, requireNotNull(editingDataRevision))
                 } else {
-                    addTransactionUseCase(transaction)
+                    addTransactionUseCase(transaction, creationDataRevision)
                 }
                 _uiState.update { it.copy(isSaveSuccessful = true) }
             } catch (e: CancellationException) {
