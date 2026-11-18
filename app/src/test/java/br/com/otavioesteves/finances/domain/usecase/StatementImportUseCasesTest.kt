@@ -52,7 +52,7 @@ class StatementImportUseCasesTest {
     @Test fun multilineOfxHasDistinctCanonicalHashesAndKeepsBothHistoricalTextVariants() = runBlocking {
         val parser = CsvOfxStatementParser()
         suspend fun parse(description: String) = parser.parse("a.ofx",
-            "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>$description</BANKTRANLIST>".toByteArray()).single()
+            "<BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>$description</STMTTRN></BANKTRANLIST>".toByteArray()).single()
         val first = parse("A &amp; B\nPedido 1")
         val second = parse("A &amp; B\nPedido 2")
         val category = Category(1, "Outros", CategoryType.EXPENSE)

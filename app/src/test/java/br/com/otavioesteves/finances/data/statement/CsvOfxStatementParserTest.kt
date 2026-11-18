@@ -51,7 +51,7 @@ class CsvOfxStatementParserTest {
     }
 
     @Test fun ofxKeepsPrettyPrintedTextAndTheHistoricalEmptyMemoFallback() = runBlocking {
-        val ofx = "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<NAME>Nome antigo<MEMO>\nCompra\nPedido 123\n</MEMO></BANKTRANLIST>"
+        val ofx = "<BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<NAME>Nome antigo<MEMO>\nCompra\nPedido 123\n</MEMO></STMTTRN></BANKTRANLIST>"
         val entry = parser.parse("a.ofx", ofx.toByteArray()).single()
         assertEquals("Compra\nPedido 123", entry.description)
         assertEquals("Nome antigo", entry.legacyOfxDescription)
@@ -63,8 +63,8 @@ class CsvOfxStatementParserTest {
     }
 
     @Test fun ofxValidatesEntitiesInContinuationLinesAndDoesNotConsumeTheNextTransaction() = runBlocking<Unit> {
-        val first = "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>Loja\nPedido 1"
-        val second = "<STMTTRN><DTPOSTED>20261102<TRNAMT>-20.00<MEMO>Outra\nPedido 2</BANKTRANLIST>"
+        val first = "<BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>Loja\nPedido 1"
+        val second = "</STMTTRN><STMTTRN><DTPOSTED>20261102<TRNAMT>-20.00<MEMO>Outra\nPedido 2</STMTTRN></BANKTRANLIST>"
         assertEquals(listOf("Loja\nPedido 1", "Outra\nPedido 2"), parser.parse("a.ofx", (first + second).toByteArray()).map { it.description })
         assertThrows(IllegalArgumentException::class.java) {
             runBlocking { parser.parse("a.ofx", (first + " &unknown;" + second).toByteArray()) }
@@ -113,7 +113,7 @@ class CsvOfxStatementParserTest {
             "0.000" to 0L, "92233720368547758.070" to Long.MAX_VALUE,
             "-92233720368547758.07" to -Long.MAX_VALUE
         )) {
-            val ofx = "<STMTTRN><DTPOSTED>20260110<TRNAMT>$raw<MEMO>Teste</BANKTRANLIST>"
+            val ofx = "<BANKTRANLIST><STMTTRN><DTPOSTED>20260110<TRNAMT>$raw<MEMO>Teste</STMTTRN></BANKTRANLIST>"
             for (kind in StatementKind.entries) {
                 val entry = parser.parse("a.ofx", ofx.toByteArray(), kind).single()
                 assertEquals(raw, kotlin.math.abs(expectedCents), entry.amount.cents)
@@ -129,7 +129,7 @@ class CsvOfxStatementParserTest {
             "++10.00", "--10.00", "92233720368547758.08", "-92233720368547758.08",
             "000000000000000000000000000000000"
         )) {
-            val ofx = "<STMTTRN><DTPOSTED>20260110<TRNAMT>$raw<MEMO>Teste</BANKTRANLIST>"
+            val ofx = "<BANKTRANLIST><STMTTRN><DTPOSTED>20260110<TRNAMT>$raw<MEMO>Teste</STMTTRN></BANKTRANLIST>"
             assertThrows(raw, IllegalArgumentException::class.java) {
                 runBlocking { parser.parse("a.ofx", ofx.toByteArray()) }
             }
@@ -330,7 +330,7 @@ class CsvOfxStatementParserTest {
     @Test
     fun parse_csvAndOfx_preserveZeroAmounts() = runBlocking {
         val csv = parser.parse("extrato.csv", "Data;Descrição;Valor\n10/01/2026;Sem movimento;0,00".toByteArray())
-        val ofx = parser.parse("extrato.ofx", "<STMTTRN><DTPOSTED>20260110<TRNAMT>0.00<MEMO>Sem movimento</BANKTRANLIST>".toByteArray())
+        val ofx = parser.parse("extrato.ofx", "<BANKTRANLIST><STMTTRN><DTPOSTED>20260110<TRNAMT>0.00<MEMO>Sem movimento</STMTTRN></BANKTRANLIST>".toByteArray())
         assertEquals(0L, csv.single().amount.cents)
         assertEquals(0L, ofx.single().amount.cents)
     }

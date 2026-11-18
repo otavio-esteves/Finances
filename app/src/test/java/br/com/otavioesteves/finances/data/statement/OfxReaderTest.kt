@@ -34,10 +34,13 @@ class OfxReaderTest {
         assertEquals(100L, entry.amount.cents)
     }
 
-    @Test fun acceptsIndependentRecordsWithSgmlBoundariesXmlClosuresAndEndOfFile() = runBlocking {
-        for (boundary in listOf("", "</STMTTRN>")) {
-            val text = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-1.00<MEMO>Primeira$boundary" +
-                "<STMTTRN><DTPOSTED>20261102<TRNAMT>2.00<MEMO>Segunda"
+    @Test fun acceptsIndependentRecordsWithSgmlLeavesAndExplicitAggregateClosures() = runBlocking {
+        for (closedLeaves in listOf(false, true)) {
+            fun leaf(name: String, value: String) = "<$name>$value${if (closedLeaves) "</$name>" else ""}"
+            val text = "<OFX><BANKTRANLIST><STMTTRN>" + leaf("DTPOSTED", "20261101") +
+                leaf("TRNAMT", "-1.00") + leaf("MEMO", "Primeira") + "</STMTTRN><STMTTRN>" +
+                leaf("DTPOSTED", "20261102") + leaf("TRNAMT", "2.00") + leaf("MEMO", "Segunda") +
+                "</STMTTRN></BANKTRANLIST></OFX>"
             val entries = parser.parse("a.ofx", text.toByteArray())
             assertEquals(listOf("Primeira", "Segunda"), entries.map { it.description })
             assertEquals(listOf(100L, 200L), entries.map { it.amount.cents })
@@ -48,7 +51,7 @@ class OfxReaderTest {
     @Test fun requiresAmountAndDateOnEachRecordWithoutInheritingPreviousValues() {
         for (missing in listOf("<DTPOSTED>20261102", "<TRNAMT>-2.00")) {
             assertThrows(IllegalArgumentException::class.java) { runBlocking {
-                parser.parse("a.ofx", (valid + "<STMTTRN>$missing<MEMO>Incompleta</BANKTRANLIST>").toByteArray())
+                parser.parse("a.ofx", (valid + "<STMTTRN>$missing<MEMO>Incompleta</STMTTRN>").toByteArray())
             } }
         }
     }

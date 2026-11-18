@@ -18,6 +18,24 @@ import java.io.ByteArrayOutputStream
 class PdfCurrencyIntegrationTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun foreignCurrencyNamesCannotLoseTheirUnitDuringTextExtraction() {
+        for (unit in listOf("dólares", "euros", "libras", "ienes")) for (positioned in listOf(false, true)) {
+            val bytes = pdf {
+                text("Fatura", 50f, 760f)
+                if (positioned) {
+                    text("Data", 50f, 690f); text("Descricao", 170f, 690f); text("Valor em $unit", 350f, 690f)
+                    text("01/11/2026", 50f, 660f); text("Compra", 170f, 660f); text("100,00", 350f, 660f)
+                } else {
+                    text("Data Descricao Valor em $unit", 50f, 690f)
+                    text("01/11/2026 Compra 100,00", 50f, 660f)
+                }
+            }
+            assertThrows(unit, IllegalArgumentException::class.java) {
+                runBlocking { PdfStatementParser(PdfBoxTextExtractor(context)).parse("a.pdf", bytes, StatementKind.CARD_BILL) }
+            }
+        }
+    }
+
     @Test fun globalForeignCurrencyIsRejectedInPlainAndPositionedPdfsIncludingPrunedBankCovers() {
         for (positioned in listOf(false, true)) for (bankCover in listOf(false, true)) {
             val bytes = pdf {

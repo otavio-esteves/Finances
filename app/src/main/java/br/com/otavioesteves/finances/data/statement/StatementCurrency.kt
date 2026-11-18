@@ -2,14 +2,22 @@ package br.com.otavioesteves.finances.data.statement
 
 import java.util.Currency
 import java.util.Locale
+import java.text.Normalizer
 
 /** Currency declarations must never silently become BRL amounts. */
 internal object StatementCurrency {
     private val foreignCodes = Currency.getAvailableCurrencies().map { it.currencyCode }.toSet() - "BRL"
     private val tokens = Regex("[A-Za-z]{3}")
+    private val diacritics = Regex("\\p{M}+")
+    private val foreignNames = Regex(
+        "(?<!\\p{L})(?:dolar(?:es)?|dollars?|euros?|libras?|pounds?|sterling|ienes?|yens?|" +
+            "yuans?|renminbi|francos?|francs?|pesos?|rupias?|rupees?|rublos?|rubles?|won)(?!\\p{L})"
+    )
     fun hasForeignCurrency(label: String): Boolean {
         val withoutBrl = label.replace(Regex("(?i)(?<![A-Za-z])R\\$"), "BRL")
-        return tokens.findAll(withoutBrl).any {
+        val normalized = Normalizer.normalize(withoutBrl, Normalizer.Form.NFD)
+            .replace(diacritics, "").lowercase(Locale.ROOT)
+        return foreignNames.containsMatchIn(normalized) || tokens.findAll(withoutBrl).any {
             it.value.uppercase(Locale.ROOT) in foreignCodes &&
                 (it.range.first == 0 || !withoutBrl[it.range.first - 1].isLetter()) &&
                 (it.range.last == withoutBrl.lastIndex || !withoutBrl[it.range.last + 1].isLetter())

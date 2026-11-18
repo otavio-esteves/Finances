@@ -69,7 +69,7 @@ class RoomStatementImportRepositoryTest {
     }
 
     @Test fun multilineOfxStillRecognizesEncodedAndDecodedFirstLineBatches() = runBlocking {
-        val ofx = "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>A &amp; B\nPedido 123</BANKTRANLIST>"
+        val ofx = "<BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>A &amp; B\nPedido 123</STMTTRN></BANKTRANLIST>"
         val corrected = CsvOfxStatementParser().parse("new.ofx", ofx.toByteArray()).single()
         for (text in listOf("A &amp; B", "A & B")) {
             assertLegacyClaimsRecognized(RawStatementEntry(text, corrected.amount, corrected.date, corrected.type), corrected)
@@ -82,13 +82,13 @@ class RoomStatementImportRepositoryTest {
             val category = Category(1, "Outros", CategoryType.EXPENSE)
             val confirm = ConfirmStatementImportUseCase(RoomStatementImportRepository(db), DefaultDateProvider())
             for (text in listOf("A &amp; B", "A &amp; B\nPedido 1", "A &amp; B\nPedido 2")) {
-                val ofx = "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>$text</BANKTRANLIST>"
+                val ofx = "<BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>$text</STMTTRN></BANKTRANLIST>"
                 val entry = CsvOfxStatementParser().parse("a.ofx", ofx.toByteArray()).single()
                 confirm("a.ofx", listOf(CategorySuggestion(entry, category, 1f)), "Conta A")
             }
             assertEquals(setOf("A & B", "A & B\nPedido 1", "A & B\nPedido 2"), db.transactionDao().getAllTransactions().map { it.description }.toSet())
             assertEquals(3, db.statementImportDao().getAllImportsForBackup().size)
-            val repeated = CsvOfxStatementParser().parse("a.ofx", "<STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>A &amp; B\nPedido 1</BANKTRANLIST>".toByteArray()).single()
+            val repeated = CsvOfxStatementParser().parse("a.ofx", "<BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>-10.00<MEMO>A &amp; B\nPedido 1</STMTTRN></BANKTRANLIST>".toByteArray()).single()
             assertTrue(runCatching { confirm("a.ofx", listOf(CategorySuggestion(repeated, category, 1f)), "Conta A") }.exceptionOrNull() is DuplicateStatementImportException)
         }
     }

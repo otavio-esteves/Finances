@@ -37,7 +37,7 @@ class CurrencyAndClosingRegressionTest {
         val csvOfx = CsvOfxStatementParser()
         for (currency in listOf("USD", "EUR", "CHF", "XYZ")) {
             for ((name,text) in listOf(
-                "a.ofx" to "<CURDEF>$currency<STMTTRN><DTPOSTED>20260110<TRNAMT>-100.00<NAME>Compra</BANKTRANLIST>",
+                "a.ofx" to "<CURDEF>$currency<BANKTRANLIST><STMTTRN><DTPOSTED>20260110<TRNAMT>-100.00<NAME>Compra</STMTTRN></BANKTRANLIST>",
                 "a.csv" to "Data;Descrição;Valor;Moeda\n10/01/2026;Compra;100.00;$currency")) {
                 assertThrows(IllegalArgumentException::class.java) { runBlocking { csvOfx.parse(name,text.toByteArray()) } }
             }
@@ -45,12 +45,12 @@ class CurrencyAndClosingRegressionTest {
         assertThrows(IllegalArgumentException::class.java) { runBlocking {
             csvOfx.parse("a.csv","Data;Descrição;Valor USD\n10/01/2026;Compra;100.00".toByteArray())
         } }
-        assertEquals(15000L,csvOfx.parse("a.ofx","<CURDEF>BRL<STMTTRN><DTPOSTED>20260110<TRNAMT>-150.00<NAME>Compra<ORIGCURRENCY><CURSYM>USD<CURRATE>5</ORIGCURRENCY></BANKTRANLIST>".toByteArray()).single().amount.cents)
+        assertEquals(15000L,csvOfx.parse("a.ofx","<CURDEF>BRL<BANKTRANLIST><STMTTRN><DTPOSTED>20260110<TRNAMT>-150.00<NAME>Compra<ORIGCURRENCY><CURSYM>USD<CURRATE>5</ORIGCURRENCY></STMTTRN></BANKTRANLIST>".toByteArray()).single().amount.cents)
         for (currency in listOf("BRL","R$")) {
             val entries=csvOfx.parse("a.csv","Data;Descrição;Valor;Moeda\n10/01/2026;Compra;100.00;$currency".toByteArray())
             assertEquals(10000L,entries.single().amount.cents)
         }
-        assertEquals(10000L,csvOfx.parse("a.ofx","<CURDEF>BRL<STMTTRN><DTPOSTED>20260110<TRNAMT>-100.00<NAME>Compra</BANKTRANLIST>".toByteArray()).single().amount.cents)
+        assertEquals(10000L,csvOfx.parse("a.ofx","<CURDEF>BRL<BANKTRANLIST><STMTTRN><DTPOSTED>20260110<TRNAMT>-100.00<NAME>Compra</STMTTRN></BANKTRANLIST>".toByteArray()).single().amount.cents)
     }
     @Test fun completeFutureDatesCannotBypassClosingButOlderInstallmentsRemainValid() {
         for (date in listOf("10/02/2025", "10 fev 2025")) {

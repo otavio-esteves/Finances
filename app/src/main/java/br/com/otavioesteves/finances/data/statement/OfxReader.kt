@@ -13,8 +13,22 @@ internal data class OfxTransactionFields(
 internal fun ofxTransactions(text: String, checkCancelled: () -> Unit): Sequence<OfxTransactionFields> = sequence {
     var current: OfxTransactionFields? = null
     var originalCurrency = false
+    val containers = ArrayDeque<String>()
     for (tag in ofxTags(text, checkCancelled)) {
         checkCancelled()
+        if (tag.name in FINANCIAL_CONTAINERS || tag.name.endsWith("MSGSRSV1") || tag.name.endsWith("TRNRS")) {
+            if (tag.closing) {
+                require(containers.lastOrNull() == tag.name) {
+                    "Fechamento ${tag.name} incompatível com o bloco ${containers.lastOrNull() ?: tag.name} no OFX. Nenhum lançamento foi importado."
+                }
+                containers.removeLast()
+            } else {
+                require(!tag.selfClosing && tag.name !in containers && containers.size < 64) {
+                    "Bloco ${tag.name} inválido ou aninhamento excessivo no OFX. Nenhum lançamento foi importado."
+                }
+                containers.addLast(tag.name)
+            }
+        }
         when (tag.name) {
             "ORIGCURRENCY" -> {
                 require(!tag.selfClosing && originalCurrency == tag.closing) {
@@ -25,12 +39,13 @@ internal fun ofxTransactions(text: String, checkCancelled: () -> Unit): Sequence
             "STMTTRN" -> {
                 require(!originalCurrency) { "Bloco ORIGCURRENCY incompleto no OFX." }
                 require(!tag.selfClosing && (!tag.closing || current != null)) { "Transação OFX incompleta." }
+                require(tag.closing || current == null) { "Transação OFX sem fechamento. Nenhum lançamento foi importado." }
                 current?.let { yield(it) }
                 current = if (tag.closing) null else OfxTransactionFields()
             }
             "BANKTRANLIST" -> if (tag.closing) {
                 require(!originalCurrency) { "Bloco ORIGCURRENCY incompleto no OFX." }
-                current?.let { yield(it) }
+                require(current == null) { "Transação OFX sem fechamento. Nenhum lançamento foi importado." }
                 current = null
             }
             "CURDEF", "CURSYM" -> if (!tag.closing && !originalCurrency) {
@@ -57,8 +72,16 @@ internal fun ofxTransactions(text: String, checkCancelled: () -> Unit): Sequence
     }
     checkCancelled()
     require(!originalCurrency) { "Bloco ORIGCURRENCY incompleto no OFX. Nenhum lançamento foi importado." }
-    current?.let { yield(it) }
+    require(current == null && containers.isEmpty()) {
+        "O arquivo OFX está incompleto. Exporte-o novamente. Nenhum lançamento foi importado."
+    }
 }
+
+// SGML may omit leaf end tags, but these aggregates must close in order.
+private val FINANCIAL_CONTAINERS = setOf(
+    "OFX", "BANKTRANLIST", "STMTTRN", "ORIGCURRENCY", "CURRENCY", "STMTRS", "CCSTMTRS",
+    "BANKACCTFROM", "CCACCTFROM", "LEDGERBAL", "AVAILBAL", "SONRS", "STATUS", "FI"
+)
 
 private data class OfxTag(
     val name: String,
@@ -111,7 +134,20 @@ private fun ofxTags(text: String, checkCancelled: () -> Unit): Sequence<OfxTag> 
         advance()
         val valueStart = index
         while (index < text.length && text[index] != '<') advance()
-        yield(OfxTag(name, closing, raw.endsWith('/'), valueStart, index))
+        val valueEnd = index
+        // Comments between SGML leaves are fine. Text after an inline comment or
+        // instruction would otherwise be discarded, silently changing a value.
+        while (text.startsWith("<!--", index) || text.startsWith("<?", index)) {
+            if (text.startsWith("<!--", index)) { repeat(4) { advance() }; skipUntil("-->") }
+            else { repeat(2) { advance() }; skipUntil("?>") }
+            while (index < text.length && text[index] != '<') {
+                require(text[index].isWhitespace()) {
+                    "Um comentário ou instrução interrompe um campo no OFX. Exporte-o novamente. Nenhum lançamento foi importado."
+                }
+                advance()
+            }
+        }
+        yield(OfxTag(name, closing, raw.endsWith('/'), valueStart, valueEnd))
     }
     checkCancelled()
 }
