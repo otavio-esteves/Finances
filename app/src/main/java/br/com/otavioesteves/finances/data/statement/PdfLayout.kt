@@ -12,7 +12,13 @@ internal data class PdfWord(
 
 /** Rebuild rows from word coordinates, preserving empty debit/credit cells with tabs. */
 internal class PdfLayoutReconstructor {
-    private data class Column(val name: String, val left: Float, val right: Float, val isBrl: Boolean = false)
+    private data class Column(val name: String, val left: Float, val right: Float, val label: String = name) {
+        val isBrl get() = PdfCurrencyPolicy.hasBrlMarker(label)
+        val isForeign get() = StatementCurrency.hasForeignCurrency(label) ||
+            PARENTHESIZED_CODE.findAll(normalizePdfText(label)).any { it.groupValues[1] != "brl" }
+
+        fun headerLabel(): String = if (isBrl && name in MONEY_COLUMNS) "$name (BRL)" else name
+    }
     private var columns = emptyList<Column>()
     private var descriptionPrefix = ""
 
@@ -38,50 +44,12 @@ internal class PdfLayoutReconstructor {
             val normalized = normalizePdfText(text)
             if (METADATA.containsMatchIn(normalized)) return@joinToString text
             if (DATE_HEADER.containsMatchIn(normalized) && DESCRIPTION.containsMatchIn(normalized) && VALUE.containsMatchIn(normalized)) {
-                val header = mutableListOf<Column>()
-                ordered.forEach { word ->
-                    val label = normalizePdfText(word.text).substringBefore('(').trim(':', '.', '(', ')')
-                    val kind = when {
-                        label in listOf("data", "dt", "dia") -> "data"
-                        label in listOf("descricao", "historico", "estabelecimento", "transacoes") -> "descricao"
-                        label in listOf("lancamento", "lancamentos") && header.none { it.name == "descricao" } -> "descricao"
-                        label in listOf("documento", "doc", "nr", "numero") -> "documento"
-                        label == "hora" -> "hora"
-                        label == "valor" -> if (StatementCurrency.hasForeignCurrency(word.text)) "valor estrangeiro" else "valor"
-                        label == "r$" && header.lastOrNull()?.name !in MONEY_COLUMNS -> "valor"
-                        (label == "us$" || StatementCurrency.hasForeignCurrency(label)) && (header.lastOrNull()?.name != "valor" ||
-                            header.lastOrNull()?.isBrl == true) -> "valor estrangeiro"
-                        label in listOf("credito/debito", "debito/credito") -> "valor"
-                        label in listOf("moeda", "currency") -> "moeda"
-                        label == "debito" -> "debito"
-                        label == "credito" -> "credito"
-                        label == "saldo" -> "saldo"
-                        label in listOf("tipo", "d/c", "c/d") -> "tipo"
-                        else -> null
-                    }
-                    if (kind != null) header += Column(kind, word.left / width, word.right / width,
-                        PdfCurrencyPolicy.hasBrlMarker(word.text))
-                    else if (header.isNotEmpty()) {
-                        val previous = header.removeAt(header.lastIndex)
-                        val name = when {
-                            previous.name.startsWith("data") && label in listOf("movimento", "mov", "balancete") -> "data $label"
-                            previous.name == "valor" && (label == "us$" || StatementCurrency.hasForeignCurrency(label)) -> "valor estrangeiro"
-                            else -> previous.name
-                        }
-                        header += previous.copy(name = name, right = word.right / width,
-                            isBrl = previous.isBrl || PdfCurrencyPolicy.hasBrlMarker(word.text))
-                    }
-                }
-                require(header.none { it.name == "valor estrangeiro" } || header.any { it.name in MONEY_COLUMNS && it.name != "valor estrangeiro" }) {
-                    "Tabela em moeda estrangeira sem coluna de conversão em reais."
-                }
+                val header = readColumns(ordered, width)
                 val description = header.firstOrNull { it.name == "descricao" }
                 val firstMoney = header.firstOrNull { it.name in MONEY_COLUMNS }
                 if (description != null && firstMoney != null && firstMoney.left - description.right > 0.025f) {
                     columns = header
-                    return@joinToString header.joinToString("\t") {
-                        if (it.isBrl && it.name in MONEY_COLUMNS) "${it.name} (BRL)" else it.name
-                    }
+                    return@joinToString header.joinToString("\t") { it.headerLabel() }
                 }
             }
             if (columns.isEmpty() || (!PdfDateResolver.DATE_PREFIX.containsMatchIn(normalized) && !MONEY.containsMatchIn(text))) text
@@ -99,6 +67,69 @@ internal class PdfLayoutReconstructor {
                 cells.joinToString("\t") { it.joinToString(" ") }
             }
         }
+    }
+
+    /** Keep the complete label until currency validation, including qualifiers split into PDF words. */
+    private fun readColumns(words: List<PdfWord>, width: Float, centered: Boolean = false): List<Column> {
+        require(words.size <= MAX_HEADER_WORDS) { "O cabeçalho do PDF excede o limite de análise local." }
+        val header = mutableListOf<Column>()
+        for (word in words) {
+            require(word.text.length <= MAX_HEADER_LABEL_CHARS) { "O cabeçalho do PDF contém um campo muito extenso." }
+            val normalized = normalizePdfText(word.text)
+            val label = normalized.substringBefore('(').trim().trim(':', '.', '(', ')').trim()
+            val previous = header.lastOrNull()
+            val parenthesized = '(' in normalized || ')' in normalized ||
+                (previous != null && previous.label.lastIndexOf('(') > previous.label.lastIndexOf(')'))
+            val kind = when {
+                label in listOf("data", "dt", "dia") || (centered && label == "lancamentos" && header.isEmpty()) -> "data"
+                label in listOf("descricao", "historico", "estabelecimento", "transacoes") ||
+                    (centered && label == "historico/complemento") -> "descricao"
+                label in listOf("lancamento", "lancamentos") && header.none { it.name == "descricao" } -> "descricao"
+                label in listOf("documento", "doc", "nr", "numero") || (centered && label in listOf("nr.doc", "id")) -> "documento"
+                label == "hora" || (centered && label == "favorecido") -> label
+                centered && label == "cpf/cnpj" -> "identificador"
+                label == "valor" || label in listOf("credito/debito", "debito/credito") -> "valor"
+                label == "r$" && previous?.name !in MONEY_COLUMNS -> "valor"
+                label in listOf("moeda", "currency") -> "moeda"
+                label in listOf("debito", "credito", "saldo") -> label
+                label in listOf("tipo", "d/c", "c/d") -> "tipo"
+                // A standalone foreign value can follow a BRL column. Parentheses qualify the same column.
+                StatementCurrency.hasForeignCurrency(normalized) && !parenthesized &&
+                    (previous?.name !in MONEY_COLUMNS || (previous?.name == "valor" && previous.isBrl)) -> "valor estrangeiro"
+                else -> null
+            }
+            if (kind != null) {
+                header += Column(kind, word.left / width, word.right / width, word.text)
+            } else if (previous != null) {
+                require(previous.label.length + 1 + word.text.length <= MAX_HEADER_LABEL_CHARS) {
+                    "O cabeçalho do PDF contém um campo muito extenso."
+                }
+                header[header.lastIndex] = previous.copy(
+                    name = when {
+                        previous.name.startsWith("data") && label in listOf("movimento", "mov", "balancete") -> "data $label"
+                        previous.name == "valor" && label == "estrangeiro" -> "valor estrangeiro"
+                        else -> previous.name
+                    },
+                    right = word.right / width,
+                    label = "${previous.label} ${word.text}"
+                )
+            }
+        }
+        val columns = header.map { column ->
+            if (column.name !in MONEY_COLUMNS) return@map column
+            require(!column.isForeign || !column.isBrl) { "Coluna monetária com moedas conflitantes no PDF." }
+            require(!column.isForeign || column.name in listOf("valor", "valor estrangeiro")) {
+                "Coluna de débito, crédito ou saldo em moeda estrangeira sem conversão em reais."
+            }
+            if (column.isForeign) column.copy(name = "valor estrangeiro") else column
+        }
+        val foreignUnits = columns.any { it.name == "valor estrangeiro" || (it.name == "moeda" && it.isForeign) }
+        val explicitBrl = columns.any { it.name == "valor" && it.isBrl } ||
+            listOf("debito", "credito").all { name -> columns.any { it.name == name && it.isBrl } }
+        require(!foreignUnits || explicitBrl) {
+            "Tabela em moeda estrangeira sem coluna inequívoca de conversão em reais."
+        }
+        return columns
     }
 
     /** Two newspaper-style purchase columns must be read independently, including a continuation above the header. */
@@ -134,19 +165,7 @@ internal class PdfLayoutReconstructor {
         }
         if (headerIndex < 0) return null
         val headerWords = rows[headerIndex].sortedBy { it.left }
-        val header = headerWords.mapNotNull { word ->
-            val name = when (normalizePdfText(word.text)) {
-                "data", "lancamentos" -> "data"
-                "descricao", "historico/complemento" -> "descricao"
-                "id", "nr", "nr.", "nr.doc", "nr.doc." -> "documento"
-                "favorecido" -> "favorecido"
-                "cpf/cnpj" -> "identificador"
-                "valor" -> "valor"
-                "saldo" -> "saldo"
-                else -> null
-            }
-            name?.let { Column(it, word.left / width, word.right / width) }
-        }
+        val header = readColumns(headerWords, width, centered = true)
         require(header.count { it.name == "data" } == 1 && header.count { it.name == "descricao" } == 1 &&
             header.count { it.name == "valor" } == 1 && header.count { it.name == "saldo" } == 1) {
             "Colunas do extrato PDF não foram identificadas."
@@ -170,7 +189,7 @@ internal class PdfLayoutReconstructor {
         }
         val output = mutableListOf<String>()
         output += rows.take(headerIndex).joinToString("\n") { row -> row.sortedBy { it.left }.joinToString(" ") { it.text } }
-        output += header.joinToString("\t") { it.name }
+        output += header.joinToString("\t") { it.headerLabel() }
         for (block in blocks) {
             val cells = Array(header.size) { mutableListOf<String>() }
             val monetary = block.filter { MONEY.matches(normalizeAmountToken(it.text)) }
@@ -224,6 +243,9 @@ internal class PdfLayoutReconstructor {
     private fun normalizeAmountToken(text: String) = normalizePdfText(text).replace('\u2212', '-').replace('\u2013', '-')
 
     companion object {
+        private const val MAX_HEADER_WORDS = 256
+        private const val MAX_HEADER_LABEL_CHARS = 1024
+        private val PARENTHESIZED_CODE = Regex("\\(\\s*([a-z]{3})\\s*\\)")
         private val DESCRIPTION = Regex("\\b(?:descricao|historico|estabelecimento|transacoes|lancamentos?)\\b")
         private val DATE_HEADER = Regex("^(?:data|dt\\.?|dia)\\s+")
         private val METADATA = Regex("^(?:ano|fatura|periodo|referencia|emissao|vencimento|saldo|total|valor total|pagamento minimo|limite)\\b")
