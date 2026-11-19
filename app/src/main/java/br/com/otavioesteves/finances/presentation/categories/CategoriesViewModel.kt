@@ -12,14 +12,19 @@ import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.CancellationException
 import br.com.otavioesteves.finances.domain.usecase.GetCategorySummariesUseCase
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class CategoriesViewModel(
     private val getCategorySummaries: GetCategorySummariesUseCase,
     dateProvider: DateProvider,
@@ -28,10 +33,29 @@ class CategoriesViewModel(
 ) : ViewModel() {
 
     val selectedMonthPeriod: StateFlow<MonthPeriod> = monthSelection.period
-    private val _uiState = MutableStateFlow<CategoriesUiState>(CategoriesUiState.Loading)
-    val uiState: StateFlow<CategoriesUiState> = _uiState.asStateFlow()
+    private val reloadRequests = MutableStateFlow(0L)
+    private var lastMonthlyState: CategoriesUiState = CategoriesUiState.Loading
+    val uiState: StateFlow<CategoriesUiState> = combine(selectedMonthPeriod, reloadRequests) { period, _ -> period }
+        .flatMapLatest { period ->
+            combine(getCategorySummaries(period), categoriesRepository.getCategories()) { totals, categories ->
+                val amounts = totals.associate { it.category.id to it.totalAmount }
+                val state: CategoriesUiState = if (categories.isEmpty()) CategoriesUiState.Empty(period)
+                else CategoriesUiState.Success(period, categories.map { CategorySummary(it, amounts[it.id] ?: Money.Zero) })
+                state.also { lastMonthlyState = it }
+            }.onStart {
+                // Preserve cached rows and scroll position while the same month refreshes on return.
+                val loadedPeriod = when (val state = lastMonthlyState) {
+                    is CategoriesUiState.Success -> state.monthPeriod
+                    is CategoriesUiState.Empty -> state.monthPeriod
+                    else -> null
+                }
+                if (loadedPeriod != period) emit(CategoriesUiState.Loading)
+            }.catch { error ->
+                if (error is CancellationException) throw error
+                emit(CategoriesUiState.Error(period, error.message ?: "Erro desconhecido").also { lastMonthlyState = it })
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 0), CategoriesUiState.Loading)
 
-    private var loadJob: Job? = null
     private val _creationState = MutableStateFlow(CategoryCreationState())
     val creationState: StateFlow<CategoryCreationState> = _creationState.asStateFlow()
 
@@ -58,12 +82,6 @@ class CategoriesViewModel(
         }
     }
 
-    init {
-        viewModelScope.launch {
-            selectedMonthPeriod.collect { loadCategorySummaries(it) }
-        }
-    }
-
     fun onEvent(event: CategoriesEvent) {
         when (event) {
             is CategoriesEvent.OnMonthChanged -> {
@@ -73,40 +91,11 @@ class CategoriesViewModel(
             is CategoriesEvent.OnCategoryClicked -> Unit
 
             CategoriesEvent.OnRetryClicked -> {
-                loadCategorySummaries(selectedMonthPeriod.value)
+                reloadRequests.update { it + 1 }
             }
         }
     }
 
-    private fun loadCategorySummaries(period: MonthPeriod) {
-        loadJob?.cancel()
-        loadJob = viewModelScope.launch {
-            val summaries = getCategorySummaries(period)
-            val rows = combine(summaries, categoriesRepository.getCategories()) { totals, categories ->
-                val amounts = totals.associate { it.category.id to it.totalAmount }
-                categories.map { CategorySummary(it, amounts[it.id] ?: Money.Zero) }
-            }
-            rows.onStart {
-                    _uiState.value = CategoriesUiState.Loading
-                }
-                .catch { exception ->
-                    _uiState.value = CategoriesUiState.Error(
-                        monthPeriod = period,
-                        message = exception.message ?: "Erro desconhecido"
-                    )
-                }
-                .collect { categories ->
-                    _uiState.value = if (categories.isEmpty()) {
-                        CategoriesUiState.Empty(monthPeriod = period)
-                    } else {
-                        CategoriesUiState.Success(
-                            monthPeriod = period,
-                            categories = categories
-                        )
-                    }
-                }
-        }
-    }
 }
 
 
