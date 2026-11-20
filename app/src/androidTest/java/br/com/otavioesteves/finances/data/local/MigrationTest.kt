@@ -50,16 +50,19 @@ class MigrationTest {
     }
 
     @Test
-    fun migrate1Through9PreservesTransactionsAndValidatesTheCompleteSchema() {
+    fun migrate1Through10PreservesTransactionsAndValidatesTheCompleteSchema() {
         helper.createDatabase(testDbName, 1).apply {
             execSQL("INSERT INTO categories (id, name, type) VALUES (1, 'Outros', 'EXPENSE')")
             execSQL("INSERT INTO transactions (id, description, amountCents, categoryId, date, type, notes) VALUES (1, 'Original', 1234, 1, '2026-01-01', 'EXPENSE', NULL)")
             close()
         }
-        val db = helper.runMigrationsAndValidate(testDbName, 9, true,
+        val db = helper.runMigrationsAndValidate(testDbName, 10, true,
             AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4,
             AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7,
-            AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9)
+            AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10)
+        db.query("SELECT amountCents FROM transaction_total WHERE id = 1").use {
+            assertTrue(it.moveToFirst()); assertEquals(1234L, it.getLong(0))
+        }
         db.query("SELECT description, amountCents, origin FROM transactions WHERE id = 1").use {
             assertTrue(it.moveToFirst())
             assertEquals("Original", it.getString(0))

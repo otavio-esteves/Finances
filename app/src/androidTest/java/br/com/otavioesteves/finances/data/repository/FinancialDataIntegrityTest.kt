@@ -41,6 +41,40 @@ class FinancialDataIntegrityTest {
         } finally { db.close() }
     }
 
+    @Test fun protectedBackupAuthenticatesEverySegmentBeforeReplacingRoomAndIsPortable() = runBlocking {
+        withDatabase { source ->
+            val sourceTransactions = RoomTransactionsRepository(source.transactionDao(), source)
+            sourceTransactions.addTransaction(entry(1234).copy(notes = "s".repeat(40_000)))
+            sourceTransactions.addTransaction(entry(5678).copy(notes = "t".repeat(40_000)))
+            val sourceBackups = RoomBackupRepository(source)
+            val bytes = java.io.ByteArrayOutputStream()
+            CreateBackupUseCase(sourceBackups, br.com.otavioesteves.finances.data.backup.PasswordBackupEncryption())(
+                bytes, "senha portátil sintética".toCharArray())
+            assertTrue(bytes.size() > 65_536)
+            withDatabase { target ->
+                RoomTransactionsRepository(target.transactionDao(), target).addTransaction(entry(999))
+                val targetBackups = RoomBackupRepository(target)
+                val before = targetBackups.createBackup()
+                val valid = bytes.toByteArray()
+                val invalid = listOf(valid to "senha errada".toCharArray(),
+                    valid.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() } to "senha portátil sintética".toCharArray(),
+                    valid.copyOf(valid.size - 1) to "senha portátil sintética".toCharArray())
+                for ((candidate, secret) in invalid) {
+                    assertTrue(runCatching {
+                        RestoreBackupUseCase(targetBackups, br.com.otavioesteves.finances.data.backup.PasswordBackupEncryption())(
+                            candidate.inputStream(), secret)
+                    }.isFailure)
+                    assertEquals(before, targetBackups.createBackup())
+                    assertEquals(999L, target.transactionDao().storedMagnitudeTotal())
+                }
+                RestoreBackupUseCase(targetBackups, br.com.otavioesteves.finances.data.backup.PasswordBackupEncryption())(
+                    valid.inputStream(), "senha portátil sintética".toCharArray())
+                assertEquals(sourceBackups.createBackup(), targetBackups.createBackup())
+                assertEquals(6912L, target.transactionDao().storedMagnitudeTotal())
+            }
+        }
+    }
+
     @Test fun magnitudeBudgetTracksReplacementDeletionUndoAndRestore() = runBlocking {
         withDatabase { db ->
             val dao = db.transactionDao()

@@ -114,14 +114,15 @@ fun TransactionsScreen(
             try {
                 val data = viewModel.getExportData(format, period)
                 withContext(Dispatchers.IO) {
-                    val stream = context.contentResolver.openOutputStream(uri)
+                    val stream = context.contentResolver.openOutputStream(uri, "wt")
                         ?: throw IllegalStateException("Não foi possível abrir o destino do arquivo.")
                     stream.use { it.write(data.toByteArray(Charsets.UTF_8)) }
                 }
+                snackbarHostState.showSnackbar("Transações exportadas sem proteção. Guarde o arquivo em local seguro.")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                snackbarHostState.showSnackbar(e.message ?: "Não foi possível exportar as transações.")
+                snackbarHostState.showSnackbar("Não foi possível exportar. Confira o destino e o espaço disponível; o arquivo pode estar incompleto.")
             }
         }
     }
@@ -191,7 +192,7 @@ fun TransactionsScreen(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Exportar CSV") },
+                            text = { Text("Exportar CSV sem proteção") },
                             onClick = {
                                 showMenu = false
                                 val period = viewModel.selectedMonthPeriod.value
@@ -200,7 +201,7 @@ fun TransactionsScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Exportar JSON") },
+                            text = { Text("Exportar JSON sem proteção") },
                             onClick = {
                                 showMenu = false
                                 val period = viewModel.selectedMonthPeriod.value

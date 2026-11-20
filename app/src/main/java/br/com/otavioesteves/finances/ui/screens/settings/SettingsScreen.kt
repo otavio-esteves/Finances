@@ -1,5 +1,10 @@
 package br.com.otavioesteves.finances.ui.screens.settings
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -89,6 +94,10 @@ fun SettingsScreen(
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showThemePicker by rememberSaveable { mutableStateOf(false) }
     var showPalettePicker by rememberSaveable { mutableStateOf(false) }
+    var protectedDestination by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showUnprotectedWarning by remember { mutableStateOf(false) }
+    var restorePassword by remember { mutableStateOf("") }
+    BackHandler(uiState.isLoading) { viewModel.cancelBackupOperation() }
     val scrollState = rememberScrollState()
     val contentResolver = context.applicationContext.contentResolver
 
@@ -133,10 +142,32 @@ fun SettingsScreen(
     ) { uri ->
         uri?.let {
             viewModel.createBackup {
-                contentResolver.openOutputStream(it)
+                contentResolver.openOutputStream(it, "wt")
                     ?: throw IllegalStateException("Não foi possível abrir o destino do backup.")
             }
         }
+    }
+
+    val protectedBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> protectedDestination = uri }
+
+    protectedDestination?.let { destination ->
+        BackupPasswordDialog(onDismiss = { protectedDestination = null }) { secret ->
+            protectedDestination = null
+            viewModel.createBackup(secret) {
+                contentResolver.openOutputStream(destination, "wt")
+                    ?: throw IllegalStateException("Destino indisponível")
+            }
+        }
+    }
+    if (showUnprotectedWarning) {
+        AlertDialog(onDismissRequest = { showUnprotectedWarning = false }, title = { Text("JSON sem proteção") },
+            text = { Text("Este arquivo contém seus dados financeiros legíveis. O provedor escolhido poderá acessá-los. Prefira o backup protegido por senha.") },
+            confirmButton = { TextButton(onClick = {
+                showUnprotectedWarning = false; createBackupLauncher.launch("finances_backup.json")
+            }) { Text("Gerar JSON sem proteção") } },
+            dismissButton = { TextButton(onClick = { showUnprotectedWarning = false }) { Text("Cancelar") } })
     }
 
     val restoreBackupLauncher = rememberLauncherForActivityResult(
@@ -150,24 +181,31 @@ fun SettingsScreen(
         }
     }
 
-    LaunchedEffect(uiState.error, uiState.successMessage) {
-        uiState.error?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearMessages()
-        }
-        uiState.successMessage?.let {
-            snackbarHostState.showSnackbar(it)
+    val feedbackMessage = listOfNotNull(uiState.successMessage, uiState.error).joinToString("\n")
+    LaunchedEffect(feedbackMessage) {
+        if (feedbackMessage.isNotBlank()) {
+            snackbarHostState.showSnackbar(feedbackMessage)
             viewModel.clearMessages()
         }
     }
 
+    LaunchedEffect(uiState.showRestoreConfirmation) { if (!uiState.showRestoreConfirmation) restorePassword = "" }
     if (uiState.showRestoreConfirmation) {
         AlertDialog(
             onDismissRequest = viewModel::onRestoreCancel,
             title = { Text("Restaurar Backup") },
-            text = { Text("Ao restaurar este backup, todos os dados atuais serão apagados e substituídos pelos dados do arquivo. Esta ação não pode ser desfeita. Deseja continuar?") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("A restauração substitui os dados atuais após verificar o arquivo. Esta ação não pode ser desfeita. Guarde uma cópia dos dados atuais antes de continuar.")
+                    PasswordField(restorePassword, { restorePassword = it }, "Senha do backup (JSON legado: deixe vazio)")
+                    Text("A senha não pode ser recuperada pelo Finances.", style = MaterialTheme.typography.bodySmall)
+                }
+            },
             confirmButton = {
-                TextButton(onClick = viewModel::onRestoreConfirm) {
+                TextButton(onClick = {
+                    val secret = restorePassword.takeIf { it.isNotEmpty() }?.toCharArray()
+                    restorePassword = ""; viewModel.onRestoreConfirm(secret)
+                }) {
                     Text("Confirmar Restauração", color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -200,6 +238,8 @@ fun SettingsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 CircularProgressIndicator()
+                Text(uiState.operationLabel, modifier = Modifier.padding(16.dp))
+                if (uiState.canCancelBackup) TextButton(onClick = viewModel::cancelBackupOperation) { Text("Cancelar") }
             }
         } else {
             Column(
@@ -270,17 +310,23 @@ fun SettingsScreen(
                             modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 8.dp)
                         )
                         SettingsAction(
-                            title = "Gerar backup",
-                            subtitle = "Salve uma cópia dos seus dados",
+                            title = "Backup protegido por senha",
+                            subtitle = "Cópia criptografada para restaurar em outro aparelho",
                             icon = Icons.Filled.FileUpload,
-                            onClick = { createBackupLauncher.launch("finances_backup.json") }
+                            onClick = { protectedBackupLauncher.launch("finances_backup.fnb") }
                         )
                         HorizontalDivider(modifier = Modifier.padding(start = 76.dp, end = 20.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
+                        SettingsAction(
+                            title = "Avançado: JSON sem proteção",
+                            subtitle = "Arquivo legível, sem senha",
+                            icon = Icons.Filled.FileUpload,
+                            onClick = { showUnprotectedWarning = true }
+                        )
                         SettingsAction(
                             title = "Restaurar backup",
                             subtitle = "Recupere uma cópia anterior",
                             icon = Icons.Filled.FileDownload,
-                            onClick = { restoreBackupLauncher.launch("application/json") }
+                            onClick = { restoreBackupLauncher.launch("*/*") }
                         )
                     }
                 }
@@ -353,4 +399,30 @@ private fun AppearanceOption(
         if (swatch != null) Box(Modifier.size(24.dp).clip(CircleShape).background(swatch))
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
     }
+}
+
+/** Password fields are deliberately not rememberSaveable or stored in a ViewModel. */
+@Composable
+private fun BackupPasswordDialog(onDismiss: () -> Unit, onConfirm: (CharArray) -> Unit) {
+    var password by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Proteger backup") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Escolha uma senha longa e guarde-a em local seguro. Sem ela, não será possível recuperar este backup.")
+                PasswordField(password, { password = it }, "Senha (mínimo 12 caracteres)")
+                PasswordField(confirmation, { confirmation = it }, "Repita a senha")
+                if (confirmation.isNotEmpty() && password != confirmation) Text("As senhas precisam ser iguais.")
+            }
+        },
+        confirmButton = { TextButton(enabled = password.length in 12..1024 && password == confirmation,
+            onClick = { val secret = password.toCharArray(); password = ""; confirmation = ""; onConfirm(secret) }) { Text("Gerar backup protegido") } },
+        dismissButton = { TextButton(onClick = { password = ""; confirmation = ""; onDismiss() }) { Text("Cancelar") } })
+}
+
+@Composable
+private fun PasswordField(value: String, onChange: (String) -> Unit, label: String) {
+    OutlinedTextField(value = value, onValueChange = { if (it.length <= 1024) onChange(it) }, label = { Text(label) },
+        singleLine = true, visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
 }

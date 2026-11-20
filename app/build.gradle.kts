@@ -108,6 +108,10 @@ dependencies {
     // Versão pinada deliberadamente (não "latest.release"); validar a API
     // e a inferência real conforme docs/PLANO_MOTOR_IA_LOCAL.md, seção 4.
     implementation(libs.litertlm.android)
+    // Mature authenticated streaming avoids an app-defined cipher/nonce protocol.
+    implementation(libs.tink.android)
+    // Already present through PDFBox; explicitly used for PBKDF2-SHA256 on Android 24–25.
+    implementation(libs.bouncycastle.provider)
     implementation(libs.pdfbox.android)
     implementation(libs.tesseract.android)
 

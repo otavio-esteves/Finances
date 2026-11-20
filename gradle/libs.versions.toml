@@ -18,8 +18,12 @@ litertlm = "0.16.1"
 haze = "1.5.4"
 pdfboxAndroid = "2.0.27.0"
 tesseract = "4.9.0"
+tink = "1.24.0"
+bouncyCastle = "1.72"
 
 [libraries]
+tink-android = { module = "com.google.crypto.tink:tink-android", version.ref = "tink" }
+bouncycastle-provider = { module = "org.bouncycastle:bcprov-jdk15to18", version.ref = "bouncyCastle" }
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }

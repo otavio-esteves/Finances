@@ -131,12 +131,14 @@ class DefaultAppContainer(
         br.com.otavioesteves.finances.data.repository.RoomBackupRepository(database)
     }
 
+    private val backupEncryption by lazy { br.com.otavioesteves.finances.data.backup.PasswordBackupEncryption() }
+
     override val createBackupUseCase: br.com.otavioesteves.finances.domain.usecase.CreateBackupUseCase by lazy {
-        br.com.otavioesteves.finances.domain.usecase.CreateBackupUseCase(backupRepository)
+        br.com.otavioesteves.finances.domain.usecase.CreateBackupUseCase(backupRepository, backupEncryption)
     }
 
     override val restoreBackupUseCase: br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase by lazy {
-        br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase(backupRepository)
+        br.com.otavioesteves.finances.domain.usecase.RestoreBackupUseCase(backupRepository, backupEncryption)
     }
 
     override val statementParserRepository: StatementParserRepository by lazy {

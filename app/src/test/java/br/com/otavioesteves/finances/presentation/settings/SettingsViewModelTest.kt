@@ -67,7 +67,7 @@ class SettingsViewModelTest {
         vm.onRestoreConfirm()
         runCurrent()
         assertEquals(1, repository.restores)
-        assertNull(vm.uiState.value.error)
+        assertEquals("Não foi possível carregar o histórico de importações.", vm.uiState.value.error)
         assertNotNull(vm.uiState.value.successMessage)
     }
 
@@ -151,7 +151,8 @@ class SettingsViewModelTest {
         advanceUntilIdle()
         assertFalse(vm.uiState.value.isLoading)
         assertNull(vm.uiState.value.successMessage)
-        assertTrue(vm.uiState.value.error.orEmpty().contains("Destino indisponível"))
+        assertTrue(vm.uiState.value.error.orEmpty().contains("Confira o destino"))
+        assertFalse(vm.uiState.value.error.orEmpty().contains("Destino indisponível"))
         val output = ByteArrayOutputStream()
         vm.createBackup { output }
         vm.createBackup { error("A second tap must not open another file") }
@@ -160,4 +161,78 @@ class SettingsViewModelTest {
         assertNotNull(vm.uiState.value.successMessage)
         assertTrue(output.size() > 0)
     }
+    @Test fun cancellationBeforeLaunchClearsPasswordAndAllowsAnotherOperation() = runTest(dispatcher) {
+        val vm = viewModel(Repository())
+        val secret = "senha longa sintética".toCharArray()
+        var opened = false
+        vm.createBackup(secret) { opened = true; ByteArrayOutputStream() }
+        vm.cancelBackupOperation()
+        advanceUntilIdle()
+        assertFalse(opened)
+        assertTrue(secret.all { it == '\u0000' })
+        assertFalse(vm.uiState.value.isLoading)
+        assertNull(vm.uiState.value.successMessage)
+        vm.createBackup { ByteArrayOutputStream() }
+        advanceUntilIdle()
+        assertNotNull(vm.uiState.value.successMessage)
+    }
+
+    @Test fun malformedBackupDetailsNeverAppearInTheUserError() = runTest(dispatcher) {
+        val repository = Repository()
+        val vm = viewModel(repository)
+        vm.onRestoreRequest { "{segredo financeiro sintético".byteInputStream() }
+        vm.onRestoreConfirm()
+        advanceUntilIdle()
+        assertEquals(0, repository.restores)
+        assertFalse(vm.uiState.value.error.orEmpty().contains("segredo"))
+        assertTrue(vm.uiState.value.error.orEmpty().contains("preservados"))
+    }
+
+    @Test fun cancellationIsDisabledBeforeAtomicDatabaseReplacement() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        var writes = 0
+        val repository = object : BackupRepository {
+            override suspend fun createBackup() = error("unused")
+            override suspend fun restoreBackup(backup: BackupModel) { writes++; gate.await() }
+        }
+        val vm = SettingsViewModel(CreateBackupUseCase(repository), RestoreBackupUseCase(repository), dispatcher)
+        vm.onRestoreRequest { "{\"version\":5,\"categories\":[],\"transactions\":[]}".byteInputStream() }
+        vm.onRestoreConfirm()
+        runCurrent()
+        assertEquals(1, writes)
+        assertFalse(vm.uiState.value.canCancelBackup)
+        vm.cancelBackupOperation()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertNotNull(vm.uiState.value.successMessage)
+        assertNull(vm.uiState.value.error)
+    }
+
+    @Test fun successfulRestoreReopensPreviouslyFailedHistoryWithoutRecreatingViewModel() = runTest(dispatcher) {
+        var recovered = false
+        val item = ImportedStatement(1, "sintético.csv", java.time.LocalDateTime.of(2026, 1, 1, 9, 0), 1)
+        val imports = object : StatementImportRepository {
+            override fun getImports() = kotlinx.coroutines.flow.flow {
+                if (!recovered) throw IllegalArgumentException("old invalid state")
+                emit(listOf(item))
+            }
+            override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>,
+                fingerprint: String, legacyFingerprints: List<String>) = Unit
+        }
+        val backup = object : BackupRepository {
+            override suspend fun createBackup() = error("unused")
+            override suspend fun restoreBackup(backup: BackupModel) { recovered = true }
+        }
+        val vm = SettingsViewModel(CreateBackupUseCase(backup), RestoreBackupUseCase(backup), dispatcher, importsRepository = imports)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.imports.collect {} }
+        runCurrent()
+        assertTrue(vm.imports.value.isEmpty())
+        vm.onRestoreRequest { "{\"version\":5,\"categories\":[],\"transactions\":[]}".byteInputStream() }
+        vm.onRestoreConfirm()
+        runCurrent()
+        assertEquals(listOf(item), vm.imports.value)
+        assertNull(vm.uiState.value.error)
+        assertNotNull(vm.uiState.value.successMessage)
+    }
+
 }
