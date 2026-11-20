@@ -35,30 +35,36 @@ class RuleBasedLocalAiRepository(
         onProgress: (done: Int, total: Int) -> Unit
     ): Result<List<CategorySuggestion>> {
         currentCoroutineContext().ensureActive()
+        val context = currentCoroutineContext()
+        val prepared = categories.groupBy { it.type }.mapValues { (_, values) ->
+            values.map { category ->
+                context.ensureActive()
+                val name = normalize(category.name)
+                PreparedCategory(category, name, VOCABULARY.filter { name in it.categories }.flatMap { it.terms }.toSet())
+            }
+        }
         val suggestions = entries.mapIndexed { index, entry ->
             currentCoroutineContext().ensureActive()
-            suggestCategory(entry, categories).also { onProgress(index + 1, entries.size) }
+            suggestCategory(entry, prepared[CategoryType.valueOf(entry.type.name)].orEmpty()).also { onProgress(index + 1, entries.size) }
         }
         currentCoroutineContext().ensureActive()
         return Result.success(suggestions)
     }
 
-    private fun suggestCategory(entry: RawStatementEntry, knownCategories: List<Category>): CategorySuggestion {
-        val expectedType = CategoryType.valueOf(entry.type.name)
-        val candidates = knownCategories.filter { it.type == expectedType }
+    private data class PreparedCategory(val category: Category, val name: String, val terms: Set<String>)
+
+    private fun suggestCategory(entry: RawStatementEntry, candidates: List<PreparedCategory>): CategorySuggestion {
         val description = normalize(entry.description)
         // Marketplace names do not imply groceries, but an explicitly named marketplace category still applies.
         val genericDescription = description.replace(MARKETPLACE, " ").trim()
-        val directMatches = candidates.filter { normalize(it.name) != "outros" }.mapNotNull { category ->
-            val name = normalize(category.name)
+        val directMatches = candidates.filter { it.name != "outros" }.mapNotNull { category ->
+            val name = category.name
             val searchable = if (name == "mercado") genericDescription else description
-            if (containsPhrase(searchable, name)) category to name else null
+            if (containsPhrase(searchable, name)) category.category to name else null
         }
         val keywordMatch = unambiguousCategory(directMatches)
         val vocabularyMatches = if (directMatches.isEmpty()) candidates.flatMap { category ->
-            VOCABULARY.filter { normalize(category.name) in it.categories }.flatMap { rule ->
-                rule.terms.filter { containsPhrase(genericDescription, it) }.map { category to it }
-            }
+            category.terms.filter { containsPhrase(genericDescription, it) }.map { category.category to it }
         } else emptyList()
         val vocabularyMatch = unambiguousCategory(vocabularyMatches)
         val matchedCategory = keywordMatch ?: vocabularyMatch
@@ -71,7 +77,7 @@ class RuleBasedLocalAiRepository(
             )
         }
 
-        val fallback = candidates.firstOrNull { normalize(it.name) == normalize(FALLBACK_CATEGORY_NAME) }
+        val fallback = candidates.firstOrNull { it.name == "outros" }?.category
         return CategorySuggestion(
             entry = entry,
             suggestedCategory = fallback,
@@ -135,32 +141,34 @@ class RuleBasedLocalAiRepository(
 
     private companion object {
         data class CategoryVocabulary(val categories: Set<String>, val terms: Set<String>)
-        const val FALLBACK_CATEGORY_NAME = "Outros"
         val BALANCE_KEYWORDS = setOf("saldo", "balanço", "balance")
         val MARKETPLACE = Regex("\\bmercado (?:livre|pago)\\b")
         val VOCABULARY = listOf(
             CategoryVocabulary(setOf("alimentacao", "mercado", "supermercado"), setOf(
                 "mercado", "supermercado", "supermercados", "atacadao", "assai", "carrefour", "pao de acucar",
+                "zaffari", "angeloni", "bistek", "burger king", "mcdonalds",
                 "restaurante", "restaurantes", "padaria", "lanchonete", "cafeteria", "ifood", "uber eats"
             )),
             CategoryVocabulary(setOf("transporte"), setOf(
-                "uber", "99app", "99 taxi", "cabify", "onibus", "metro", "combustivel",
+                "uber", "99app", "99 taxi", "99pop", "auto posto", "posto shell", "posto ipiranga", "cabify", "onibus", "metro", "combustivel",
                 "posto de combustivel", "estacionamento", "pedagio"
             )),
             CategoryVocabulary(setOf("saude", "farmacia"), setOf(
                 "farmacia", "drogaria", "drogasil", "droga raia", "laboratorio", "hospital", "clinica", "plano de saude"
             )),
             CategoryVocabulary(setOf("moradia"), setOf(
-                "aluguel", "condominio", "energia eletrica", "conta de luz", "conta de agua", "internet residencial"
+                "aluguel", "condominio", "cemig", "enel", "sabesp", "copasa", "cpfl", "energia eletrica", "conta de luz", "conta de agua", "internet residencial"
             )),
-            CategoryVocabulary(setOf("lazer"), setOf("netflix", "spotify", "cinema", "teatro", "steam")),
-            CategoryVocabulary(setOf("educacao"), setOf("escola", "faculdade", "universidade", "mensalidade escolar", "curso")),
+            CategoryVocabulary(setOf("lazer"), setOf("netflix", "spotify", "cinema", "teatro", "steam", "disney plus", "hbo max")),
+            CategoryVocabulary(setOf("educacao"), setOf("alura", "udemy", "coursera", "duolingo", "escola", "faculdade", "universidade", "mensalidade escolar", "curso")),
             CategoryVocabulary(setOf("salario"), setOf("salario", "folha de pagamento", "pro labore")),
             CategoryVocabulary(setOf("investimentos"), setOf("rendimento", "rendimentos", "dividendo", "dividendos", "juros sobre capital"))
         )
 
+        val MARKS = Regex("\\p{M}+")
+        val NON_ALPHANUMERIC = Regex("[^a-z0-9]+")
         fun normalize(value: String): String = Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
-            .replace(Regex("\\p{M}+"), "").replace(Regex("[^a-z0-9]+"), " ").trim()
+            .replace(MARKS, "").replace(NON_ALPHANUMERIC, " ").trim()
 
         fun containsPhrase(text: String, phrase: String): Boolean = phrase.isNotEmpty() && " $phrase " in " $text "
 

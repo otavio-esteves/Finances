@@ -1,0 +1,249 @@
+[
+  {
+    "description": "SUPERMERCADO EXEMPLO",
+    "category": "Alimentação"
+  },
+  {
+    "description": "ASSAI ATACADISTA",
+    "category": "Alimentação"
+  },
+  {
+    "description": "IFOOD PEDIDO 1001",
+    "category": "Alimentação"
+  },
+  {
+    "description": "UBER EATS",
+    "category": "Alimentação"
+  },
+  {
+    "description": "PADARIA EXEMPLO",
+    "category": "Alimentação"
+  },
+  {
+    "description": "ZAFFARI 123",
+    "category": "Alimentação"
+  },
+  {
+    "description": "ANGELONI 456",
+    "category": "Alimentação"
+  },
+  {
+    "description": "BISTEK 001",
+    "category": "Alimentação"
+  },
+  {
+    "description": "BURGER KING 098",
+    "category": "Alimentação"
+  },
+  {
+    "description": "MCDONALDS 005",
+    "category": "Alimentação"
+  },
+  {
+    "description": "UBER TRIP 001",
+    "category": "Transporte"
+  },
+  {
+    "description": "99APP 123",
+    "category": "Transporte"
+  },
+  {
+    "description": "METRO BILHETE",
+    "category": "Transporte"
+  },
+  {
+    "description": "ESTACIONAMENTO CENTRO",
+    "category": "Transporte"
+  },
+  {
+    "description": "99POP 456",
+    "category": "Transporte"
+  },
+  {
+    "description": "AUTO POSTO EXEMPLO",
+    "category": "Transporte"
+  },
+  {
+    "description": "POSTO SHELL 200",
+    "category": "Transporte"
+  },
+  {
+    "description": "POSTO IPIRANGA 300",
+    "category": "Transporte"
+  },
+  {
+    "description": "DROGASIL 001",
+    "category": "Saúde"
+  },
+  {
+    "description": "DROGA RAIA 002",
+    "category": "Saúde"
+  },
+  {
+    "description": "HOSPITAL EXEMPLO",
+    "category": "Saúde"
+  },
+  {
+    "description": "LABORATORIO EXEMPLO",
+    "category": "Saúde"
+  },
+  {
+    "description": "ALUGUEL RESIDENCIAL",
+    "category": "Moradia"
+  },
+  {
+    "description": "CONDOMINIO EXEMPLO",
+    "category": "Moradia"
+  },
+  {
+    "description": "ENERGIA ELETRICA",
+    "category": "Moradia"
+  },
+  {
+    "description": "CEMIG 001",
+    "category": "Moradia"
+  },
+  {
+    "description": "ENEL 002",
+    "category": "Moradia"
+  },
+  {
+    "description": "SABESP 003",
+    "category": "Moradia"
+  },
+  {
+    "description": "COPASA 004",
+    "category": "Moradia"
+  },
+  {
+    "description": "CPFL 005",
+    "category": "Moradia"
+  },
+  {
+    "description": "NETFLIX 001",
+    "category": "Lazer"
+  },
+  {
+    "description": "SPOTIFY 002",
+    "category": "Lazer"
+  },
+  {
+    "description": "CINEMA EXEMPLO",
+    "category": "Lazer"
+  },
+  {
+    "description": "STEAM 003",
+    "category": "Lazer"
+  },
+  {
+    "description": "DISNEY PLUS 004",
+    "category": "Lazer"
+  },
+  {
+    "description": "HBO MAX 005",
+    "category": "Lazer"
+  },
+  {
+    "description": "MENSALIDADE ESCOLAR",
+    "category": "Educação"
+  },
+  {
+    "description": "FACULDADE EXEMPLO",
+    "category": "Educação"
+  },
+  {
+    "description": "ALURA 001",
+    "category": "Educação"
+  },
+  {
+    "description": "UDEMY 002",
+    "category": "Educação"
+  },
+  {
+    "description": "COURSERA 003",
+    "category": "Educação"
+  },
+  {
+    "description": "DUOLINGO 004",
+    "category": "Educação"
+  },
+  {
+    "description": "PAGSEGURO 123",
+    "category": "Outros"
+  },
+  {
+    "description": "SUMUP 456",
+    "category": "Outros"
+  },
+  {
+    "description": "MERCADO PAGO 001",
+    "category": "Outros"
+  },
+  {
+    "description": "MERCADO LIVRE 002",
+    "category": "Outros"
+  },
+  {
+    "description": "PIX ENVIADO 003",
+    "category": "Outros"
+  },
+  {
+    "description": "COMPRA 01/03",
+    "category": "Outros"
+  },
+  {
+    "description": "LOJA VIRTUAL PARCELA 02/03",
+    "category": "Outros"
+  },
+  {
+    "description": "FOLHA DE PAGAMENTO",
+    "type": "INCOME",
+    "category": "Salário"
+  },
+  {
+    "description": "PRO LABORE",
+    "type": "INCOME",
+    "category": "Salário"
+  },
+  {
+    "description": "RENDIMENTOS CDB",
+    "type": "INCOME",
+    "category": "Investimentos"
+  },
+  {
+    "description": "DIVIDENDOS",
+    "type": "INCOME",
+    "category": "Investimentos"
+  },
+  {
+    "description": "PIX RECEBIDO 001",
+    "type": "INCOME",
+    "category": null
+  },
+  {
+    "description": "RESGATE CDB 002",
+    "type": "INCOME",
+    "category": null
+  },
+  {
+    "description": "PAG*ARMAZEM ALFA 001",
+    "category": "Alimentação",
+    "type": "EXPENSE",
+    "correctedType": "EXPENSE",
+    "cohort": "seen_correction"
+  },
+  {
+    "description": "LOJA VIRTUAL PARCELA 01/03",
+    "category": "Lazer",
+    "type": "EXPENSE",
+    "correctedType": "EXPENSE",
+    "cohort": "seen_correction"
+  },
+  {
+    "description": "RESGATE CDB 001",
+    "category": "Transferência",
+    "type": "INCOME",
+    "correctedType": "TRANSFER",
+    "cohort": "seen_correction"
+  }
+]

@@ -39,6 +39,23 @@ class LocalTransactionCategorizationTest {
         assertEquals(listOf(0, 20, 40), results.indices.filter { results[it].source == SuggestionSource.AI })
     }
 
+    @Test fun conflictingIndexesAndInvalidConfidenceNeverBecomeHighConfidenceSuggestions() = runTest {
+        val invalid = listOf(
+            """[{"index":0,"category":"Mercado","confidence":0.9},{"index":0,"category":"Mercado","confidence":0.8}]""",
+            """[{"index":20,"category":"Mercado","confidence":0.9}]""",
+            """[{"index":-1,"category":"Mercado","confidence":0.9}]""",
+            """[{"index":0,"category":"Mercado","confidence":20.0}]""",
+            """[{"index":0,"category":"Mercado","confidence":-1.0}]""")
+        for (response in invalid) {
+            val rules = Rules(expense)
+            val output = LocalTransactionCategorization(rules, .5f)
+                .categorize(entries.take(2), listOf(expense), { _, _ -> }) { response }
+            assertEquals(entries.take(2), output.map { it.entry })
+            assertTrue(output.none { it.source == SuggestionSource.AI })
+            assertEquals(2, rules.count)
+        }
+    }
+
     @Test fun malformedResponsesRetryOnceThenFallBackWithoutLosingEntries() = runTest {
         val rules = Rules(expense)
         var calls = 0

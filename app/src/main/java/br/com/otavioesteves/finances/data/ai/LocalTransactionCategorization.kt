@@ -50,7 +50,9 @@ internal class LocalTransactionCategorization(
             parsed = askSafely(infer, retryPrompt)
         }
 
-        if (parsed == null) {
+        if (parsed == null || parsed.any { it.index !in chunk.indices } ||
+            parsed.map { it.index }.distinct().size != parsed.size) {
+            // Invalid identity information cannot safely identify a transaction.
             // JSON malformado nas duas tentativas: fallback só para este lote.
             currentCoroutineContext().ensureActive()
             return ruleBasedCategorizer.categorize(chunk, categories).getOrThrow()
@@ -72,9 +74,9 @@ internal class LocalTransactionCategorization(
         val category = item?.category?.let { name ->
             categories.firstOrNull { it.type == expectedType && it.name.equals(name, ignoreCase = true) }
         }
-        val confidence = item?.confidence?.coerceIn(0f, 1f) ?: 0f
+        val confidence = item?.confidence?.takeIf { it.isFinite() && it in 0f..1f }
 
-        if (category == null || confidence < confidenceThreshold) {
+        if (category == null || confidence == null || confidence < confidenceThreshold) {
             // Sem categoria reconhecida ou confiança baixa: uma transação não
             // fica na mão de uma resposta ruim da IA, cai pro fallback.
             return ruleBasedCategorizer.categorize(listOf(entry), categories).getOrThrow().single()
