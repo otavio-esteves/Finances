@@ -1,5 +1,7 @@
 # Validação de otimização e novos gráficos
 
+> Contexto histórico: referências a Chat neste documento descrevem código/plano anterior. A tela foi removida e não faz parte da navegação atual. Para estado e evidências da consolidação, veja [CONSOLIDACAO_BETA.md](CONSOLIDACAO_BETA.md) e [BETA_READINESS.md](BETA_READINESS.md).
+
 Este relatório registra a rodada anterior à inclusão do OCR/senha/revisão de PDF. A evolução posterior está em [PDF_IMPORTACAO.md](PDF_IMPORTACAO.md).
 
 Rodada de 25/10/2026. O objetivo foi reduzir consultas, alocações e trabalho na thread principal, mantendo paleta, tipografia, transparências, desfoque, espaçamentos e navegação existentes. Os novos controles de tipo de gráfico ficam nos cabeçalhos dos cards; rosca e barras continuam sendo as apresentações iniciais.

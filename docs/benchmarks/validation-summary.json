@@ -1,0 +1,152 @@
+{
+  "generatedAtUtc": "2026-11-20T03:10:06.400641+00:00",
+  "workspaceBaseHead": "943b68219b3303307ec131efae1c613981ac40e0",
+  "uncommittedWorkspace": true,
+  "environment": {
+    "jdk": "/opt/android-studio/jbr",
+    "androidSdk": 36,
+    "instrumentedApi": 35,
+    "abi": "x86_64",
+    "gradleWrapper": "8.13",
+    "instrumentedApplicationId": "br.com.otavioesteves.finances.validation"
+  },
+  "baselineStandalone": {
+    "jvm": {
+      "tests": 489,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "android": {
+      "tests": 167,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 5
+    },
+    "lint": {
+      "Warning": 40,
+      "Hint": 1
+    }
+  },
+  "final": {
+    "standalone": {
+      "jvm": {
+        "tests": 518,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "android": {
+        "tests": 175,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 6
+      },
+      "lint": {
+        "Warning": 41,
+        "Hint": 1
+      },
+      "apks": [
+        {
+          "path": "app/build/outputs/apk/standalone/debug/app-standalone-debug.apk",
+          "bytes": 109003936,
+          "sha256": "e8a65debc50893d104a00f950ac53ad6589b4a905ded470bd8ac31db741590c8",
+          "applicationId": "br.com.otavioesteves.finances",
+          "privacyVerification": "passed",
+          "distributionSigned": null
+        },
+        {
+          "path": "app/build/outputs/apk/standalone/release/app-standalone-release-unsigned.apk",
+          "bytes": 85723034,
+          "sha256": "c1bcbf146010363e215052e59d5a0f1ad6a0219b9deb45ecfbd7caa388c80911",
+          "applicationId": "br.com.otavioesteves.finances",
+          "privacyVerification": "passed",
+          "distributionSigned": false
+        }
+      ],
+      "unitXmlDirectory": "app/build/test-results/testStandaloneDebugUnitTest",
+      "androidXmlDirectory": "app/build/outputs/androidTest-results/connected/debug/flavors/standalone",
+      "lintXml": "app/build/reports/lint-results-standaloneDebug.xml"
+    },
+    "play": {
+      "jvm": {
+        "tests": 518,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "android": {
+        "tests": 175,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 6
+      },
+      "lint": {
+        "Warning": 41,
+        "Hint": 1
+      },
+      "apks": [
+        {
+          "path": "app/build/outputs/apk/play/debug/app-play-debug.apk",
+          "bytes": 109003936,
+          "sha256": "a30c8fbd6cfc4fbb6f73aaaa183451abf8e864ffd4c60127121ac599f72a6c41",
+          "applicationId": "br.com.otavioesteves.finances",
+          "privacyVerification": "passed",
+          "distributionSigned": null
+        },
+        {
+          "path": "app/build/outputs/apk/play/release/app-play-release-unsigned.apk",
+          "bytes": 85723020,
+          "sha256": "0f1f74b0167042856cafd2e7fccd53481568b61f6dc5e1066a0b948ba5da1dab",
+          "applicationId": "br.com.otavioesteves.finances",
+          "privacyVerification": "passed",
+          "distributionSigned": false
+        }
+      ],
+      "unitXmlDirectory": "app/build/test-results/testPlayDebugUnitTest",
+      "androidXmlDirectory": "app/build/outputs/androidTest-results/connected/debug/flavors/play",
+      "lintXml": "app/build/reports/lint-results-playDebug.xml"
+    }
+  },
+  "completedCommands": [
+    {
+      "command": "./gradlew --max-workers=2 -PisolatedDeviceValidation=true testStandaloneDebugUnitTest testPlayDebugUnitTest lintStandaloneDebug lintPlayDebug assembleStandaloneDebug assembleStandaloneDebugAndroidTest assemblePlayDebug assemblePlayDebugAndroidTest assembleStandaloneRelease assemblePlayRelease --console=plain",
+      "result": "BUILD SUCCESSFUL in 41m 41s"
+    },
+    {
+      "command": "./gradlew --max-workers=2 -PisolatedDeviceValidation=true connectedStandaloneDebugAndroidTest connectedPlayDebugAndroidTest --console=plain",
+      "result": "BUILD SUCCESSFUL in 19m 40s"
+    },
+    {
+      "command": "./gradlew --max-workers=1 assemblePlayDebug assembleStandaloneDebug assembleStandaloneRelease assemblePlayRelease --console=plain --stacktrace",
+      "result": "BUILD SUCCESSFUL in 1m 1s"
+    },
+    {
+      "command": "python3 scripts/verify_android_privacy.py",
+      "result": [
+        "OK app/build/outputs/apk/standalone/debug/app-standalone-debug.apk: ID normal, permissões previstas, backup Android desabilitado",
+        "OK app/build/outputs/apk/standalone/release/app-standalone-release-unsigned.apk: ID normal, permissões previstas, backup Android desabilitado",
+        "OK app/build/outputs/apk/play/debug/app-play-debug.apk: ID normal, permissões previstas, backup Android desabilitado",
+        "OK app/build/outputs/apk/play/release/app-play-release-unsigned.apk: ID normal, permissões previstas, backup Android desabilitado"
+      ]
+    }
+  ],
+  "finalNormalAttempt": {
+    "command": "./gradlew --max-workers=2 testStandaloneDebugUnitTest --rerun testPlayDebugUnitTest --rerun lintStandaloneDebug lintPlayDebug assembleStandaloneDebug assemblePlayDebug assembleStandaloneRelease assemblePlayRelease --console=plain",
+    "result": "BUILD FAILED in 9m 38s at packagePlayDebug, after both JVM suites and lints completed; serial package retry passed without code change. Root cause not established."
+  },
+  "separatelyExecuted": {
+    "privateCorpusScenarios": 5,
+    "targetedPdfAndCategorizationAndroidTests": 5,
+    "modelExecution": "not_run: INSUFFICIENT_RAM; no supported real bundle available"
+  },
+  "limitations": [
+    "AVD is not a physical intermediate phone.",
+    "Six Android opt-ins skipped in each full suite; local categorization and private corpus ran separately.",
+    "No real LiteRT-LM quality or performance measured.",
+    "Cross-phone SAF restore, API 24/25 runtime, complete TalkBack flow and physical performance remain pending.",
+    "Release APKs are unsigned; no commit, push or publication.",
+    "No Room schema changes; JSON versions 1-5 retained."
+  ],
+  "betaApproved": false
+}

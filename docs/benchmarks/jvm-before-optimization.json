@@ -1,0 +1,323 @@
+[
+    {
+        "mode": "rules",
+        "cases": 58,
+        "repeats": 5,
+        "accuracy": 0.9482758620689655,
+        "uncategorizedRate": 0.05172413793103448,
+        "correctionRate": 0.08620689655172414,
+        "reviewRate": 1.0,
+        "highConfidenceErrors": 0,
+        "highConfidenceErrorRate": null,
+        "byCategory": {
+            "EXPENSE:Alimentação": {
+                "support": 11,
+                "precision": 1.0,
+                "recall": 0.9090909090909091,
+                "f1": 0.9523809523809523,
+                "accuracy": 0.9090909090909091
+            },
+            "EXPENSE:Educação": {
+                "support": 6,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Lazer": {
+                "support": 7,
+                "precision": 1.0,
+                "recall": 0.8571428571428571,
+                "f1": 0.9230769230769231,
+                "accuracy": 0.8571428571428571
+            },
+            "EXPENSE:Moradia": {
+                "support": 8,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Outros": {
+                "support": 7,
+                "precision": 0.7777777777777778,
+                "recall": 1.0,
+                "f1": 0.875,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Saúde": {
+                "support": 4,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Transporte": {
+                "support": 8,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "INCOME:<sem categoria>": {
+                "support": 2,
+                "precision": 0.6666666666666666,
+                "recall": 1.0,
+                "f1": 0.8,
+                "accuracy": 1.0
+            },
+            "INCOME:Investimentos": {
+                "support": 2,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "INCOME:Salário": {
+                "support": 2,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "TRANSFER:Transferência": {
+                "support": 1,
+                "precision": null,
+                "recall": 0.0,
+                "f1": 0.0,
+                "accuracy": 0.0
+            }
+        },
+        "byCohort": {
+            "unseen": 1.0,
+            "seen_correction": 0.0
+        },
+        "sources": {
+            "RULE": 58
+        },
+        "meanBatchMs": 43.75406339999999,
+        "p50BatchMs": 40.680863,
+        "p95BatchMs": 69.066802,
+        "amortizedMsPerTransaction": 2.2631412103448274,
+        "heapBeforeBytes": 38214600,
+        "heapAfterBytes": 59372216,
+        "observedProcessHeapPeakBytes": 59372216
+    },
+    {
+        "mode": "memory_only",
+        "cases": 58,
+        "repeats": 5,
+        "accuracy": 0.08620689655172414,
+        "uncategorizedRate": 0.9482758620689655,
+        "correctionRate": 0.9482758620689655,
+        "reviewRate": 0.9482758620689655,
+        "highConfidenceErrors": 0,
+        "highConfidenceErrorRate": 0.0,
+        "byCategory": {
+            "EXPENSE:<sem categoria>": {
+                "support": 0,
+                "precision": 0.0,
+                "recall": null,
+                "f1": 0.0,
+                "accuracy": null
+            },
+            "EXPENSE:Alimentação": {
+                "support": 11,
+                "precision": 1.0,
+                "recall": 0.09090909090909091,
+                "f1": 0.16666666666666666,
+                "accuracy": 0.09090909090909091
+            },
+            "EXPENSE:Educação": {
+                "support": 6,
+                "precision": null,
+                "recall": 0.0,
+                "f1": 0.0,
+                "accuracy": 0.0
+            },
+            "EXPENSE:Lazer": {
+                "support": 7,
+                "precision": 1.0,
+                "recall": 0.14285714285714285,
+                "f1": 0.25,
+                "accuracy": 0.14285714285714285
+            },
+            "EXPENSE:Moradia": {
+                "support": 8,
+                "precision": null,
+                "recall": 0.0,
+                "f1": 0.0,
+                "accuracy": 0.0
+            },
+            "EXPENSE:Outros": {
+                "support": 7,
+                "precision": null,
+                "recall": 0.0,
+                "f1": 0.0,
+                "accuracy": 0.0
+            },
+            "EXPENSE:Saúde": {
+                "support": 4,
+                "precision": null,
+                "recall": 0.0,
+                "f1": 0.0,
+                "accuracy": 0.0
+            },
+            "EXPENSE:Transporte": {
+                "support": 8,
+                "precision": null,
+                "recall": 0.0,
+                "f1": 0.0,
+                "accuracy": 0.0
+            },
+            "INCOME:<sem categoria>": {
+                "support": 2,
+                "precision": 0.3333333333333333,
+                "recall": 1.0,
+                "f1": 0.5,
+                "accuracy": 1.0
+            },
+            "INCOME:Investimentos": {
+                "support": 2,
+                "precision": null,
+                "recall": 0.0,
+                "f1": 0.0,
+                "accuracy": 0.0
+            },
+            "INCOME:Salário": {
+                "support": 2,
+                "precision": null,
+                "recall": 0.0,
+                "f1": 0.0,
+                "accuracy": 0.0
+            },
+            "TRANSFER:Transferência": {
+                "support": 1,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            }
+        },
+        "byCohort": {
+            "unseen": 0.03636363636363636,
+            "seen_correction": 1.0
+        },
+        "sources": {
+            "RULE": 55,
+            "MEMORY": 3
+        },
+        "meanBatchMs": 1.4682245333333335,
+        "p50BatchMs": 0.785663,
+        "p95BatchMs": 3.281041,
+        "amortizedMsPerTransaction": 0.07594264827586207,
+        "heapBeforeBytes": 59863648,
+        "heapAfterBytes": 60861480,
+        "observedProcessHeapPeakBytes": 60861480
+    },
+    {
+        "mode": "combined_rules",
+        "cases": 58,
+        "repeats": 5,
+        "accuracy": 1.0,
+        "uncategorizedRate": 0.034482758620689655,
+        "correctionRate": 0.034482758620689655,
+        "reviewRate": 0.9482758620689655,
+        "highConfidenceErrors": 0,
+        "highConfidenceErrorRate": 0.0,
+        "byCategory": {
+            "EXPENSE:Alimentação": {
+                "support": 11,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Educação": {
+                "support": 6,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Lazer": {
+                "support": 7,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Moradia": {
+                "support": 8,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Outros": {
+                "support": 7,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Saúde": {
+                "support": 4,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "EXPENSE:Transporte": {
+                "support": 8,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "INCOME:<sem categoria>": {
+                "support": 2,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "INCOME:Investimentos": {
+                "support": 2,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "INCOME:Salário": {
+                "support": 2,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            },
+            "TRANSFER:Transferência": {
+                "support": 1,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "accuracy": 1.0
+            }
+        },
+        "byCohort": {
+            "unseen": 1.0,
+            "seen_correction": 1.0
+        },
+        "sources": {
+            "RULE": 55,
+            "MEMORY": 3
+        },
+        "meanBatchMs": 30.306301933333337,
+        "p50BatchMs": 27.443806,
+        "p95BatchMs": 43.916555,
+        "amortizedMsPerTransaction": 1.5675673413793105,
+        "heapBeforeBytes": 70298512,
+        "heapAfterBytes": 115995288,
+        "observedProcessHeapPeakBytes": 115554720
+    }
+]

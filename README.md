@@ -25,17 +25,17 @@ O lançamento manual, a edição de transações e o backup complementam esse fl
 | Área | Estado atual |
 |---|---|
 | Entrada de arquivos | Importação local de CSV/OFX/PDF de até 10 MB, com escolha entre extrato e fatura e revisão de tipo e categoria. A revisão mostra contagem e totais; pagamentos de cartão reconhecidos são sugeridos como transferência, tanto a débito quanto a crédito; em extratos, rótulos genéricos como “Pagamento da fatura” preservam o tipo extraído para revisão, e faturas de energia/água/telefonia continuam como despesas; estornos e escolhas memorizadas são preservados. PDF digital, digitalizado, misto e protegido por senha. OCR português local, reconstrução de tabelas por posição e colunas separadas de débito/crédito, com saldo identificado por cabeçalho. Datas sem ano exigem referência explícita; ambiguidades recusam o lote. Correção de descrição/data/valor e conferência obrigatória quando houve OCR. [Cobertura e limites](docs/PDF_IMPORTACAO.md). O lote é salvo de forma atômica; repetir os mesmos lançamentos na mesma conta/cartão é recusado, independentemente da ordem nos novos lotes. Contas distintas podem importar lotes iguais quando identificadas na revisão. Possíveis sobreposições com o histórico exigem confirmação explícita. |
-| Organização | Categorização por regras como fallback permanente; integração com LiteRT-LM para tentar categorizar com um modelo importado. A qualidade dessa inferência ainda precisa ser medida com extratos reais anonimizados. |
+| Organização | Regras locais e memória de correções explícitas, com LiteRT-LM opcional. Há [benchmark sintético reproduzível](docs/CATEGORIZACAO_BENCHMARK.md) de regras, memória e fluxo combinado; qualidade do modelo real e generalização ainda exigem medição independente. |
 | Visualização | Início com saldo mensal, gráfico de composição por categoria e transações recentes; telas de categorias e histórico com seleção de mês. Em Gráficos, composição alterna Rosca/Pizza e as séries anuais alternam Barras/Linhas/Área, mantendo rosca e barras como padrões. |
-| Dados | Room local, lançamentos manuais, ícone opcional por transação, exportação CSV/JSON e backup/restauração JSON em fluxo, sem teto fixo de 50 MB. |
+| Dados | Room local, lançamentos manuais, ícone opcional por transação, exportação CSV/JSON e backup portátil protegido por senha em fluxo; restauração JSON legada preservada. O conjunto de registros ainda ocupa memória. |
 | Navegação | Início, Gráficos, Transações e Categorias formam quatro páginas lado a lado, com gesto horizontal e uma barra flutuante de quatro ícones. O mês selecionado é compartilhado com Categorias, seus detalhes e Histórico, e fica salvo ao reabrir o app. O botão circular à esquerda abre o menu lateral com o título Finances, Configurações e o aviso de privacidade; o botão circular à direita abre a importação e o acesso ao lançamento individual. |
 
 Na página Gráficos, a ação **Adicionar exemplos** insere 60 lançamentos fictícios de janeiro a outubro de 2026, marcados com `[EXEMPLO]`. A ação **Remover** exclui apenas os exemplos identificados por esse marcador interno. Os exemplos entram nos totais do app enquanto estiverem salvos. Repetir a ação em dias diferentes preserva os exemplos já gravados, identificados por mês e descrição.
 
 ### Próximas entregas ligadas à ideia central
 
-1. Validar os layouts reais anonimizados de **Nubank, PicPay, Banco do Brasil, Caixa e Inter**, ampliando o corpus de regressão. OCR local, senha, tabelas posicionadas e colunas de débito/crédito já estão implementados; os testes atuais representam famílias de layout, não certificam todos os formatos dessas instituições.
-2. Medir e melhorar a categorização automática, inclusive o tratamento de lançamentos incertos e duplicatas em faturas parcialmente sobrepostas.
+1. Ampliar a validação de layouts de **Nubank, PicPay, Banco do Brasil, Caixa e Inter**. Nesta consolidação, cinco cenários privados passaram (Nubank, PicPay, Caixa e Mercado Pago); BB/Inter ainda dependem de amostras privadas disponíveis. OCR local, senha, tabelas posicionadas e colunas de débito/crédito já estão implementados; os testes atuais representam famílias de layout, não certificam todos os formatos dessas instituições.
+2. Ampliar o benchmark implementado com um conjunto independente e executar o modelo real em hardware compatível. Manter regressões de incerteza, duplicidade e sobreposição já automatizadas.
 3. Ampliar as comparações mensais determinísticas já implementadas com novos insights a partir dos dados confirmados, sempre com números verificáveis no histórico.
 4. Concluir a distribuição do modelo no flavor `play` e validar a experiência de ponta a ponta em aparelhos reais. Os flavors `play` e `standalone` existem, mas ainda têm o mesmo comportamento; o asset pack não foi integrado.
 
@@ -72,7 +72,7 @@ UI Compose → ViewModels → casos de uso e contratos de domínio ← Room, par
 
 - O app não declara `INTERNET`, desativa o backup automático do Android e bloqueia capturas de tela por padrão com `FLAG_SECURE`. Em Configurações → Privacidade, a opção **Permitir capturas de tela** pode liberar a captura imediatamente e fica salva para as próximas aberturas. Há um teste instrumentado que verifica a ausência da permissão de rede no app instalado.
 - Transações e histórico do Chat ficam no banco local. O arquivo original selecionado não é alterado; a leitura PDF pode usar uma cópia no cache privado, removida ao final, e a senha não é persistida; transações confirmadas e metadados da importação são salvos.
-- **Backup/exportação manual em JSON ou CSV não é criptografado pelo app.** A proteção do arquivo no destino escolhido cabe ao usuário.
+- **Backup protegido por senha (`.fnb`)** usa criptografia autenticada portátil. JSON avançado e CSV continuam legíveis e sem proteção pelo app. Senha errada ou arquivo inválido não podem substituir o banco. Veja [formato e limites de segurança](docs/BACKUP_SEGURANCA.md).
 - O banco Room não tem criptografia adicional nem bloqueio interno por PIN/biometria. Um aparelho desbloqueado permite acesso ao app.
 - Um modelo importado pelo usuário é carregado por um runtime nativo. A inicialização detecta algumas incompatibilidades, mas não garante qualidade de inferência nem segurança do bundle; use arquivos de origem confiável.
 
@@ -126,7 +126,7 @@ A reconstrução de tabelas PDF usa a mesma validação de moeda nos layouts com
 
 A checagem de sobreposições compartilha os grupos de registros históricos entre lançamentos iguais, incluindo descrições históricas alternativas, sem copiar todos os candidatos para cada linha. Todos os candidatos permanecem disponíveis, com IDs únicos e a ordem de comparação preservada. A revisão mostra cinco registros históricos por página, com controles para percorrer os demais e a contagem total.
 
-PDFs validam também declarações globais de moeda antes de remover capas bancárias. Uma declaração estrangeira ou desconhecida exige valores explicitamente em reais; tabelas reconhecem `Moeda` e `Currency` e recusam colunas de moeda repetidas. Os buffers internos do PDFBox são limitados a 32 MiB desde a abertura, inclusive para objetos comprimidos que expandem antes da contagem de páginas. Exceder esse orçamento recusa o documento sem liberar uma importação parcial. Os demais [limites de PDF e OCR](docs/PDF_IMPORTACAO.md#ocr-local-e-recursos) continuam aplicados.
+PDFs validam também declarações globais de moeda antes de remover capas bancárias, incluindo rótulo e moeda em linhas separadas e expressões como `Valores expressos em dólares`. Uma declaração estrangeira, desconhecida ou sem valor exige valores explicitamente em reais; tabelas reconhecem `Moeda` e `Currency` e recusam colunas de moeda repetidas. Unidades como centavos, milhares e porcentagens são recusadas antes da interpretação em reais; centavos continuam aceitos no formato completo do CSV nativo. Uma transação incompleta não pode atravessar totais, saldos ou mudanças de seção para receber um valor posterior. Os testes de contrato de importação exercitam variações de rótulos, espaços, quebras de linha, tipos de documento e resumos; o CI executa esses testes junto da suíte JVM, e os testes Android incluem a extração de PDFs gerados. Os buffers internos do PDFBox são limitados a 32 MiB desde a abertura, inclusive para objetos comprimidos que expandem antes da contagem de páginas. Exceder esse orçamento recusa o documento sem liberar uma importação parcial. Os demais [limites de PDF e OCR](docs/PDF_IMPORTACAO.md#ocr-local-e-recursos) continuam aplicados.
 
 Datas brasileiras são validadas estritamente, incluindo anos bissextos. Valores zero são aceitos na importação e na restauração; o tipo determina o sinal financeiro e a magnitude armazenada nunca pode ser negativa. A impressão digital v4 ordena os lançamentos, preserva a multiplicidade de compras idênticas e considera a identificação da conta/cartão. Diferenças de caixa, espaços e composição Unicode nessa identificação não criam outra conta. Use a mesma identificação nas reimportações; lotes sem identificação são comparados entre si. Hashes históricos v1, v2 e v3 continuam sendo conferidos apenas para a mesma identificação de origem. A versão v4 separa os novos lotes dos aliases históricos de texto truncado, preservando a distinção entre um lançamento novo de uma linha e outro de várias linhas. Importações antigas com hash v1 continuam bloqueadas quando o arquivo mantém a ordem original; se forem reordenadas, dependem do aviso de sobreposição, pois os registros antigos não guardam o lote original para recalcular o hash.
 
@@ -160,3 +160,24 @@ A restauração também invalida revisões de importação iniciadas antes dela:
 As paletas incluem vermelho/laranja, laranja, azul, verde, roxo, rosa, turquesa, dourado e preto e branco. A opção preto e branco adapta os destaques ao fundo claro ou escuro; o check de importação concluída acompanha a paleta ativa.
 
 O histórico de importações também protege confirmações de desfazer anteriores a uma restauração, inclusive quando os IDs e metadados do lote são reutilizados. A inserção dos exemplos ocorre em uma única transação, com categorias atuais e deduplicação mensal; solicitações antigas são recusadas após restauração. As telas de importação de extratos e modelos consultam o nome do arquivo em IO e mostram erros do provedor sem encerrar a interface. Veja os detalhes na [arquitetura](docs/ARCHITECTURE.md#proteção-do-histórico-inserção-de-exemplos-e-consulta-de-documentos).
+
+
+## Consolidação e validação para beta
+
+O [registro da consolidação](docs/CONSOLIDACAO_BETA.md) distingue a linha de base e as correções verificadas. A [matriz de preparação para beta](docs/BETA_READINESS.md) lista evidências, riscos e roteiro físico; a existência de APKs não significa aprovação para distribuição.
+
+O [benchmark de categorização](docs/CATEGORIZACAO_BENCHMARK.md) usa dados sintéticos públicos e compara regras, memória e fluxo combinado, sem exigir LLM. Para repeti-lo:
+
+```bash
+./gradlew testStandaloneDebugUnitTest --tests '*CategorizationBenchmarkTest'
+```
+
+Validação dos dois flavors (JDK 17+, SDK 36):
+
+```bash
+./gradlew testStandaloneDebugUnitTest testPlayDebugUnitTest lintStandaloneDebug lintPlayDebug assembleStandaloneDebug assembleStandaloneRelease assemblePlayDebug assemblePlayRelease
+python3 scripts/verify_android_privacy.py
+./gradlew -PisolatedDeviceValidation=true connectedStandaloneDebugAndroidTest connectedPlayDebugAndroidTest
+```
+
+A última linha precisa de emulador/dispositivo e usa o pacote `.validation` para preservar a instalação pessoal. Os APKs debug ficam em `app/build/outputs/apk/<flavor>/debug/`; após validação isolada, refaça `assembleStandaloneDebug assemblePlayDebug` sem a propriedade para gerar os IDs normais e repita o verificador de privacidade. Instale com `adb install -r <apk>`. Se houver incompatibilidade de assinatura, não desinstale a instalação com dados para contornar o erro: preserve e confira um backup e use o pacote isolado de validação. APK release local otimizado precisa de assinatura para distribuição; nenhuma chave privada ou publicação foi adicionada nesta rodada. Os flavors continuam sem integração de asset pack da Play Store.

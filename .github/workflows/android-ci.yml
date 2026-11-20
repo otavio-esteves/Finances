@@ -26,16 +26,22 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run Unit Tests
-      run: ./gradlew testStandaloneDebugUnitTest
+      run: ./gradlew --max-workers=2 testStandaloneDebugUnitTest testPlayDebugUnitTest
 
     - name: Run Android Lint
-      run: ./gradlew lintStandaloneDebug
+      run: ./gradlew --max-workers=2 lintStandaloneDebug lintPlayDebug
 
     - name: Build Debug APK
-      run: ./gradlew assembleStandaloneDebug
+      run: ./gradlew --max-workers=2 assembleStandaloneDebug assemblePlayDebug
 
     - name: Build Release APK
-      run: ./gradlew assembleStandaloneRelease
+      run: ./gradlew --max-workers=2 assembleStandaloneRelease assemblePlayRelease
+
+    - name: Verify APK privacy invariants
+      run: python3 scripts/verify_android_privacy.py
+
+    - name: Release build daemon before emulator tests
+      run: ./gradlew --stop
 
     - name: Run Instrumented Tests
       uses: reactivecircus/android-emulator-runner@v2
@@ -43,4 +49,4 @@ jobs:
         api-level: 35
         arch: x86_64
         target: google_apis
-        script: ./gradlew connectedStandaloneDebugAndroidTest
+        script: ./gradlew --max-workers=2 -PisolatedDeviceValidation=true connectedStandaloneDebugAndroidTest connectedPlayDebugAndroidTest

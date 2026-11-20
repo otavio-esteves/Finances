@@ -1,0 +1,74 @@
+{
+  "stage": "before_vocabulary",
+  "note": "Measured synthetic corpus (58 cases). Selected original aggregate metrics; per-class F1 implementation was corrected later, use final reports for per-class metrics. Timing under shared host load is not a controlled performance comparison.",
+  "results": [
+    {
+      "mode": "rules",
+      "cases": 58,
+      "repeats": 5,
+      "accuracy": 0.603448275862069,
+      "uncategorizedRate": 0.05172413793103448,
+      "correctionRate": 0.43103448275862066,
+      "reviewRate": 1.0,
+      "highConfidenceErrors": 0,
+      "highConfidenceErrorRate": null,
+      "meanBatchMs": 34.019081533333335,
+      "p50BatchMs": 29.883667,
+      "p95BatchMs": 50.873522,
+      "amortizedMsPerTransaction": 1.7596076655172415,
+      "byCohort": {
+        "unseen": 0.6363636363636364,
+        "seen_correction": 0.0
+      },
+      "sources": {
+        "RULE": 58
+      }
+    },
+    {
+      "mode": "memory_only",
+      "cases": 58,
+      "repeats": 5,
+      "accuracy": 0.08620689655172414,
+      "uncategorizedRate": 0.9482758620689655,
+      "correctionRate": 0.9482758620689655,
+      "reviewRate": 0.9482758620689655,
+      "highConfidenceErrors": 0,
+      "highConfidenceErrorRate": 0.0,
+      "meanBatchMs": 6.254536533333335,
+      "p50BatchMs": 5.425851,
+      "p95BatchMs": 15.448433,
+      "amortizedMsPerTransaction": 0.32351051034482764,
+      "byCohort": {
+        "unseen": 0.03636363636363636,
+        "seen_correction": 1.0
+      },
+      "sources": {
+        "RULE": 55,
+        "MEMORY": 3
+      }
+    },
+    {
+      "mode": "combined_rules",
+      "cases": 58,
+      "repeats": 5,
+      "accuracy": 0.6551724137931034,
+      "uncategorizedRate": 0.034482758620689655,
+      "correctionRate": 0.3793103448275862,
+      "reviewRate": 0.9482758620689655,
+      "highConfidenceErrors": 0,
+      "highConfidenceErrorRate": 0.0,
+      "meanBatchMs": 70.069469,
+      "p50BatchMs": 66.639951,
+      "p95BatchMs": 117.527253,
+      "amortizedMsPerTransaction": 3.6242828793103445,
+      "byCohort": {
+        "unseen": 0.6363636363636364,
+        "seen_correction": 1.0
+      },
+      "sources": {
+        "RULE": 55,
+        "MEMORY": 3
+      }
+    }
+  ]
+}

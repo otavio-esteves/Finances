@@ -1,5 +1,7 @@
 # Navegação pela navbar — 31/10/2026
 
+> Contexto histórico: referências a Chat neste documento descrevem código/plano anterior. A tela foi removida e não faz parte da navegação atual. Para estado e evidências da consolidação, veja [CONSOLIDACAO_BETA.md](CONSOLIDACAO_BETA.md) e [BETA_READINESS.md](BETA_READINESS.md).
+
 O relato foi de engasgos no Galaxy S21, principalmente ao abrir Gráficos. Esta rodada alterou a navegação e o desenho do fundo da barra. A comparação foi feita em um emulador isolado; o S21 não estava conectado.
 
 ## Alterações

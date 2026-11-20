@@ -1,5 +1,7 @@
 # Plano de IA local e evolução do fluxo de faturas
 
+> Contexto histórico: referências a Chat neste documento descrevem código/plano anterior. A tela foi removida e não faz parte da navegação atual. Para estado e evidências da consolidação, veja [CONSOLIDACAO_BETA.md](CONSOLIDACAO_BETA.md) e [BETA_READINESS.md](BETA_READINESS.md).
+
 Este é o plano técnico para a ideia central do Finances: **receber faturas de cartão e extratos, organizar os lançamentos automaticamente, apresentar insights e responder perguntas no Chat depois de Transações**. A IA serve a esse fluxo; o arquivo importado e os números confirmados pela pessoa são a fonte das respostas.
 
 O [README](../README.md) mostra a experiência de produto e o estado atual. A [arquitetura](ARCHITECTURE.md) descreve os fluxos de código. Este plano registra decisões, lacunas e critérios de aceite. As anotações históricas das fases de 2026-09-18/19 foram condensadas abaixo; quando um status diverge de um comentário antigo no código, valem o código e as pendências deste documento.

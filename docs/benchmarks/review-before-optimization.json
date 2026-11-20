@@ -1,0 +1,1 @@
+{"rows":6000,"included":5400,"samples":30,"coldMeanMs":5.375641466666665,"coldMedianMs":4.330101,"warmMeanMs":4.542437666666666,"warmMedianMs":4.21282,"note":"JVM derived summary only; cold=new immutable state, warm=repeat reads; no rendering/FPS claim"}
