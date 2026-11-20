@@ -18,6 +18,58 @@ import java.io.ByteArrayOutputStream
 class PdfCurrencyIntegrationTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun splitCurrencyDeclarationsSurviveExtractionAndBankCoverRemoval() {
+        for (label in listOf("Moeda:", "Valores expressos em")) {
+            for (bankCover in listOf(false, true)) for (converted in listOf(false, true)) {
+                val bytes = pdf {
+                    text("Fatura", 50f, 760f)
+                    text(label, 50f, 735f); text("USD", 50f, 715f)
+                    if (bankCover) {
+                        text("Santander", 50f, 695f)
+                        text("Detalhamento da Fatura", 50f, 675f)
+                    }
+                    text("Data", 50f, 650f); text("Descricao", 170f, 650f)
+                    text(if (converted) "Valor (BRL)" else "Valor", 350f, 650f)
+                    text("01/11/2026", 50f, 620f); text("Compra", 170f, 620f); text("100,00", 350f, 620f)
+                }
+                if (converted) {
+                    val entry = runBlocking { PdfStatementParser(PdfBoxTextExtractor(context)).parse("a.pdf", bytes) }.single()
+                    assertEquals("Compra", entry.description)
+                    assertEquals(10_000L, entry.amount.cents)
+                } else assertThrows(IllegalArgumentException::class.java) {
+                    runBlocking { PdfStatementParser(PdfBoxTextExtractor(context)).parse("a.pdf", bytes) }
+                }
+            }
+        }
+    }
+
+    @Test fun splitBrlMetadataDoesNotBecomePartOfAPurchaseDescription() = runBlocking {
+        val bytes = pdf {
+            text("Fatura", 50f, 760f)
+            text("01/11/2026 Compra 100,00", 50f, 700f)
+            text("Moeda:", 50f, 675f); text("BRL", 50f, 650f)
+            text("02/11/2026 Outra 20,00", 50f, 625f)
+        }
+        val entries = PdfStatementParser(PdfBoxTextExtractor(context)).parse("a.pdf", bytes)
+        assertEquals(listOf("Compra", "Outra"), entries.map { it.description })
+        assertEquals(listOf(10_000L, 2_000L), entries.map { it.amount.cents })
+    }
+
+    @Test fun aSummaryCannotCompleteAnUnfinishedPurchaseAfterPdfExtraction() {
+        for (summary in listOf("Total da fatura", "Saldo", "Subtotal")) {
+            val bytes = pdf {
+                text("Fatura", 50f, 760f)
+                text("Data", 50f, 710f); text("Descricao", 170f, 710f); text("Valor", 450f, 710f)
+                text("01/11/2026", 50f, 680f); text("Compra", 170f, 680f)
+                text(summary, 170f, 650f); text("100,00", 450f, 650f)
+                text("Complemento", 170f, 620f); text("50,00", 450f, 620f)
+            }
+            assertThrows(summary, IllegalArgumentException::class.java) {
+                runBlocking { PdfStatementParser(PdfBoxTextExtractor(context)).parse("a.pdf", bytes) }
+            }
+        }
+    }
+
     private enum class Layout { VALUE, DEBIT_CREDIT, CENTERED, CAIXA }
 
     private fun PDPageContentStream.currencyTable(layout: Layout, unit: String, y: Float = 690f) {

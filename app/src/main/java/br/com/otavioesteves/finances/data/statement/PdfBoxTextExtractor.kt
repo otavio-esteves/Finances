@@ -76,7 +76,7 @@ class PdfBoxTextExtractor(context: Context) : PdfTextExtractor {
                     var wasScanned = false
                     val pageWords = if (imageFraction >= 0.20f || words.isEmpty()) {
                         if (renderer == null) {
-                            stagedFile = File.createTempFile("pdf-ocr-", ".pdf", appContext.cacheDir).also {
+                            stagedFile = PdfTemporaryFiles.create(appContext.cacheDir).also {
                                 if (document.isEncrypted) {
                                     document.isAllSecurityToBeRemoved = true
                                     document.save(it)

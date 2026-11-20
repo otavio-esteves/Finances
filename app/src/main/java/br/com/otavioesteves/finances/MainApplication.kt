@@ -20,6 +20,9 @@ class MainApplication : Application() {
         super.onCreate()
         container = DefaultAppContainer(this, applicationScope)
         invoiceReminders.schedule()
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            br.com.otavioesteves.finances.data.statement.PdfTemporaryFiles.cleanupPreviousSessions(cacheDir)
+        }
     }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

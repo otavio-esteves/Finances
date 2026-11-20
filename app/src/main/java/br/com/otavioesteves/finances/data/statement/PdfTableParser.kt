@@ -60,6 +60,7 @@ internal class PdfTableParser(
         val hasAmount = cells.indices.any { header[it] in MONEY_COLUMNS && cells[it].isNotBlank() }
         if (SUMMARY.matches(normalizedDescription) &&
             ((date.isBlank() && hasAmount) || (date.isNotBlank() && normalizedDescription != "total"))) {
+            require(pending == null) { "Lançamento incompleto antes de um resumo na tabela PDF. Nenhum lançamento foi importado." }
             return Result(true, boundary = true)
         }
         if (date.isNotBlank()) {

@@ -117,6 +117,7 @@ internal class PdfLayoutReconstructor {
         }
         val columns = header.map { column ->
             if (column.name !in MONEY_COLUMNS) return@map column
+            StatementCurrency.requireMajorUnit(column.label)
             require(!column.isForeign || !column.isBrl) { "Coluna monetária com moedas conflitantes no PDF." }
             require(!column.isForeign || column.name in listOf("valor", "valor estrangeiro")) {
                 "Coluna de débito, crédito ou saldo em moeda estrangeira sem conversão em reais."

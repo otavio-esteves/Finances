@@ -29,6 +29,7 @@ internal object BankCardPdfText {
         }
         val start = normalized.indexOfFirst { section.start.matches(it) }
         if (start < 0) return text
+        requireNoDatedCoverRows(lines.take(start))
         // Only explicit period/year metadata supplies dates; neither due dates nor today's year are guessed.
         val metadata = lines.take(start).filter { REFERENCE.containsMatchIn(normalizePdfText(it)) }
         var active = false
@@ -48,6 +49,7 @@ internal object BankCardPdfText {
 
     private fun inter(lines: List<String>, normalized: List<String>): String {
         val start = normalized.indexOf("despesas da fatura")
+        requireNoDatedCoverRows(lines.take(start))
         val output = mutableListOf("Fatura")
         var pending: String? = null
         var count = 0

@@ -52,6 +52,7 @@ class CsvOfxStatementParser : StatementParserRepository {
         }
         val amountIndex = uniqueColumn(header, "valor") { it.contains("valor") || it.contains("amount") || it.contains("value") }
         require(!StatementCurrency.hasForeignCurrency(header[amountIndex])) { "Coluna monetária em moeda estrangeira sem conversão em reais." }
+        if (!nativeExport) StatementCurrency.requireCsvMajorUnit(header[amountIndex])
         val currencyIndices = header.indices.filter { header[it] in setOf("moeda", "currency", "curdef") }
         require(setOf(dateIndex, descriptionIndex, amountIndex).size == 3) { "Colunas ambíguas no CSV." }
 

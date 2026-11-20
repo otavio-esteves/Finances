@@ -22,6 +22,17 @@ class SynthesizeStatementUseCase(
     ): List<CategorySuggestion> {
         val knownCategories = categoriesRepository.getCategories().first()
         val suggestions = transactionCategorizer.categorize(entries, knownCategories, onProgress).getOrThrow()
+        val categoriesById = knownCategories.associateBy { it.id }
+        require(suggestions.size == entries.size && suggestions.indices.all { index ->
+            val suggestion = suggestions[index]
+            val original = entries[index]
+            suggestion.originalEntry == original && suggestion.originalType == original.type &&
+                (suggestion.entry == original || (suggestion.source == SuggestionSource.MEMORY && suggestion.entry.copy(type = original.type) == original)) &&
+                (suggestion.entry.type == original.type || suggestion.source == SuggestionSource.MEMORY) &&
+                (suggestion.suggestedCategory == null || categoriesById[suggestion.suggestedCategory.id] == suggestion.suggestedCategory)
+        }) {
+            "A categorização devolveu lançamentos incompletos ou alterados. Nenhum lançamento foi importado. Selecione o arquivo novamente."
+        }
         val transferCategory = knownCategories.firstOrNull { it.type == CategoryType.TRANSFER }
         return suggestions.map { suggestion ->
             if (suggestion.source != SuggestionSource.MEMORY && transferCategory != null &&

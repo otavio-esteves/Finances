@@ -34,7 +34,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
         require(text.length <= MAX_TEXT_CHARS) { "O texto do PDF excede o limite de análise local." }
         val currencyPolicy = PdfCurrencyPolicy(text)
         val cardContext = kind == StatementKind.CARD_BILL || CARD_BILL_HEADER.containsMatchIn(text)
-        val document = PdfStatementDocument(BankCardPdfText.prepare(text, cardContext))
+        val document = PdfStatementDocument(BankCardPdfText.prepare(currencyPolicy.text, cardContext), cardContext)
         fun lines() = document.text.lineSequence().map { raw ->
             raw.replace('\u2212', '-').replace('\u2013', '-').replace('\u00a0', ' ')
                 .split('\t').joinToString("\t") { it.replace(WHITESPACE, " ").trim() }
@@ -70,9 +70,9 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
 
         lines().forEach { line ->
             val normalized = normalizePdfText(line)
-            if (currencyPolicy.isDeclaration(line)) return@forEach
             if (PAGE_FOOTER.matches(normalized)) return@forEach
             if (document.isMovementSectionHeading(line)) {
+                if (pendingRow != null || table.hasPending) invalidRow()
                 continuationIndex = null
                 return@forEach
             }
@@ -85,6 +85,7 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                 return@forEach
             }
             if (TABLE_HEADER.containsMatchIn(normalized) && !line.contains('\t')) {
+                StatementCurrency.requireMajorUnit(normalized)
                 require(!StatementCurrency.hasForeignCurrency(normalized)) { "Cabeçalho monetário estrangeiro sem coluna inequívoca de conversão em reais." }
                 runningBalanceColumn = VALUE_BALANCE_COLUMNS.containsMatchIn(normalized)
                 plainValueIsBrl = PdfCurrencyPolicy.hasBrlValueColumn(normalized)
@@ -92,6 +93,8 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                 plainTableHeader = normalized
                 return@forEach
             }
+            if ((pendingRow != null || table.hasPending) &&
+                (isMetadata(normalized) || document.isMovementSummary(line))) invalidRow()
             if (line.contains('\t') || table.hasPending) {
                 val result = table.process(line)
                 if (result.handled) {
@@ -106,7 +109,6 @@ class PdfStatementParser(private val textExtractor: PdfTextExtractor) : Statemen
                     return@forEach
                 }
             }
-            if (pendingRow != null && isMetadata(normalized)) invalidRow()
             val datePrefix = PdfDateResolver.DATE_PREFIX.find(normalized)
             if (datePrefix != null) {
                 if (pendingRow != null) invalidRow()
