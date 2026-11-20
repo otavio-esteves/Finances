@@ -13,6 +13,24 @@ import org.junit.Test
 import java.time.LocalDate
 
 class ImportStatementUiStateTest {
+    @Test fun transfersRefundsZerosAndExcludedRowsHaveSeparateCountsAndTotals() {
+        val categories = CategoryType.entries.mapIndexed { index, type -> Category(index + 1L, type.name, type) }
+        val entries = listOf(TransactionType.EXPENSE to 6000L, TransactionType.INCOME to 1000L,
+            TransactionType.TRANSFER to 4000L, TransactionType.EXPENSE to 0L, TransactionType.TRANSFER to 9000L)
+        val suggestions = entries.map { (type, cents) -> CategorySuggestion(
+            RawStatementEntry("Lançamento", Money(cents), LocalDate.of(2026, 11, 1), type),
+            categories.single { it.type.name == type.name }, 0.7f)
+        }
+        val state = ImportStatementUiState.ReviewingSuggestions("a.csv", suggestions, categories, excludedIndices = setOf(4))
+        assertEquals(Money(6000), state.expenseTotal)
+        assertEquals(Money(1000), state.incomeTotal)
+        assertEquals(Money(4000), state.transferTotal)
+        assertEquals(2, state.countFor(TransactionType.EXPENSE))
+        assertEquals(1, state.countFor(TransactionType.INCOME))
+        assertEquals(1, state.countFor(TransactionType.TRANSFER))
+        assertTrue(state.canConfirm)
+    }
+
     @Test
     fun overflowingReviewShowsValidationErrorAndCanRecoverByExcludingAnEntry() {
         val category = Category(1, "Outros", CategoryType.EXPENSE)

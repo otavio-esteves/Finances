@@ -44,8 +44,10 @@ sealed interface ImportStatementUiState {
         val referenceYear: Int? = null,
         val dataRevision: Long = 0L
     ) : ImportStatementUiState {
-        val includedSuggestions: List<CategorySuggestion>
-            get() = suggestions.filterIndexed { index, _ -> index !in excludedIndices }
+        // ViewModel states and their lists are immutable snapshots; copy() creates fresh derived caches.
+        val includedSuggestions: List<CategorySuggestion> by lazy {
+            if (excludedIndices.isEmpty()) suggestions else suggestions.filterIndexed { index, _ -> index !in excludedIndices }
+        }
         val potentialOverlapCount: Int
             get() = overlapMatches.keys.count { it !in excludedIndices }
         val visibleIndices: List<Int> get() = indicesFor(filter)
@@ -74,12 +76,16 @@ sealed interface ImportStatementUiState {
             } && amountError == null && (potentialOverlapCount == 0 || overlapAcknowledged) && !isConfirming &&
                 (!requiresOcrReview || ocrAcknowledged) && !isCheckingOverlaps && validationError == null &&
                 (expectedExpenseTotal.isBlank() || (expectedTotalValid && (expenseDifference?.isZero() == true || differenceAcknowledged)))
-        val amountError: String? get() = try {
-            checkedMagnitudeTotal(includedSuggestions.asSequence().map { it.entry.amount.cents })
-            null
-        } catch (error: IllegalArgumentException) { error.message }
-        val expenseTotal: Money? get() = totalFor(TransactionType.EXPENSE)
-        val incomeTotal: Money? get() = totalFor(TransactionType.INCOME)
+        val amountError: String? by lazy {
+            try {
+                checkedMagnitudeTotal(includedSuggestions.asSequence().map { it.entry.amount.cents })
+                null
+            } catch (error: IllegalArgumentException) { error.message }
+        }
+        val expenseTotal: Money? by lazy { totalFor(TransactionType.EXPENSE) }
+        val incomeTotal: Money? by lazy { totalFor(TransactionType.INCOME) }
+        val transferTotal: Money? by lazy { totalFor(TransactionType.TRANSFER) }
+        fun countFor(type: TransactionType): Int = includedSuggestions.count { it.entry.type == type }
         private fun totalFor(type: TransactionType): Money? = try {
             checkedMagnitudeTotal(includedSuggestions.asSequence().filter { it.entry.type == type }.map { it.entry.amount.cents })
         } catch (_: IllegalArgumentException) { null }

@@ -88,13 +88,21 @@ internal fun ReviewContent(
                         style = MaterialTheme.typography.bodyMedium)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text("Despesas", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Despesas (${state.countFor(TransactionType.EXPENSE)})", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             AmountText(expenses?.let(MoneyFormatter::format) ?: "Total indisponível", isPositive = false, style = MaterialTheme.typography.titleSmall)
                         }
                         Column(Modifier.weight(1f)) {
-                            Text("Receitas", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Receitas e estornos (${state.countFor(TransactionType.INCOME)})", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             AmountText(incomes?.let(MoneyFormatter::format) ?: "Total indisponível", isPositive = true, style = MaterialTheme.typography.titleSmall)
                         }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.testTag("review_transfers")) {
+                        Text("Pagamentos de cartão e transferências (${state.countFor(TransactionType.TRANSFER)})",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(state.transferTotal?.let(MoneyFormatter::format) ?: "Total indisponível",
+                            style = MaterialTheme.typography.titleSmall)
+                        Text("Transferências ficam fora das receitas, despesas e resultado do mês. Estornos aparecem nos créditos, sem serem somados novamente às despesas.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     state.amountError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     if (state.potentialOverlapCount > 0) TextButton(
@@ -134,11 +142,8 @@ internal fun ReviewContent(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (state.requiresOcrReview) {
                         Text("Este PDF passou por reconhecimento de imagem. Confira datas, valores e descrições; use Corrigir dados em qualquer lançamento.", style = MaterialTheme.typography.bodySmall)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = state.ocrAcknowledged, onCheckedChange = onOcrAcknowledged, enabled = !state.isConfirming,
-                                modifier = Modifier.testTag("review_ocr_acknowledgment"))
-                            Text("Conferi os dados reconhecidos", style = MaterialTheme.typography.bodySmall)
-                        }
+                        ReviewAcknowledgment("Conferi os dados reconhecidos", state.ocrAcknowledged,
+                            !state.isConfirming, onOcrAcknowledged, Modifier.testTag("review_ocr_acknowledgment"))
                     }
                     state.validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     if (state.includedSuggestions.isEmpty()) {
@@ -150,11 +155,8 @@ internal fun ReviewContent(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = state.overlapAcknowledged, onCheckedChange = onOverlapAcknowledged, enabled = !state.isConfirming,
-                                modifier = Modifier.testTag("review_overlap_acknowledgment"))
-                            Text("Revisei os possíveis lançamentos repetidos")
-                        }
+                        ReviewAcknowledgment("Revisei os possíveis lançamentos repetidos", state.overlapAcknowledged,
+                            !state.isConfirming, onOverlapAcknowledged, Modifier.testTag("review_overlap_acknowledgment"))
                     }
                 }
             }

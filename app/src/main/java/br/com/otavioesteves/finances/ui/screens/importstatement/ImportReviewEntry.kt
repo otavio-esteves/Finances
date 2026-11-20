@@ -59,10 +59,13 @@ internal fun SuggestionRow(
                     Text(if (excluded) "Reincluir" else "Excluir")
                 }
             }
-            if (suggestion.source == br.com.otavioesteves.finances.domain.model.SuggestionSource.MEMORY) {
-                Text("Categoria lembrada da sua correção", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary)
-            }
+            Text(when (suggestion.source) {
+                br.com.otavioesteves.finances.domain.model.SuggestionSource.MEMORY -> "Categoria lembrada da sua correção"
+                br.com.otavioesteves.finances.domain.model.SuggestionSource.AI -> "Categoria sugerida pela IA local · confira"
+                br.com.otavioesteves.finances.domain.model.SuggestionSource.RULE -> "Categoria sugerida por regras locais"
+                br.com.otavioesteves.finances.domain.model.SuggestionSource.USER -> "Categoria escolhida por você"
+            }, style = MaterialTheme.typography.labelSmall, color = if (suggestion.source == br.com.otavioesteves.finances.domain.model.SuggestionSource.MEMORY)
+                MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             if (!excluded) TextButton(onClick = { showEditor = true }, enabled = enabled) { Text("Corrigir dados") }
             if (matches.isNotEmpty() && !excluded) {
                 PotentialOverlapComparison(suggestion, matches, availableCategories)

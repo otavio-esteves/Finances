@@ -40,14 +40,11 @@ internal fun ImportReviewChecks(
                 else "Diferença (lançamentos menos documento): ${MoneyFormatter.format(difference)}",
                 color = if (difference.isZero()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium)
-            if (!difference.isZero()) Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = state.differenceAcknowledged, onCheckedChange = onDifferenceAcknowledged,
-                    enabled = !state.isConfirming)
-                Text("Conferi a diferença e quero continuar", style = MaterialTheme.typography.bodySmall)
-            }
+            if (!difference.isZero()) ReviewAcknowledgment("Conferi a diferença e quero continuar",
+                state.differenceAcknowledged, !state.isConfirming, onDifferenceAcknowledged)
         }
         }
-        Text("Pagamentos de fatura de cartão devem ser Transferência para não contar as compras duas vezes. Confira o tipo antes de salvar.",
+        Text("Pagamentos de fatura de cartão devem ser Transferência para não contar as compras duas vezes. PIX e resgates entre suas próprias contas também são transferências. O extrato não identifica essa titularidade; confira o tipo antes de salvar.",
             style = MaterialTheme.typography.bodySmall)
     }
 }
