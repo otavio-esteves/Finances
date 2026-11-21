@@ -51,6 +51,9 @@ internal fun ofxTransactions(text: String, checkCancelled: () -> Unit): Sequence
             "CURDEF", "CURSYM" -> if (!tag.closing && !originalCurrency) {
                 StatementCurrency.requireBrl(tag.value(text))
             }
+            "CORRECTFITID", "CORRECTACTION" -> throw IllegalArgumentException(
+                "O OFX contém correções de lançamentos. Exporte um extrato consolidado ou use CSV ou PDF. Nenhum lançamento foi importado."
+            )
             "TRNAMT", "DTPOSTED", "MEMO", "NAME" -> if (!tag.closing) {
                 current?.let { transaction ->
                     require(!originalCurrency) { "Campo de transação dentro de ORIGCURRENCY no OFX." }

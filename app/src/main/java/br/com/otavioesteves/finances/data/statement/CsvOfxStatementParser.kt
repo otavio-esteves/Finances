@@ -9,6 +9,7 @@ import br.com.otavioesteves.finances.utils.MoneyFormatter
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.math.BigDecimal
+import java.text.Normalizer
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.ResolverStyle
@@ -56,6 +57,20 @@ class CsvOfxStatementParser : StatementParserRepository {
         val currencyIndices = header.indices.filter { header[it] in setOf("moeda", "currency", "curdef") }
         require(setOf(dateIndex, descriptionIndex, amountIndex).size == 3) { "Colunas ambíguas no CSV." }
 
+        val nativeTypeIndex = if (nativeExport) header.indexOf("tipo") else -1
+        val nativeVersionIndex = if (nativeExport) header.indexOf("formato finances") else -1
+        val normalizedHeader = header.map(::normalizeLabel)
+        val directionColumns = if (nativeExport) emptyList() else normalizedHeader.indices.filter {
+            normalizedHeader[it] in DIRECTION_HEADERS
+        }
+        val directionRequired = directionColumns.isNotEmpty()
+        val directionCandidates = if (nativeExport || directionRequired) directionColumns else {
+            normalizedHeader.indices.filter { normalizedHeader[it] in GENERIC_TYPE_HEADERS }
+        }
+        require(directionCandidates.size <= 1) { "Use uma única coluna para indicar a direção dos lançamentos no CSV." }
+        val directionIndex = directionCandidates.singleOrNull()
+        var firstMissingDirection: Int? = null
+        var foundDirection = false
         val entries = mutableListOf<RawStatementEntry>()
         while (rows.hasNext()) {
             val fields = rows.next()
@@ -63,29 +78,51 @@ class CsvOfxStatementParser : StatementParserRepository {
                 "Linha CSV não corresponde ao cabeçalho. Confira o separador e coloque campos com separadores entre aspas."
             }
             currencyIndices.forEach { StatementCurrency.requireBrl(fields[it]) }
+            val rawAmount = fields[amountIndex].trim()
             val amountCents = if (nativeExport) {
-                fields[centsIndex].trim().let { raw ->
+                rawAmount.let { raw ->
                     require(UNSIGNED_CENTS.matches(raw)) { "Valor em centavos inválido: $raw" }
                     raw.toLongOrNull() ?: throw IllegalArgumentException("Valor em centavos fora do limite: $raw")
                 }
-            } else parseAmountCents(fields[amountIndex])
-            val nativeType = if (nativeExport) {
-                val raw = fields[header.indexOf("tipo")].trim()
+            } else parseAmountCents(rawAmount)
+            val typeFromSign = when (kind) {
+                StatementKind.BANK_STATEMENT -> if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME
+                StatementKind.CARD_BILL -> if (amountCents < 0) TransactionType.INCOME else TransactionType.EXPENSE
+            }
+            val declaredType = if (nativeExport) {
+                val raw = fields[nativeTypeIndex].trim()
                 TransactionType.entries.firstOrNull { it.name == raw }
                     ?: throw IllegalArgumentException("Tipo de transação inválido no CSV exportado: $raw")
-            } else null
+            } else directionIndex?.let { index ->
+                val record = entries.size + 1
+                val type = DIRECTION_TYPES[normalizeLabel(fields[index])]
+                if (type == null) {
+                    require(!directionRequired) { "Informe débito ou crédito no lançamento $record do CSV." }
+                    if (firstMissingDirection == null) firstMissingDirection = record
+                } else {
+                    foundDirection = true
+                    require(amountCents == 0L || (amountCents > 0L && !rawAmount.startsWith('+')) || type == typeFromSign) {
+                        "O sinal do valor contradiz o tipo no lançamento $record do CSV. Confira se o arquivo é um extrato ou uma fatura."
+                    }
+                }
+                type
+            }
             entries += RawStatementEntry(
-                description = if (nativeExport && "formato finances" in header) {
-                    require(fields[header.indexOf("formato finances")] == "2") { "Formato CSV Finances não suportado" }
+                description = if (nativeVersionIndex >= 0) {
+                    require(fields[nativeVersionIndex] == "2") { "Formato CSV Finances não suportado" }
                     fields[descriptionIndex].removePrefix("'")
                 } else fields[descriptionIndex].trim(),
                 amount = Money.fromCents(if (amountCents < 0) Math.negateExact(amountCents) else amountCents),
                 date = parseCsvDate(fields[dateIndex].trim()),
-                type = nativeType ?: when (kind) {
-                    StatementKind.BANK_STATEMENT -> if (amountCents < 0) TransactionType.EXPENSE else TransactionType.INCOME
-                    StatementKind.CARD_BILL -> if (amountCents < 0) TransactionType.INCOME else TransactionType.EXPENSE
-                }
+                type = declaredType ?: typeFromSign,
+                hasNativeCsvType = nativeExport,
+                legacyCsvSignType = typeFromSign.takeIf { !nativeExport && declaredType != null && it != declaredType }
             )
+        }
+        // A generic Tipo column may describe the operation (PIX, TED) throughout the file.
+        // When it declares direction, every record must supply an unambiguous direction.
+        require(!foundDirection || firstMissingDirection == null) {
+            "Informe débito ou crédito no lançamento $firstMissingDirection do CSV."
         }
         require(entries.isNotEmpty()) { "CSV vazio ou sem linhas de transação" }
         return entries
@@ -99,6 +136,10 @@ class CsvOfxStatementParser : StatementParserRepository {
         require(candidates.size == 1) { "CSV contém mais de uma coluna de $label. Use um arquivo com uma única coluna para esse campo." }
         return candidates.single()
     }
+
+    private fun normalizeLabel(value: String): String =
+        Normalizer.normalize(value.trim().lowercase(Locale.ROOT), Normalizer.Form.NFD)
+            .replace(HEADER_DIACRITICS, "").replace(LABEL_WHITESPACE, " ").replace(SLASH_WHITESPACE, "/")
 
     private fun parseOfx(text: String, checkCancelled: () -> Unit): List<RawStatementEntry> {
         val entries = ofxTransactions(text, checkCancelled).map { fields ->
@@ -281,6 +322,20 @@ class CsvOfxStatementParser : StatementParserRepository {
         val UNSIGNED_CENTS = Regex("[0-9]+")
         val OFX_DECIMAL = Regex("[+-]?[0-9]+(?:[.,][0-9]+)?")
         val HEADER_DIACRITICS = Regex("\\p{M}+")
+        val LABEL_WHITESPACE = Regex("[\\s\\p{Z}]+")
+        val SLASH_WHITESPACE = Regex(" */ *")
+        val GENERIC_TYPE_HEADERS = setOf(
+            "tipo", "tipo de transacao", "tipo da transacao", "tipo do lancamento", "tipo de movimento",
+            "tipo de movimentacao", "type", "transaction type"
+        )
+        val DIRECTION_HEADERS = setOf(
+            "direcao", "natureza", "debito/credito", "credito/debito", "d/c", "c/d", "direction", "debit/credit", "credit/debit"
+        )
+        val DIRECTION_TYPES =
+            setOf("d", "dr", "deb", "deb.", "debito", "debit", "saida", "despesa", "expense")
+                .associateWith { TransactionType.EXPENSE } +
+                setOf("c", "cr", "cred", "cred.", "credito", "credit", "entrada", "receita", "income")
+                    .associateWith { TransactionType.INCOME }
         val OFX_EXTENSIONS = setOf("ofx", "qfx")
         val BR_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT)
     }

@@ -30,7 +30,9 @@ class RememberingTransactionCategorizer(
                     entry.legacyInputType != null && entry.legacyInputType != entry.type &&
                         category.type.name == entry.legacyInputType.name
                 }
-            (currentCategory ?: legacyCategory)?.let { category ->
+            (currentCategory ?: legacyCategory)?.takeIf { category ->
+                !entry.hasNativeCsvType || category.type.name == entry.type.name
+            }?.let { category ->
                 CategorySuggestion(entry.copy(type = TransactionType.valueOf(category.type.name)), category, 1f,
                     SuggestionSource.MEMORY, originalType = entry.type, originalEntry = entry)
             }

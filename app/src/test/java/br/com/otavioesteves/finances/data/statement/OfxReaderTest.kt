@@ -13,6 +13,25 @@ class OfxReaderTest {
     private val parser = CsvOfxStatementParser()
     private val valid = "<STMTTRN><DTPOSTED>20261101<TRNAMT>-1.00<MEMO>Compra</STMTTRN>"
 
+    @Test fun refusesEntireBatchWithOfxCorrectionsInXmlOrSgml() {
+        val original = valid.replace("</STMTTRN>", "<FITID>original</STMTTRN>")
+        val corrected = valid.replace("-1.00", "-1.25")
+        for (correction in listOf(
+            "<CORRECTFITID>original</CORRECTFITID><CORRECTACTION>REPLACE</CORRECTACTION>",
+            "<CORRECTFITID>original<CORRECTACTION>DELETE",
+            "<CORRECTFITID>original",
+            "<CORRECTACTION/>"
+        )) {
+            val text = "<OFX><BANKTRANLIST>$original" +
+                corrected.replace("</STMTTRN>", "$correction</STMTTRN>") + "</BANKTRANLIST></OFX>"
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("banco.ofx", text.toByteArray()) }
+            }
+            assertTrue(error.message.orEmpty().contains("correções de lançamentos"))
+            assertTrue(error.message.orEmpty().contains("Nenhum lançamento foi importado"))
+        }
+    }
+
     @Test fun rejectsRepeatedAmountAndDateEvenWhenValuesAreEqualOrTheFirstRecordWasValid() {
         for ((field, first, second) in listOf(
             Triple("TRNAMT", "-1.00", "-999.00"), Triple("TRNAMT", "-1.00", "-1.00"),

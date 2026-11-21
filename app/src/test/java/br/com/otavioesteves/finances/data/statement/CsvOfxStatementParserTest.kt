@@ -9,6 +9,7 @@ import br.com.otavioesteves.finances.utils.TransactionExporter
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 
@@ -258,6 +259,36 @@ class CsvOfxStatementParserTest {
     }
 
     @Test
+    fun parse_csv_preservesDeclaredDirectionAndTreatsOperationNamesAsMetadata() = runBlocking {
+        val header = "Data;Descrição;Valor;Tipo\n"
+        val csv = header + "01/11/2026;Mercado;70,00;Débito\n02/11/2026;Depósito;120,00;Crédito"
+        for (kind in StatementKind.entries) {
+            val entries = parser.parse("banco.csv", csv.toByteArray(), kind)
+            assertEquals(listOf(TransactionType.EXPENSE, TransactionType.INCOME), entries.map { it.type })
+            assertEquals(listOf(7000L, 12000L), entries.map { it.amount.cents })
+        }
+        val operation = parser.parse("banco.csv", (header + "01/11/2026;Pagamento;-70,00;PIX").toByteArray()).single()
+        assertEquals(TransactionType.EXPENSE, operation.type)
+        val mixedColumns = "Data;Descrição;Valor;Tipo;Débito / Crédito\n01/11/2026;Pagamento;70,00;PIX;D"
+        assertEquals(TransactionType.EXPENSE, parser.parse("banco.csv", mixedColumns.toByteArray()).single().type)
+    }
+
+    @Test
+    fun parse_csv_rejectsConflictingSignsAndMissingDeclaredDirections() {
+        for ((header, rows) in listOf(
+            "Tipo" to "01/11/2026;Mercado;+70,00;Débito",
+            "Tipo" to "01/11/2026;Recebimento;-120,00;Crédito",
+            "Natureza" to "01/11/2026;Mercado;70,00;Indefinida",
+            "Tipo" to "01/11/2026;Mercado;70,00;\n02/11/2026;Depósito;120,00;Crédito"
+        )) {
+            val csv = "Data;Descrição;Valor;$header\n$rows"
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { parser.parse("banco.csv", csv.toByteArray()) }
+            }
+        }
+    }
+
+    @Test
     fun parse_nativeExport_preservesAmountsTypesDatesAndQuotedDescriptionsForEitherStatementKind() = runBlocking {
         val date = LocalDate.of(2026, 11, 1)
         val transactions = listOf(
@@ -275,6 +306,7 @@ class CsvOfxStatementParserTest {
             assertEquals(transactions.map { it.amount }, entries.map { it.amount })
             assertEquals(transactions.map { it.date }, entries.map { it.date })
             assertEquals(transactions.map { it.type }, entries.map { it.type })
+            assertTrue(entries.all { it.hasNativeCsvType })
         }
     }
 

@@ -3,6 +3,7 @@ package br.com.otavioesteves.finances.domain.usecase
 import br.com.otavioesteves.finances.domain.DateProvider
 import br.com.otavioesteves.finances.domain.ai.TransactionCategorizer
 import br.com.otavioesteves.finances.domain.model.Category
+import br.com.otavioesteves.finances.domain.model.CategoryMemory
 import br.com.otavioesteves.finances.domain.model.CategorySuggestion
 import br.com.otavioesteves.finances.domain.model.CategorySummary
 import br.com.otavioesteves.finances.domain.model.CategoryType
@@ -15,13 +16,18 @@ import br.com.otavioesteves.finances.domain.model.Transaction
 import br.com.otavioesteves.finances.domain.model.TransactionOrigin
 import br.com.otavioesteves.finances.domain.model.TransactionType
 import br.com.otavioesteves.finances.domain.model.SuggestionSource
+import br.com.otavioesteves.finances.domain.model.categoryMemoryKey
+import br.com.otavioesteves.finances.data.ai.RememberingTransactionCategorizer
 import br.com.otavioesteves.finances.data.ai.RuleBasedLocalAiRepository
 import br.com.otavioesteves.finances.data.statement.CsvOfxStatementParser
 import br.com.otavioesteves.finances.data.statement.PdfStatementParser
 import br.com.otavioesteves.finances.domain.repository.CategoriesRepository
+import br.com.otavioesteves.finances.domain.repository.CategoryMemoryRepository
 import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
 import br.com.otavioesteves.finances.domain.repository.StatementParserRepository
 import br.com.otavioesteves.finances.domain.repository.TransactionsRepository
+import br.com.otavioesteves.finances.utils.ExportFormat
+import br.com.otavioesteves.finances.utils.TransactionExporter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -63,7 +69,8 @@ class StatementImportUseCasesTest {
         }
         org.junit.Assert.assertNotEquals(repo.fingerprints[1], repo.fingerprints[2])
         assertTrue(repo.fingerprints[0] !in repo.legacyClaims[1])
-        assertTrue(repo.legacyClaims[1].containsAll(repo.legacyClaims[0]))
+        assertTrue(repo.legacyClaims[1].containsAll(repo.legacyClaims[0].take(3)))
+        assertTrue(repo.legacyClaims[0][3] !in repo.legacyClaims[1])
         assertTrue(repo.fingerprints[1] !in repo.legacyClaims[2])
         val stored = Transaction(1, "A & B", first.amount, 1, first.date, first.type)
         val matches = FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(stored, stored.copy(id = 2, description = "A &amp; B"))))
@@ -81,9 +88,10 @@ class StatementImportUseCasesTest {
         confirm("old.ofx", listOf(CategorySuggestion(oldRaw, category, 1f)))
         confirm("new.ofx", listOf(CategorySuggestion(decoded, category, 1f)))
         org.junit.Assert.assertNotEquals(repo.fingerprints[0], repo.fingerprints[1])
-        // New v4 data is distinct; only the actual historical v1/v2/v3 claims are aliases.
+        // Only v1–v3 used the earlier text representation.
         assertTrue(repo.fingerprints[0] !in repo.legacyClaims[1])
-        assertTrue(repo.legacyClaims[1].containsAll(repo.legacyClaims[0]))
+        assertTrue(repo.legacyClaims[1].containsAll(repo.legacyClaims[0].take(3)))
+        assertTrue(repo.legacyClaims[0][3] !in repo.legacyClaims[1])
         val stored = Transaction(1, oldRaw.description, oldRaw.amount, 1, oldRaw.date, oldRaw.type)
         val matches = FindPotentialOverlapsUseCase(FakeTransactionsRepository(listOf(stored, stored.copy(id = 2, description = decoded.description))))
             .findMatches(listOf(decoded))
@@ -110,6 +118,10 @@ class StatementImportUseCasesTest {
         }
         val ofx = "<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20261101<TRNAMT>100.00<MEMO>Pagamento do cart&#227;o</STMTTRN></BANKTRANLIST></OFX>"
         assertEquals(TransactionType.TRANSFER, synthesize(parser.parse("a.ofx", ofx.toByteArray())).single().entry.type)
+        val bankCsv = "Data;Descrição;Valor;Tipo\n01/11/2026;Pagamento do cartão;100,00;Débito"
+        val payment = synthesize(parser.parse("a.csv", bankCsv.toByteArray())).single()
+        assertEquals(TransactionType.EXPENSE, payment.originalType)
+        assertEquals(TransactionType.TRANSFER, payment.entry.type)
     }
 
     @Test
@@ -125,6 +137,57 @@ class StatementImportUseCasesTest {
             val result = SynthesizeStatementUseCase(FakeTransactionCategorizer(listOf(expected)), FakeCategoriesRepository(listOf(income, transfer)))(listOf(raw))
             assertEquals(listOf(expected), result)
         }
+    }
+
+    @Test
+    fun csvExportKeepsItsTypeThroughReviewAndConfirmationDespitePaymentRuleAndMemory() = runBlocking {
+        val description = "Pagamento da fatura do cartão"
+        val expense = Category(1, "Outros", CategoryType.EXPENSE)
+        val transfer = Category(2, "Transferência", CategoryType.TRANSFER)
+        val categories = listOf(expense, transfer)
+        val clock = FakeDateProvider(LocalDateTime.of(2026, 11, 1, 9, 0))
+        val transaction = Transaction(1, description, Money(7000), expense.id,
+            LocalDate.of(2026, 11, 1), TransactionType.EXPENSE)
+        val csv = TransactionExporter().export(listOf(transaction), categories.associateBy { it.id }, ExportFormat.CSV)
+        val memory = object : CategoryMemoryRepository {
+            override suspend fun getMemories() = listOf(
+                CategoryMemory(categoryMemoryKey(description), TransactionType.EXPENSE, transfer.id)
+            )
+            override suspend fun clear() = Unit
+        }
+        val synthesize = SynthesizeStatementUseCase(
+            RememberingTransactionCategorizer(RuleBasedLocalAiRepository(clock), memory),
+            FakeCategoriesRepository(categories)
+        )
+        val parser = CsvOfxStatementParser()
+        val repository = FakeStatementImportRepository()
+        val confirm = ConfirmStatementImportUseCase(repository, clock)
+        for (kind in StatementKind.entries) {
+            val suggestions = synthesize(parser.parse("finances.csv", csv.toByteArray(), kind), kind)
+            assertEquals(TransactionType.EXPENSE, suggestions.single().entry.type)
+            assertEquals(expense, suggestions.single().suggestedCategory)
+            confirm("finances.csv", suggestions)
+        }
+        assertEquals(listOf(TransactionType.EXPENSE, TransactionType.EXPENSE), repository.addedTransactions.map { it.type })
+    }
+
+    @Test
+    fun correctedCsvDirectionsFindHistoricalSignOnlyClaimsWithoutCollidingWithNewImports() = runBlocking {
+        val parser = CsvOfxStatementParser()
+        val clock = FakeDateProvider(LocalDateTime.of(2026, 11, 1, 9, 0))
+        val repository = FakeStatementImportRepository()
+        val confirm = ConfirmStatementImportUseCase(repository, clock)
+        suspend fun save(csv: String) {
+            val entry = parser.parse("banco.csv", csv.toByteArray()).single()
+            val category = Category(1, "Outros", CategoryType.valueOf(entry.type.name))
+            confirm("banco.csv", listOf(CategorySuggestion(entry, category, 1f)), "Conta A")
+        }
+        save("Data;Descrição;Valor\n01/11/2026;Mercado;70,00")
+        save("Data;Descrição;Valor;Tipo\n01/11/2026;Mercado;70,00;Débito")
+        save("Data;Descrição;Valor\n01/11/2026;Mercado;-70,00")
+        assertTrue(repository.legacyClaims[1].containsAll(repository.legacyClaims[0]))
+        assertTrue(repository.fingerprints[0] !in repository.legacyClaims[1])
+        assertEquals(repository.fingerprints[1], repository.fingerprints[2])
     }
 
     @Test
@@ -144,7 +207,7 @@ class StatementImportUseCasesTest {
             "3cc5e72d2a688589a5da1cebcc6c19dbe4eade96203752a39b602c7692504bf7",
             "cd8dc7d242aac8c78a89422219e8543054e06b7887579ea8149a0681b83b8b2e"
         )
-        assertTrue(repository.legacyClaims.all { it.drop(1) == unscopedHistoricalClaims })
+        assertTrue(repository.legacyClaims.all { it.slice(1..2) == unscopedHistoricalClaims })
         val scopedV3 = repository.legacyClaims.map { it.first() }
         assertEquals("14de826b281e16936830937db63b8f0343caa24123ceb5a78bb50c3cd1f564e7", scopedV3[0])
         assertEquals(scopedV3[0], scopedV3[1])

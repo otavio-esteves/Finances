@@ -26,20 +26,23 @@ class SynthesizeStatementUseCase(
         require(suggestions.size == entries.size && suggestions.indices.all { index ->
             val suggestion = suggestions[index]
             val original = entries[index]
+            val suggestedEntry = if (suggestion.source == SuggestionSource.MEMORY && !original.hasNativeCsvType) {
+                suggestion.entry.copy(type = original.type)
+            } else suggestion.entry
             suggestion.originalEntry == original && suggestion.originalType == original.type &&
-                (suggestion.entry == original || (suggestion.source == SuggestionSource.MEMORY && suggestion.entry.copy(type = original.type) == original)) &&
-                (suggestion.entry.type == original.type || suggestion.source == SuggestionSource.MEMORY) &&
+                suggestedEntry == original &&
                 (suggestion.suggestedCategory == null || categoriesById[suggestion.suggestedCategory.id] == suggestion.suggestedCategory)
         }) {
             "A categorização devolveu lançamentos incompletos ou alterados. Nenhum lançamento foi importado. Selecione o arquivo novamente."
         }
         val transferCategory = knownCategories.firstOrNull { it.type == CategoryType.TRANSFER }
         return suggestions.map { suggestion ->
-            if (suggestion.source != SuggestionSource.MEMORY && transferCategory != null &&
-                (suggestion.entry.type == TransactionType.TRANSFER || isCardPaymentDescription(
-                    suggestion.entry.description, includeBankLabels = kind == StatementKind.CARD_BILL
-                ))
-            ) {
+            if (suggestion.source == SuggestionSource.MEMORY || transferCategory == null) return@map suggestion
+            val entry = suggestion.entry
+            val needsTransferCategory = entry.type == TransactionType.TRANSFER &&
+                (!entry.hasNativeCsvType || suggestion.suggestedCategory == null)
+            if (needsTransferCategory || (!entry.hasNativeCsvType &&
+                    isCardPaymentDescription(entry.description, includeBankLabels = kind == StatementKind.CARD_BILL))) {
                 suggestion.copy(
                     entry = suggestion.entry.copy(type = TransactionType.TRANSFER),
                     suggestedCategory = transferCategory,

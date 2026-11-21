@@ -61,12 +61,17 @@ class ConfirmStatementImportUseCase(
             dataRevision = reviewedRevision
         )
         // Excluding rows changes what is saved, but the claim still identifies the entire source batch.
-        // A new version distinguishes complete text from historical first-line claims.
-        // Otherwise a new single-line purchase could falsely block a distinct multiline one.
-        val canonicalFingerprint = fingerprint(fingerprintSuggestions, version = 4, sourceLabel = sourceLabel)
+        // v5 separates corrected CSV directions from the historical sign-only claims.
+        val canonicalFingerprint = fingerprint(fingerprintSuggestions, version = 5, sourceLabel = sourceLabel)
         val legacyFingerprints = buildList {
             add(fingerprint(fingerprintSuggestions, version = 3, sourceLabel = sourceLabel))
             listOf(2, 1).forEach { add(fingerprint(fingerprintSuggestions, version = it)) }
+            add(fingerprint(fingerprintSuggestions, version = 4, sourceLabel = sourceLabel))
+            if (fingerprintSuggestions.any { it.originalEntry.legacyCsvSignType != null }) {
+                for (version in 4 downTo 1) {
+                    add(fingerprint(fingerprintSuggestions, version, sourceLabel, legacyCsvSign = true))
+                }
+            }
             if (fingerprintSuggestions.any { it.originalEntry.legacyDecodedOfxDescription != null }) {
                 listOf(3, 2, 1).forEach { version ->
                     add(fingerprint(fingerprintSuggestions, version, sourceLabel, decodedLegacyOfx = true))
@@ -95,13 +100,15 @@ class ConfirmStatementImportUseCase(
 
     private fun fingerprint(
         suggestions: List<CategorySuggestion>, version: Int, sourceLabel: String? = null,
-        legacyInput: Boolean = false, scopedLegacy: Boolean = false, decodedLegacyOfx: Boolean = false
+        legacyInput: Boolean = false, scopedLegacy: Boolean = false, decodedLegacyOfx: Boolean = false,
+        legacyCsvSign: Boolean = false
     ): String {
         fun description(suggestion: CategorySuggestion): String = with(suggestion.originalEntry) {
             (if (decodedLegacyOfx) legacyDecodedOfxDescription else if (legacyInput) legacyOfxDescription else null)
                 ?: description
         }
         fun inputType(suggestion: CategorySuggestion) = when {
+            legacyCsvSign -> suggestion.originalEntry.legacyCsvSignType ?: suggestion.originalType
             scopedLegacy -> suggestion.originalEntry.legacyScopedInputType ?: suggestion.originalType
             legacyInput -> suggestion.originalEntry.legacyInputType ?: suggestion.originalType
             else -> suggestion.originalType

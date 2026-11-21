@@ -17,7 +17,11 @@ data class RawStatementEntry(
     /** Decoded first-line text saved before multiline OFX fields were supported. */
     val legacyDecodedOfxDescription: String? = null,
     /** Description saved before PDF continuations following the amount were preserved. */
-    val legacyPdfDescription: String? = null
+    val legacyPdfDescription: String? = null,
+    /** The native CSV includes the final Finances transaction type, including transfers. */
+    val hasNativeCsvType: Boolean = false,
+    /** The direction a prior CSV importer saved in its batch fingerprint. */
+    val legacyCsvSignType: TransactionType? = null
 ) {
     init {
         require(description.isNotBlank()) { "description must not be blank" }
