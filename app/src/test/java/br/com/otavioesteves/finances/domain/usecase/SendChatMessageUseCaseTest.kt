@@ -177,6 +177,35 @@ class SendChatMessageUseCaseTest {
     }
 
     @Test
+    fun invoke_queriesTheExplicitCalendarYearForEverySupportedMonthFormat() = runBlocking {
+        val current = MonthPeriod(2026, 11)
+        val transactions = FakeTransactionsRepository(Money.fromCents(7_000))
+        val categories = FakeCategoriesRepository(emptyList())
+        val ai = FakeLocalAiRepository(ChatMessage(1, ChatRole.ASSISTANT, "incorreto", LocalDateTime.now()))
+        val useCase = createUseCase(
+            ai, FakeChatRepository(), GetMonthlyBalanceUseCase(transactions),
+            GetCategorySummariesUseCase(categories), FakeDateProvider(current), categories
+        )
+        for ((reference, expected) in listOf(
+            "março de 2100" to MonthPeriod(2100, 3),
+            "mar/1899" to MonthPeriod(1899, 3),
+            "03/2100" to MonthPeriod(2100, 3),
+            "2100-03" to MonthPeriod(2100, 3)
+        )) {
+            val reply = useCase("Qual é o saldo em $reference?")
+            assertEquals(expected, transactions.requestedPeriod)
+            assertTrue(reply.content.contains("Março de ${expected.year}"))
+            assertTrue(reply.content.contains("70,00"))
+        }
+        assertEquals(null, ai.lastMessage)
+        for (invalid in listOf(
+            "março de 0000", "março de 10000", "03/10000", "10000-03", "2100-13", "01/03/2100", "2100-03-01"
+        )) {
+            assertEquals(null, resolveChatPeriod("Quanto gastei em $invalid?", current))
+        }
+    }
+
+    @Test
     fun resolveChatPeriod_acceptsSingleMonthAndRejectsUnsupportedPeriods() {
         val period = MonthPeriod(2026, 1)
         assertEquals(false, canAnswerWithCurrentMonth("Quanto gastei no mês passado?", period))

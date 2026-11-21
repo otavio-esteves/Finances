@@ -21,7 +21,7 @@ internal fun answerFinancialQuestion(message: String, context: FinancialContext)
         "por exemplo, 'quanto gastei com Alimentação e Transporte?' ou 'quanto gastei sem Alimentação?'."
     if (!asksExpense && !asksIncome) {
         if (!asksBalance) return null
-        val request = text.replace(PERIOD_REFERENCE, " ").trim().trimEnd('?', '.', '!').trim()
+        val request = removeChatPeriodReference(text).trim().trimEnd('?', '.', '!').trim()
         return if (BALANCE_REQUEST.matches(request)) {
             "Seu saldo em $period é de ${MoneyFormatter.format(context.monthlyBalance)}."
         } else limitation
@@ -30,7 +30,7 @@ internal fun answerFinancialQuestion(message: String, context: FinancialContext)
 
     val expectedType = if (asksExpense) CategoryType.EXPENSE else CategoryType.INCOME
     // Require the whole numeric request to match: no partial category names or ignored qualifiers.
-    val request = NUMERIC_REQUEST.matchEntire(text.replace(PERIOD_REFERENCE, " ").trim()) ?: return limitation
+    val request = NUMERIC_REQUEST.matchEntire(removeChatPeriodReference(text).trim()) ?: return limitation
     val target = TOTAL_REFERENCE.replace(request.groupValues[1].trim().trimEnd('?', '.', '!'), " ").trim()
     val knownCategories = context.categories.filter { it.type == expectedType }
     val byName = knownCategories.groupBy { normalizeFinancialText(it.name) }
@@ -83,10 +83,5 @@ private val EXPENSE_QUESTION = Regex("\\bquanto\\b.*\\b(?:gastei|gasto|gastos|de
 private val INCOME_QUESTION = Regex("\\bquanto\\b.*\\b(?:recebi|receita|receitas|ganhei)\\b")
 private val NUMERIC_REQUEST = Regex(
     "quanto\\s+(?:eu\\s+)?(?:gastei|gasto|gastos|despesa|despesas|recebi|receita|receitas|ganhei)\\b(.*)"
-)
-private val PERIOD_REFERENCE = Regex(
-    "\\b(?:em|no|na|de)\\s+(?:(?:janeiro|jan|fevereiro|fev|marco|mar|abril|abr|maio|mai|junho|jun|" +
-        "julho|jul|agosto|ago|setembro|set|outubro|out|novembro|nov|dezembro|dez)" +
-        "(?:\\s+de\\s+\\d{4}|/\\d{4})?|(?:19|20)\\d{2}-(?:0?[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])/(?:19|20)\\d{2})\\b"
 )
 private val TOTAL_REFERENCE = Regex("\\b(?:no total|ao todo|neste mes|nesse mes|este mes|esse mes|no mes)\\b")
