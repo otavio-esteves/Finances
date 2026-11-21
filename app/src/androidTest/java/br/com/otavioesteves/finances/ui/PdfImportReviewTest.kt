@@ -1,6 +1,8 @@
 package br.com.otavioesteves.finances.ui
 
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -68,8 +70,7 @@ class PdfImportReviewTest {
         waitForReview(vm)
         rule.onNodeWithText(AMOUNT_TOTAL_LIMIT_MESSAGE).performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("Confirmar Importação").assertIsNotEnabled()
-        rule.onNodeWithTag("review_entry_0").performScrollTo()
-        rule.onNode(hasText("Excluir") and hasAnyAncestor(hasTestTag("review_entry_0"))).performClick()
+        reviewEntryAction("Excluir").performClick()
         rule.onNodeWithText("Confirmar Importação").assertIsEnabled().performClick()
         rule.waitUntil(10_000) { vm.uiState.value is ImportStatementUiState.Success }
         assertEquals(Long.MAX_VALUE, saved.single().amount.cents)
@@ -84,16 +85,14 @@ class PdfImportReviewTest {
         rule.setContent { FinancesTheme { ImportStatementScreen(onBackClick = {}, viewModel = vm) } }
         rule.runOnIdle { vm.onFileSelected("a.csv", byteArrayOf(1)) }
         waitForReview(vm)
-        rule.onNodeWithTag("review_entry_0").performScrollTo()
-        rule.onNodeWithText("No histórico (1)").assertIsDisplayed()
+        scrollReviewTo(hasText("No histórico (1)")).assertIsDisplayed()
         captureReviewScreenshot(rule, "duplicate-comparison")
-        rule.onNodeWithText("Cartão pessoal").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithTag("review_entry_0").performScrollTo()
-        rule.onNode(hasText("Excluir") and hasAnyAncestor(hasTestTag("review_entry_0"))).performClick()
+        scrollReviewTo(hasText("Cartão pessoal")).assertIsDisplayed()
+        reviewEntryAction("Excluir").performClick()
         rule.onNodeWithText("Confirmar Importação").assertIsEnabled()
-        rule.onNode(hasText("Reincluir") and hasAnyAncestor(hasTestTag("review_entry_0"))).performClick()
+        reviewEntryAction("Reincluir").performClick()
         rule.onNodeWithText("Confirmar Importação").assertIsNotEnabled()
-        rule.onNode(hasText("Excluir") and hasAnyAncestor(hasTestTag("review_entry_0"))).performClick()
+        reviewEntryAction("Excluir").performClick()
         rule.onNodeWithText("Confirmar Importação").performClick()
         rule.waitUntil(10_000) { vm.uiState.value is ImportStatementUiState.Success }
         assertEquals(listOf("Outra compra"), saved.map { it.description })
@@ -114,7 +113,7 @@ class PdfImportReviewTest {
         rule.onNodeWithText("Categorizar selecionados").performClick()
         rule.onNodeWithText("Categoria para 2 lançamentos").assertIsDisplayed()
         rule.onNodeWithText("Transporte").performClick()
-        rule.onNodeWithText("Nenhum lançamento neste filtro.").performScrollTo().assertIsDisplayed()
+        scrollReviewTo(hasText("Nenhum lançamento neste filtro.")).assertIsDisplayed()
         rule.onNodeWithText("Confirmar Importação").performClick()
         rule.waitUntil(10_000) { vm.uiState.value is ImportStatementUiState.Success }
         assertEquals(listOf(2L, 2L), saved.map { it.categoryId })
@@ -197,11 +196,11 @@ class PdfImportReviewTest {
         rule.setContent { FinancesTheme { ImportStatementScreen(onBackClick = {}, viewModel = viewModel) } }
         rule.runOnIdle { viewModel.onFileSelected("protegido.pdf", byteArrayOf(1)) }
         rule.waitUntil(10_000) { viewModel.uiState.value is ImportStatementUiState.NeedsPassword }
-        rule.onNodeWithText("Senha do PDF").performTextReplacement("errada")
-        rule.onNodeWithText("Abrir PDF").performClick()
+        rule.onNodeWithText("Senha do PDF").performScrollTo().performTextReplacement("errada")
+        rule.onNodeWithText("Abrir PDF").performScrollTo().assertIsEnabled().performClick()
         rule.waitUntil(10_000) { (viewModel.uiState.value as? ImportStatementUiState.NeedsPassword)?.error != null }
-        rule.onNodeWithText("Senha do PDF").performTextReplacement("123456")
-        rule.onNodeWithText("Abrir PDF").performClick()
+        rule.onNodeWithText("Senha do PDF").performScrollTo().performTextReplacement("123456")
+        rule.onNodeWithText("Abrir PDF").performScrollTo().assertIsEnabled().performClick()
         waitForReview(viewModel)
         assertTrue(saved.isEmpty())
         assertFalse(viewModel.uiState.value.toString().contains("123456"))
@@ -210,6 +209,15 @@ class PdfImportReviewTest {
     private fun waitForReview(vm: ImportStatementViewModel) {
         rule.waitUntil(10_000) { vm.uiState.value is ImportStatementUiState.ReviewingSuggestions }
     }
+
+    private fun scrollReviewTo(matcher: SemanticsMatcher): SemanticsNodeInteraction {
+        rule.onNode(hasScrollToIndexAction()).performScrollToNode(matcher)
+        return rule.onNode(matcher)
+    }
+
+    private fun reviewEntryAction(text: String) =
+        scrollReviewTo(hasText(text) and hasAnyAncestor(hasTestTag("review_entry_0")))
+
     private fun viewModel(scanned: Boolean, protected: Boolean = false,
         processingGate: CompletableDeferred<Unit>? = null,
         entriesToImport: List<RawStatementEntry>? = null,
