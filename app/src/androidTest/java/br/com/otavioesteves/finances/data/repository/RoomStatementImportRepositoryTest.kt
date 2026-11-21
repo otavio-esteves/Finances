@@ -1,8 +1,6 @@
 package br.com.otavioesteves.finances.data.repository
 
-import br.com.otavioesteves.finances.domain.repository.StatementImportRepository
 import br.com.otavioesteves.finances.data.statement.CsvOfxStatementParser
-import kotlinx.coroutines.flow.flowOf
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -29,6 +27,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -38,28 +39,38 @@ class RoomStatementImportRepositoryTest {
     private fun statement(source: String?) = ImportedStatement(0, "conta.csv", LocalDateTime.of(2026, 11, 1, 9, 0), 1, sourceLabel = source)
 
     private suspend fun assertLegacyClaimsRecognized(oldEntry: RawStatementEntry, corrected: RawStatementEntry) {
-        val oldCategory = Category(1, "Outros", CategoryType.valueOf(oldEntry.type.name))
         val correctedCategory = Category(1, "Outros", CategoryType.valueOf(corrected.type.name))
-        val oldFingerprints = mutableListOf<String>()
-        val capture = object : StatementImportRepository {
-            override fun getImports() = flowOf(emptyList<ImportedStatement>())
-            override suspend fun confirmImport(statementImport: ImportedStatement, transactions: List<Transaction>, fingerprint: String, legacyFingerprints: List<String>) {
-                // These bugs predate v4: simulate only the hashes that older apps could save.
-                oldFingerprints += legacyFingerprints
-            }
-        }
-        ConfirmStatementImportUseCase(capture, DefaultDateProvider())("old.file", listOf(CategorySuggestion(oldEntry, oldCategory, 1f)), "Conta A")
-        for (fingerprint in oldFingerprints) withDatabase { db ->
+        // The encoded descriptions and old PDF directions could only be saved in v1 through v3.
+        for (version in 1..3) withDatabase { db ->
+            val fingerprint = historicalFingerprint(oldEntry, version)
             db.categoryDao().insertCategories(listOf(CategoryEntity(1, correctedCategory.name, correctedCategory.type)))
             db.statementImportDao().insertImport(StatementImportEntity(fileName = "old.file", importedAt = LocalDateTime.of(2026, 11, 1, 9, 0),
                 transactionCount = 1, fingerprint = fingerprint, sourceLabel = "Conta A"))
-            assertTrue(runCatching {
+            val result = runCatching {
                 ConfirmStatementImportUseCase(RoomStatementImportRepository(db), DefaultDateProvider())(
                     "new.file", listOf(CategorySuggestion(corrected, correctedCategory, 1f)), "Conta A")
-            }.exceptionOrNull() is DuplicateStatementImportException)
+            }
+            assertTrue("Expected a duplicate for v$version, got $result", result.exceptionOrNull() is DuplicateStatementImportException)
             assertTrue(db.transactionDao().getAllTransactions().isEmpty())
             assertEquals(1, db.statementImportDao().getAllImportsForBackup().size)
         }
+    }
+
+    private fun historicalFingerprint(entry: RawStatementEntry, version: Int): String {
+        val buffer = ByteArrayOutputStream()
+        DataOutputStream(buffer).use { output ->
+            output.write("finances-statement-v$version".toByteArray(Charsets.UTF_8))
+            val fields = buildList {
+                if (version == 3) add("conta a")
+                addAll(listOf(entry.date.toString(), entry.type.name, entry.amount.cents.toString(), entry.description))
+            }
+            for (field in fields) {
+                val bytes = field.toByteArray(Charsets.UTF_8)
+                output.writeInt(bytes.size)
+                output.write(bytes)
+            }
+        }
+        return MessageDigest.getInstance("SHA-256").digest(buffer.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
     @Test fun decodedOfxCannotRepeatBatchesSavedWithEncodedTextInEitherLegacyVersion() = runBlocking {
